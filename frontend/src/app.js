@@ -74,6 +74,11 @@ createApp({
         response: null,
         loading: false,
       },
+      qwenAssistant: {
+        question: "Que ajuste tecnico necesita el pipeline para llegar al MP3 final?",
+        response: null,
+        loading: false,
+      },
       providers: {},
       studioStatus: {},
       modelStatus: {},
@@ -365,6 +370,26 @@ createApp({
       this.gemmaAssistant.response = payload.data;
       await this.loadOrchestration();
       this.messages.unshift(`Gemma transversal: ${payload.data.status}`);
+    },
+    async askQwenAssistant() {
+      this.qwenAssistant.loading = true;
+      const response = await fetch(apiUrl("/api/assistant/qwen"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          set_id: this.activeProjectId,
+          question: this.qwenAssistant.question,
+        }),
+      });
+      const payload = await response.json();
+      this.qwenAssistant.loading = false;
+      if (!payload.ok) {
+        this.messages.unshift(payload.detail || "Qwen no pudo revisar el ajuste tecnico.");
+        return;
+      }
+      this.qwenAssistant.response = payload.data;
+      await this.loadOrchestration();
+      this.messages.unshift(`Qwen tecnico: ${payload.data.status}`);
     },
     async simulateHandoff(modelRole = "intent_extractor", taskType = "extract_intent") {
       await this.postAction(

@@ -248,7 +248,7 @@
             <header>
               <div>
                 <strong>Gemma transversal</strong>
-                <span>Gemma 4 E4B IT GGUF - modo mock hasta conectar llama.cpp</span>
+                <span>Gemma 4 E4B IT GGUF - via llama.cpp si esta activo; guia local si no responde</span>
               </div>
               <button @click="askGemmaAssistant" :disabled="gemmaAssistant.loading">
                 {{ gemmaAssistant.loading ? 'Revisando...' : 'Consultar Gemma' }}
@@ -267,6 +267,28 @@
               <ul>
                 <li v-for="item in gemmaAssistant.response.recommendations" :key="item">{{ item }}</li>
               </ul>
+            </div>
+          </div>
+          <div class="qwen-card">
+            <header>
+              <div>
+                <strong>Qwen tecnico</strong>
+                <span>Qwen3 4B GGUF - ajustes tecnicos, debugging, workers, SQLite y ffmpeg</span>
+              </div>
+              <button @click="askQwenAssistant" :disabled="qwenAssistant.loading">
+                {{ qwenAssistant.loading ? 'Revisando...' : 'Consultar Qwen' }}
+              </button>
+            </header>
+            <textarea
+              v-model="qwenAssistant.question"
+              placeholder="Pregunta tecnica sobre el pipeline o la exportacion."
+            ></textarea>
+            <div v-if="qwenAssistant.response" class="gemma-response">
+              <strong>{{ qwenAssistant.response.model }}</strong>
+              <p>{{ qwenAssistant.response.message }}</p>
+              <div class="chips">
+                <span v-for="item in qwenAssistant.response.scope" :key="item" class="context-chip">{{ item }}</span>
+              </div>
             </div>
           </div>
           <div class="quick-export">

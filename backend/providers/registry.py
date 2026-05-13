@@ -7,7 +7,14 @@ from providers.huggingface import (
     HuggingFaceProviderStatus,
     HuggingFaceVoiceProvider,
 )
-from providers.local import LocalInterpreterProvider, LocalLyricsProvider, LocalMusicProvider, LocalVoiceProvider
+from providers.local import (
+    LocalInterpreterProvider,
+    LocalLyricsProvider,
+    LocalMusicProvider,
+    LocalTechnicalProvider,
+    LocalVoiceProvider,
+)
+from providers.llamacpp import LlamaCppInterpreterProvider, LlamaCppLyricsProvider, LlamaCppTechnicalProvider
 from providers.pro import ProLyricsProvider, ProMusicProvider, ProVoiceProvider
 
 
@@ -19,10 +26,18 @@ class ProviderRegistry:
     ) -> None:
         self.hf_settings = hf_settings
         self.local_settings = local_settings
-        self.interpreter_providers: list[InterpreterProvider] = [LocalInterpreterProvider()]
+        self.interpreter_providers: list[InterpreterProvider] = []
+        self.technical_providers: list[InterpreterProvider] = []
         self.music_providers: list[MusicProvider] = [LocalMusicProvider()]
         self.voice_providers: list[VoiceProvider] = [LocalVoiceProvider()]
-        self.lyrics_providers: list[LyricsProvider] = [LocalLyricsProvider()]
+        self.lyrics_providers: list[LyricsProvider] = []
+        if local_settings is not None and local_settings.llama_cpp_enabled:
+            self.interpreter_providers.append(LlamaCppInterpreterProvider(local_settings))
+            self.technical_providers.append(LlamaCppTechnicalProvider(local_settings))
+            self.lyrics_providers.append(LlamaCppLyricsProvider(local_settings))
+        self.interpreter_providers.append(LocalInterpreterProvider())
+        self.technical_providers.append(LocalTechnicalProvider())
+        self.lyrics_providers.append(LocalLyricsProvider())
         if hf_settings is not None:
             self.interpreter_providers.append(HuggingFaceInterpreterProvider(hf_settings))
             self.music_providers.append(HuggingFaceMusicProvider(hf_settings))
@@ -35,6 +50,7 @@ class ProviderRegistry:
     def summary(self) -> dict[str, list[dict[str, object]]]:
         summary = {
             "interpreter": self._summarize(self.interpreter_providers),
+            "technical": self._summarize(self.technical_providers),
             "music": self._summarize(self.music_providers),
             "voice": self._summarize(self.voice_providers),
             "lyrics": self._summarize(self.lyrics_providers),
@@ -44,6 +60,7 @@ class ProviderRegistry:
     def active_providers(self) -> dict[str, dict[str, object]]:
         return {
             "interpreter": self._active_provider("interpreter", self.interpreter_providers),
+            "technical": self._active_provider("technical", self.technical_providers),
             "music": self._active_provider("music", self.music_providers),
             "voice": self._active_provider("voice", self.voice_providers),
             "lyrics": self._active_provider("lyrics", self.lyrics_providers),
@@ -73,12 +90,39 @@ class ProviderRegistry:
             "active_providers": active_providers,
             "model_status": self.model_status(),
             "recommended_stack": self.recommended_stack(),
+            "llama_cpp": self.llama_cpp_status(),
             "ready_roles": [
                 role
                 for role, provider in active_providers.items()
                 if provider.get("status") in {"ready", "placeholder_ready"}
             ],
         }
+
+    def interpret_with_active_provider(self, prompt: str, target: str) -> dict[str, object]:
+        provider = self.interpreter_providers[0]
+        return provider.interpret(prompt, target)
+
+    def technical_with_active_provider(self, prompt: str, target: str) -> dict[str, object]:
+        provider = self.technical_providers[0]
+        return provider.interpret(prompt, target)
+
+    def llama_cpp_status(self) -> dict[str, object]:
+        if self.local_settings is None:
+            return {"enabled": False, "available": False, "reason": "No local settings loaded"}
+        if not self.local_settings.llama_cpp_enabled:
+            return {
+                "enabled": False,
+                "available": False,
+                "base_url": self.local_settings.llama_cpp_base_url,
+                "reason": "Set SONG_AI_LLAMA_CPP_ENABLED=true para activar Gemma via llama.cpp.",
+            }
+        provider = next(
+            (item for item in self.interpreter_providers if isinstance(item, LlamaCppInterpreterProvider)),
+            None,
+        )
+        if provider is None:
+            return {"enabled": True, "available": False, "reason": "Proveedor llama.cpp no registrado."}
+        return {"enabled": True, "base_url": self.local_settings.llama_cpp_base_url, **provider.status()}
 
     def model_status(self) -> dict[str, object]:
         local = self.local_settings.to_dict() if self.local_settings is not None else {}
@@ -148,6 +192,8 @@ class ProviderRegistry:
 
     def _provider_status(self, provider_name: str) -> str:
         if provider_name.startswith(("local-", "llamacpp-", "musicgen-", "singing-voice-")):
+            if provider_name.startswith("llamacpp-") and self.local_settings is not None:
+                return "configured" if self.local_settings.llama_cpp_enabled else "disabled"
             return "ready"
         if provider_name.startswith("huggingface-"):
             if self.hf_settings is not None and self.hf_settings.enabled:

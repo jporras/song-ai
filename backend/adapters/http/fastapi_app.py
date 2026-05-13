@@ -161,6 +161,11 @@ def run_gemma_assistant(payload: dict[str, Any] | None = None) -> dict[str, Any]
     return run_action(lambda: service.gemma_assistant(payload or {}))
 
 
+@app.post("/api/assistant/qwen")
+def run_qwen_technical_assistant(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    return run_action(lambda: service.qwen_technical_assistant(payload or {}))
+
+
 @app.post("/api/orchestration/handoff")
 def run_model_handoff(payload: dict[str, Any]) -> dict[str, Any]:
     return run_action(lambda: service.run_model_handoff(payload))

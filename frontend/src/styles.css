@@ -319,6 +319,7 @@ textarea {
 }
 
 .gemma-card,
+.qwen-card,
 .quick-export {
   display: grid;
   gap: 12px;
@@ -330,24 +331,28 @@ textarea {
 }
 
 .gemma-card header,
+.qwen-card header,
 .quick-export {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
 }
 
-.gemma-card header {
+.gemma-card header,
+.qwen-card header {
   display: grid;
   gap: 12px;
 }
 
 .gemma-card span,
+.qwen-card span,
 .quick-export span {
   display: block;
   color: #475569;
   margin-top: 4px;
 }
 
-.gemma-card textarea {
+.gemma-card textarea,
+.qwen-card textarea {
   min-height: 92px;
 }
 
@@ -610,6 +615,7 @@ pre {
   }
 
   .gemma-card header,
+  .qwen-card header,
   .quick-export {
     grid-template-columns: 1fr;
   }

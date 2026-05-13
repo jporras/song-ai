@@ -17,7 +17,7 @@ class ModelOrchestrator:
         "audio": "music",
         "stems": "music",
         "mixer": "music",
-        "technical": "interpreter",
+        "technical": "technical",
     }
 
     DEFAULT_MODELS = {

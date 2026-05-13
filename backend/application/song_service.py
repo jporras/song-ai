@@ -233,22 +233,26 @@ class SongService:
             if sets:
                 project = self.get_project(str(sets[0]["set_id"]))
 
+        readiness = self._workflow_readiness(project)
         if project is None:
             return {
                 "model": "Gemma 4 E4B IT GGUF",
-                "mode": "mock_until_llama_cpp_is_connected",
+                "mode": "llama_cpp" if self.provider_registry.llama_cpp_status().get("enabled") else "local_guidance",
                 "status": "needs_project",
-                "message": "Crea o carga un proyecto/set para que Gemma pueda asistir transversalmente.",
+                "message": self._run_gemma_or_fallback(
+                    self._build_gemma_prompt(None, payload, readiness),
+                    readiness,
+                ),
                 "context_used": [],
-                "recommendations": [
-                    "Completa instrumental, melodia y letra.",
-                    "Crea el set/proyecto antes de generar sample o cancion completa.",
-                ],
+                "recommendations": readiness["recommendations"],
+                "readiness": readiness,
             }
 
         set_data = dict(project["set"])
         assets = dict(project["assets"])
         question = str(payload.get("question", "Que sigue para terminar esta cancion?")).strip()
+        prompt = self._build_gemma_prompt(project, payload, readiness)
+        gemma_message = self._run_gemma_or_fallback(prompt, readiness)
         handoff = self.model_orchestrator.run_handoff(
             {
                 "model_role": "assistant",
@@ -266,22 +270,14 @@ class SongService:
                 },
             }
         )
-        missing: list[str] = []
-        if not project["samples"]:
-            missing.append("sample/checkpoint")
-        if not project["songs"]:
-            missing.append("cancion completa")
         return {
             "model": "Gemma 4 E4B IT GGUF",
-            "mode": "mock_until_llama_cpp_is_connected",
+            "mode": "llama_cpp" if self.provider_registry.llama_cpp_status().get("available") else "local_guidance",
             "status": "active_project_loaded",
             "question": question,
             "project_name": set_data["project_name"],
             "set_id": set_data["set_id"],
-            "message": (
-                "Gemma esta actuando como asistente transversal del proyecto activo. "
-                "Usa SQLite como fuente activa y lee set, intents, assets, samples, canciones y eventos."
-            ),
+            "message": gemma_message,
             "context_used": [
                 "project_name",
                 "description",
@@ -293,15 +289,144 @@ class SongService:
                 "manifest.json",
                 "intent.json",
             ],
-            "recommendations": [
-                "Mantener el arreglo suave: piano, caja musical, pads y cuerdas sin romper la intencion de cuna.",
-                "Conservar voz cantada suave; no usar TTS hablado como reemplazo de canto.",
-                "Revisar la letra editable antes del sample para mejorar metrica, rima y narrativa.",
-                "Avanzar en orden: set valido, sample, cancion completa, mezcla, WAV/MP3.",
-            ],
-            "missing_before_final": missing,
+            "recommendations": readiness["recommendations"],
+            "missing_before_final": readiness["missing"],
+            "readiness": readiness,
+            "llama_cpp": self.provider_registry.llama_cpp_status(),
             "handoff": handoff,
         }
+
+    def qwen_technical_assistant(self, payload: dict[str, object] | None = None) -> dict[str, object]:
+        payload = payload or {}
+        question = str(payload.get("question", "Que ajuste tecnico necesita el pipeline?")).strip()
+        set_id = str(payload.get("set_id", "")).strip()
+        project = self.get_project(set_id) if set_id else None
+        prompt = (
+            f"Pregunta tecnica: {question}\n"
+            f"Proyecto activo: {project['project'] if project else 'sin proyecto cargado'}\n"
+            f"Estado modelos locales: {self.provider_registry.model_status().get('local', {})}\n"
+            "Responde como Qwen3 tecnico. Enfocate en codigo, arquitectura, workers, SQLite, ffmpeg, "
+            "llama.cpp, memoria y debugging. No reemplaces el criterio creativo de Gemma."
+        )
+        try:
+            result = self.provider_registry.technical_with_active_provider(prompt, "technical_song_pipeline")
+            message = str(result["summary"])
+            mode = str(result.get("mode", "local_guidance"))
+        except Exception:
+            message = (
+                "Qwen tecnico esta en guia de respaldo porque llama.cpp no respondio. "
+                "Siguiente ajuste recomendado: verificar variables SONG_AI_LLAMA_CPP_* y que ffmpeg/SQLite "
+                "esten disponibles antes de workers reales."
+            )
+            mode = "local_guidance"
+        handoff = self.model_orchestrator.run_handoff(
+            {
+                "model_role": "technical",
+                "task_type": "technical_adjustment",
+                "phase": "technical_review",
+                "project_id": str(project["project"]["project_id"]) if project else "technical",
+                "project_name": str(project["project"]["project_name"]) if project else "Proyecto tecnico",
+                "description": question,
+            }
+        )
+        return {
+            "model": "Qwen3 4B GGUF",
+            "mode": mode,
+            "status": "technical_role_active",
+            "message": message,
+            "scope": ["codigo", "debugging", "arquitectura", "workers", "ffmpeg", "SQLite", "llama.cpp"],
+            "handoff": handoff,
+        }
+
+    def _workflow_readiness(self, project: dict[str, object] | None) -> dict[str, object]:
+        drafts = self.list_drafts()
+        counts = {
+            "instrumental": len([item for item in drafts if item["asset_type"] == "instrumental"]),
+            "melody": len([item for item in drafts if item["asset_type"] == "melody"]),
+            "lyrics": len([item for item in drafts if item["asset_type"] == "lyrics"]),
+        }
+        sets = self.list_sets()
+        samples = list(project["samples"]) if project is not None else []
+        songs = list(project["songs"]) if project is not None else []
+        missing: list[str] = []
+        if counts["instrumental"] == 0:
+            missing.append("instrumental")
+        if counts["melody"] == 0:
+            missing.append("melodia")
+        if counts["lyrics"] == 0:
+            missing.append("letra")
+        if not sets:
+            missing.append("set/proyecto")
+        if project is not None and not samples:
+            missing.append("sample/checkpoint")
+        if project is not None and not songs:
+            missing.append("cancion completa")
+
+        recommendations = [
+            "Trabaja siempre sobre un proyecto activo para conservar instrumental, melodia y letra juntos.",
+            "No avances a sample si falta instrumental, melodia o letra.",
+            "Revisa la letra editable antes de exportar para mejorar metrica, rima y narrativa.",
+            "El cierre correcto es set valido, sample, cancion completa, mezcla y WAV/MP3.",
+        ]
+        if "instrumental" in missing:
+            recommendations.insert(0, "Define el instrumental: genero, mood, BPM, tonalidad e instrumentos.")
+        if "melodia" in missing:
+            recommendations.insert(0, "Define la melodia vocal: estilo cantado, rango, energia y estructura.")
+        if "letra" in missing:
+            recommendations.insert(0, "Crea o edita una letra completa con versos, coro y cierre emocional.")
+
+        return {
+            "draft_counts": counts,
+            "sets": len(sets),
+            "samples": len(samples),
+            "songs": len(songs),
+            "missing": missing,
+            "recommendations": recommendations,
+        }
+
+    def _build_gemma_prompt(
+        self,
+        project: dict[str, object] | None,
+        payload: dict[str, object],
+        readiness: dict[str, object],
+    ) -> str:
+        question = str(payload.get("question", "Que sigue para terminar esta cancion?")).strip()
+        if project is None:
+            return (
+                f"Pregunta del usuario: {question}\n"
+                f"Estado de trabajo desde SQLite: {readiness}\n"
+                "Ayuda al usuario a iniciar una cancion completa. Recuerda que debe completar instrumental, "
+                "melodia y letra antes del set, luego sample, cancion completa, mezcla y MP3."
+            )
+        set_data = dict(project["set"])
+        assets = dict(project["assets"])
+        lyrics = dict(assets["lyrics"]).get("content", "")
+        return (
+            f"Pregunta del usuario: {question}\n"
+            f"Proyecto activo: {set_data.get('project_name')}\n"
+            f"Descripcion: {set_data.get('description')}\n"
+            f"Set activo: {set_data}\n"
+            f"Instrumental intent: {dict(assets['instrumental']).get('intent', {})}\n"
+            f"Melodia intent: {dict(assets['melody']).get('intent', {})}\n"
+            f"Letra intent: {dict(assets['lyrics']).get('intent', {})}\n"
+            f"Letra editable lyrics.md:\n{lyrics}\n"
+            f"Estado del flujo: {readiness}\n"
+            "Responde en espanol, breve y accionable. Debes ayudar desde inicio de proyecto hasta MP3 final. "
+            "No propongas cambios que rompan la intencion instrumental, vocal o lirica."
+        )
+
+    def _run_gemma_or_fallback(self, prompt: str, readiness: dict[str, object]) -> str:
+        try:
+            result = self.provider_registry.interpret_with_active_provider(prompt, "active_song_project")
+            if str(result.get("mode", "")) == "llama_cpp":
+                return str(result["summary"])
+        except Exception:
+            pass
+        missing = ", ".join(str(item) for item in readiness["missing"]) or "nada critico"
+        return (
+            "Gemma local esta en guia de respaldo porque llama.cpp no respondio. "
+            f"Falta: {missing}. Siguiente accion: {readiness['recommendations'][0]}"
+        )
 
     def describe_set(self, song_set: dict[str, object]) -> dict[str, object]:
         compatibility = dict(song_set.get("compatibility_data", {}))

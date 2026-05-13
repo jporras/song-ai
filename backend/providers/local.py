@@ -3,7 +3,7 @@ from providers.base import InterpreterProvider, LyricsProvider, MusicProvider, V
 
 class LocalInterpreterProvider(InterpreterProvider):
     def name(self) -> str:
-        return "llamacpp-gemma-interpreter-mock"
+        return "local-gemma-interpreter-fallback"
 
     def capabilities(self) -> list[str]:
         return [
@@ -46,7 +46,7 @@ class LocalVoiceProvider(VoiceProvider):
 
 class LocalLyricsProvider(LyricsProvider):
     def name(self) -> str:
-        return "llamacpp-gemma-lyrics-mock"
+        return "local-gemma-lyrics-fallback"
 
     def capabilities(self) -> list[str]:
         return [
@@ -56,3 +56,25 @@ class LocalLyricsProvider(LyricsProvider):
             "avoid_poor_repetition",
             "music_prompt_generation",
         ]
+
+
+class LocalTechnicalProvider(InterpreterProvider):
+    def name(self) -> str:
+        return "local-qwen-technical-fallback"
+
+    def capabilities(self) -> list[str]:
+        return [
+            "technical_adjustments",
+            "debugging",
+            "architecture_review",
+            "pipeline_support",
+            "ffmpeg_and_worker_guidance",
+        ]
+
+    def interpret(self, text: str, target: str) -> dict[str, object]:
+        return {
+            "target": target,
+            "input": text,
+            "mode": "local_mock",
+            "summary": "Qwen tecnico mock: revisa arquitectura, errores, workers y pipeline sin intervenir en la letra creativa.",
+        }

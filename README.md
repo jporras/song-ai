@@ -41,7 +41,8 @@ Ultimo ajuste:
 - Cada proyecto conserva un historico de pasos (`project_events`) con fecha, fase, actor/modelo, estado y mensaje para reconstruir el camino de creacion de la cancion.
 - Produccion ahora muestra explicitamente el paso `Generar WAV/MP3`; en modo mock crea `exports/final_mix.wav` como audio valido de prueba y genera `final_mix.mp3` si `ffmpeg` esta disponible.
 - Produccion incluye `Crear MP3 predefinido`, que arma la cancion de cuna para Isabella con los defaults actuales, crea set/sample/cancion/mezcla y exporta WAV/MP3 en un solo flujo.
-- Produccion incluye `Gemma transversal`, asistente de proyecto activo en modo mock hasta conectar llama.cpp; usa set, intents, assets, samples, canciones y eventos como contexto.
+- Produccion incluye `Gemma transversal`, asistente de proyecto activo via llama.cpp cuando `SONG_AI_LLAMA_CPP_ENABLED=true`; si llama.cpp no responde, conserva guia local y deja la app ejecutable.
+- Produccion incluye `Qwen tecnico`, rol separado para ajustes tecnicos, debugging, arquitectura, workers, SQLite, ffmpeg y pipeline. Qwen no reemplaza a Gemma en creatividad musical.
 
 Completado:
 - Sprint 1: estructura modular, menu principal, carpetas de datos y storage basico.
@@ -60,7 +61,7 @@ Completado:
 - Sprint 13: estado de estudio IA, providers activos y contrato multi-modelo en UI/API.
 
 Pendiente siguiente:
-- Conectar llama.cpp para Gemma 4 E4B IT GGUF y Qwen3 4B GGUF.
+- Levantar/instalar los binarios y modelos GGUF reales de llama.cpp para Gemma 4 E4B IT y Qwen3 4B; la app ya tiene cliente HTTP, providers y fallback local.
 - Conectar MusicGen small como primer generador real de soundtrack.
 - Definir worker de voz cantada con RVC/ACE-Step.
 - Conectar Demucs y ffmpeg para stems, mezcla y export WAV/MP3.
@@ -108,6 +109,26 @@ Audio:
 - `singing_voice`: RVC / ACE-Step; so-vits-svc opcional.
 - `stems`: Demucs.
 - `mixer`: ffmpeg.
+
+Variables para conectar llama.cpp:
+
+```powershell
+$env:SONG_AI_LLAMA_CPP_ENABLED="true"
+$env:SONG_AI_LLAMA_CPP_BASE_URL="http://localhost:8080"
+$env:SONG_AI_INTERPRETER_MODEL="Gemma 4 E4B IT GGUF"
+$env:SONG_AI_LYRICS_MODEL="Gemma 4 E4B IT GGUF"
+$env:SONG_AI_TECHNICAL_MODEL="Qwen3 4B GGUF"
+```
+
+En Docker, si llama.cpp corre en el host, usa:
+
+```powershell
+$env:SONG_AI_LLAMA_CPP_ENABLED="true"
+$env:SONG_AI_LLAMA_CPP_BASE_URL="http://host.docker.internal:8080"
+docker compose up --build
+```
+
+El endpoint esperado es el servidor HTTP de llama.cpp compatible con `POST /completion`. La app mantiene fallback local si el servidor no esta disponible.
 
 Restricciones de ejecucion:
 - proyecto local/hibrido para portatil de 16 GB RAM,
@@ -179,8 +200,9 @@ No se usa Nginx en esta etapa porque FastAPI sirve la API y el frontend compilad
 13. Para el flujo manual: prepara mezcla.
 14. Prepara exports.
 15. Genera WAV/MP3. En fase mock se crea `final_mix.wav` y, dentro del contenedor Docker, `final_mix.mp3` usando `ffmpeg`.
-16. Usa `Gemma transversal` para pedir sugerencias sobre el proyecto activo. En esta fase no carga llama.cpp todavia; registra handoffs mock y usa SQLite como fuente activa.
-17. En `Biblioteca`, revisa providers activos, estado del estudio IA, tasks, model runs, historico del proyecto y rutas JSON indexadas.
+16. Usa `Gemma transversal` para pedir sugerencias sobre el proyecto activo. Si llama.cpp esta activo, Gemma responde desde `POST /completion`; si no, usa guia local y registra handoffs en SQLite.
+17. Usa `Qwen tecnico` para ajustes de codigo/pipeline, errores, workers, ffmpeg, SQLite y arquitectura.
+18. En `Biblioteca`, revisa providers activos, estado del estudio IA, tasks, model runs, historico del proyecto y rutas JSON indexadas.
 
 El flujo actual crea artefactos mock, pero respeta el contrato final: cancion completa con letra original, estructura musical, soundtrack, voz cantada, mezcla y exportacion de audio. No apunta a Shorts ni a TTS hablado.
 
@@ -259,6 +281,7 @@ El menu guia el flujo creativo:
 - generar WAV/MP3 desde la cancion mas reciente,
 - crear MP3 predefinido de la cancion de cuna base,
 - consultar el asistente Gemma transversal sobre el proyecto activo,
+- consultar Qwen tecnico para ajustes de implementacion y pipeline,
 - guardar plantilla reutilizable.
 
 Flujo sugerido:
@@ -421,6 +444,7 @@ POST /api/mix
 POST /api/exports
 POST /api/audio-exports
 POST /api/assistant/gemma
+POST /api/assistant/qwen
 GET /api/orchestration/status
 GET /api/tasks
 GET /api/model-runs
