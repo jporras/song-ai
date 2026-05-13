@@ -38,9 +38,12 @@ def planned_stem_exports() -> list[str]:
         "stems/instrumental.wav",
         "stems/vocals.wav",
         "stems/melody_guide.wav",
+        "stems/sung_voice.wav",
         "stems/drums.wav",
         "stems/bass.wav",
         "stems/music.wav",
         "stems/instrumental.flac",
         "stems/vocals.flac",
+        "stems/demucs/separated_vocals.wav",
+        "stems/demucs/separated_instrumental.wav",
     ]

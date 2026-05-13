@@ -3,10 +3,15 @@ from providers.base import InterpreterProvider, LyricsProvider, MusicProvider, V
 
 class LocalInterpreterProvider(InterpreterProvider):
     def name(self) -> str:
-        return "local-interpreter-mock"
+        return "llamacpp-gemma-interpreter-mock"
 
     def capabilities(self) -> list[str]:
-        return ["intent_interpretation_mock", "project_guidance_mock", "handoff_planning_mock"]
+        return [
+            "understand_user_intent",
+            "infer_missing_song_details",
+            "choose_lullaby_style_tone_structure",
+            "coordinate_handoffs_without_prompt_chaining",
+        ]
 
     def interpret(self, text: str, target: str) -> dict[str, object]:
         return {
@@ -19,23 +24,35 @@ class LocalInterpreterProvider(InterpreterProvider):
 
 class LocalMusicProvider(MusicProvider):
     def name(self) -> str:
-        return "local-music-mock"
+        return "musicgen-soundtrack-mock"
 
     def capabilities(self) -> list[str]:
-        return ["instrumental_draft", "sample_mock", "full_song_mock", "stems_mock"]
+        return [
+            "lullaby_soundtrack_prompt",
+            "instrumental_draft",
+            "music_box_piano_pads_strings",
+            "sample_mock",
+            "full_song_mock",
+        ]
 
 
 class LocalVoiceProvider(VoiceProvider):
     def name(self) -> str:
-        return "local-voice-mock"
+        return "singing-voice-rvc-acestep-mock"
 
     def capabilities(self) -> list[str]:
-        return ["voice_preview_mock", "vocal_guide_mock"]
+        return ["sung_vocal_mock", "vocal_guide_mock", "timbre_adaptation_placeholder", "not_tts_spoken_voice"]
 
 
 class LocalLyricsProvider(LyricsProvider):
     def name(self) -> str:
-        return "local-lyrics-mock"
+        return "llamacpp-gemma-lyrics-mock"
 
     def capabilities(self) -> list[str]:
-        return ["markdown_lyrics", "placeholder_variations", "promptless_mock_generation"]
+        return [
+            "complete_original_lyrics",
+            "meter_and_rhyme_guidance",
+            "verse_chorus_bridge_structure",
+            "avoid_poor_repetition",
+            "music_prompt_generation",
+        ]

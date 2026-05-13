@@ -8,19 +8,31 @@ class ModelOrchestrator:
     ROLE_PROVIDER_KEYS = {
         "assistant": "interpreter",
         "intent_extractor": "interpreter",
+        "interpreter": "interpreter",
         "music": "music",
+        "soundtrack": "music",
         "voice": "voice",
+        "singing_voice": "voice",
         "lyrics": "lyrics",
         "audio": "music",
+        "stems": "music",
+        "mixer": "music",
+        "technical": "interpreter",
     }
 
     DEFAULT_MODELS = {
-        "assistant": "assistant-placeholder",
-        "intent_extractor": "qwen-intent-placeholder",
-        "music": "musicgen-placeholder",
-        "voice": "voice-placeholder",
-        "lyrics": "lyrics-placeholder",
-        "audio": "audio-pipeline-placeholder",
+        "assistant": "Gemma 4 E4B IT GGUF",
+        "intent_extractor": "Gemma 4 E4B IT GGUF",
+        "interpreter": "Gemma 4 E4B IT GGUF",
+        "music": "MusicGen small",
+        "soundtrack": "MusicGen small",
+        "voice": "RVC / ACE-Step",
+        "singing_voice": "RVC / ACE-Step",
+        "lyrics": "Gemma 4 E4B IT GGUF",
+        "audio": "ffmpeg",
+        "stems": "Demucs",
+        "mixer": "ffmpeg",
+        "technical": "Qwen3 4B GGUF",
     }
 
     def __init__(self, storage: StorageManager, provider_registry: ProviderRegistry) -> None:
@@ -33,6 +45,7 @@ class ModelOrchestrator:
         return {
             "mode": "mock_orchestrator",
             "memory_policy": "one_heavy_model_at_a_time",
+            "load_policy": "load_on_demand_release_after_task",
             "assistant_state": "active" if latest_task is None else "active_after_handoff",
             "active_model": None,
             "latest_task": latest_task,
@@ -188,13 +201,31 @@ class ModelOrchestrator:
             "model_role": model_role,
             "task_type": task_type,
             "summary": (
-                f"{model_role} preparo la tarea '{task_type}' para {project_name}. "
-                "La ejecucion real queda lista para conectarse a un provider local/pro."
+                f"{model_role} preparo '{task_type}' para {project_name} como cancion completa. "
+                "El resultado mantiene letra, estructura, soundtrack, voz cantada y mezcla como fases separadas."
             ),
             "missing_fields": [],
             "validation_results": {
                 "status": "mock_valid",
                 "source_of_truth": "sqlite",
+                "not_short_format": True,
+                "avoid_poor_repetition": True,
+                "voice_must_be_sung": True,
             },
-            "next_action": "Persistir intent/set y continuar con el siguiente paso del pipeline.",
+            "song_blueprint": {
+                "goal": "complete_lullaby_or_children_emotional_song",
+                "structure": [
+                    "intro",
+                    "verse 1",
+                    "optional pre chorus",
+                    "chorus",
+                    "verse 2",
+                    "optional bridge",
+                    "final chorus",
+                    "outro",
+                ],
+                "audio_pipeline": ["soundtrack", "singing_voice", "stems", "mixer", "export"],
+                "video": "optional_only",
+            },
+            "next_action": "Persistir intent/set y continuar con letra completa, prompt musical, soundtrack, voz cantada y mezcla.",
         }

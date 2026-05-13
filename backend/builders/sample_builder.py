@@ -22,13 +22,16 @@ class SampleBuilder:
                 "sample_id": sample_id,
                 "set_id": latest_set["set_id"],
                 "provider": "mock-local",
-                "status": "mock_preview",
+                "status": "mock_quality_checkpoint",
+                "purpose": "quality checkpoint before full soundtrack, sung voice and mix",
+                "not_a_short": True,
             },
         )
         (sample_dir / "preview.txt").write_text(
-            "Mock sample preview placeholder.\n"
+            "Mock quality checkpoint placeholder.\n"
             f"Set: {latest_set['set_id']}\n"
-            "This file stands in for a short audio preview.\n",
+            "This validates the set before generating the complete song pipeline.\n"
+            "It is not a 20-second Short format and not the final song.\n",
             encoding="utf-8",
         )
         return sample_dir

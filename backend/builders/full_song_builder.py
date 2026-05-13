@@ -28,7 +28,32 @@ class FullSongBuilder:
                 "sample_id": latest_sample["sample_id"],
                 "set_id": latest_sample["set_id"],
                 "provider": "mock-local",
-                "status": "mock_full_song",
+                "status": "mock_complete_song_pipeline",
+                "scope": "complete_lullaby_or_children_emotional_song",
+                "priority_order": [
+                    "good_lyrics",
+                    "emotional_intent",
+                    "musical_structure",
+                    "coherent_soundtrack",
+                    "sung_voice",
+                    "final_mix",
+                ],
+                "required_pipeline": {
+                    "interpreter": "Gemma 4 E4B IT GGUF via llama.cpp",
+                    "lyrics": "Gemma 4 E4B IT GGUF via llama.cpp",
+                    "technical": "Qwen3 4B GGUF via llama.cpp",
+                    "soundtrack": "MusicGen small, MusicGen medium if hardware allows",
+                    "singing_voice": "RVC / ACE-Step, so-vits-svc optional",
+                    "stems": "Demucs",
+                    "mixer": "ffmpeg",
+                },
+                "restrictions": {
+                    "not_short_format": True,
+                    "avoid_poor_repetition": True,
+                    "voice_must_be_sung": True,
+                    "video_optional": True,
+                    "load_models_on_demand": True,
+                },
                 "exports_dir": str(exports_dir),
                 "stems_dir": str(stems_dir),
                 "planned_exports": planned_final_mix_exports(),
@@ -42,7 +67,10 @@ class FullSongBuilder:
         (exports_dir / "final_mix.mock.txt").write_text(
             "Mock full song placeholder.\n"
             f"Sample: {latest_sample['sample_id']}\n"
-            f"Set: {latest_sample['set_id']}\n",
+            f"Set: {latest_sample['set_id']}\n"
+            "Scope: complete lullaby / emotional children song.\n"
+            "Pipeline: lyrics, structure, soundtrack, sung voice, stems, mix, WAV/MP3 export.\n"
+            "Video is optional and not required for song completion.\n",
             encoding="utf-8",
         )
         (exports_dir / "README.md").write_text(
@@ -57,6 +85,8 @@ class FullSongBuilder:
             "- `lyrics.md`\n"
             "- `manifest.json`\n\n"
             "MP3/M4A/OGG son formatos comprimidos para distribucion. WAV/FLAC/AIFF son formatos de alta calidad o lossless.\n\n"
+            "La cancion final debe ser una pieza completa con letra original, estructura musical, soundtrack, voz cantada y mezcla.\n"
+            "No se considera completo un Short, una repeticion simple o TTS hablado.\n\n"
             "En esta fase mock solo se genera `final_mix.mock.txt`.\n",
             encoding="utf-8",
         )
@@ -69,7 +99,8 @@ class FullSongBuilder:
             "- `drums.wav`\n"
             "- `bass.wav`\n"
             "- `music.wav`\n"
-            "- versiones `.flac` cuando se requiera compresion lossless.\n",
+            "- versiones `.flac` cuando se requiera compresion lossless.\n"
+            "- `demucs/` para separaciones futuras cuando el pipeline use Demucs.\n",
             encoding="utf-8",
         )
         return song_dir

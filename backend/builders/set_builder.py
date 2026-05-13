@@ -12,8 +12,8 @@ class SetBuilder:
 
     def create_first_valid_set(
         self,
-        project_name: str = "Proyecto automatico",
-        description: str = "Proyecto creado con los primeros drafts disponibles para validar instrumental, melodia y letra.",
+        project_name: str = "Cancion de cuna para Isabella",
+        description: str = "Cancion completa creada con los primeros drafts disponibles para validar instrumental, melodia y letra.",
     ) -> Path:
         instrumentals = self.storage.list_asset_drafts_by_type(AssetType.INSTRUMENTAL)
         melodies = self.storage.list_asset_drafts_by_type(AssetType.MELODY)

@@ -1,18 +1,24 @@
 # Song AI Generator
 
-Sistema modular en Python para generar canciones personalizadas mediante assets reutilizables:
+Sistema modular en Python para generar canciones personalizadas completas mediante assets reutilizables:
 
 - instrumental base,
 - melodia vocal adaptable,
 - letra dinamica.
 
-La aplicacion esta pensada para funcionar primero con mocks y providers locales, y despues permitir providers profesionales sin acoplar el core.
+La aplicacion esta pensada para funcionar primero con mocks y providers locales, y despues permitir providers profesionales sin acoplar el core. El caso guia actual es una cancion de cuna o cancion infantil/emocional completa, no un Short ni una letra simple repetitiva.
 
 ## Estado Actual
 
-Sprint actual: Sprint 13 en ejecucion: migracion web con backend hexagonal, Vue, Docker, SQLite y preparacion para modelos locales.
+Sprint actual: Sprint 14 en ejecucion: alcance real de cancion completa de cuna/infantil emocional y preparacion del pipeline local/hibrido.
 
 Ultimo ajuste:
+- Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
+- La referencia visual o de YouTube queda solo como inspiracion de sensibilidad/ternura; el video es opcional y no define el formato.
+- La prioridad del sistema queda fija: buena letra, buena intencion emocional, buena estructura musical, soundtrack coherente, voz cantada y mezcla final.
+- Se agregaron defaults de cancion de cuna para Isabella en la UI y en los mocks creativos.
+- Se configuro el stack local/hibrido recomendado: Gemma 4 E4B IT GGUF para interpreter/lyrics, Qwen3 4B GGUF para soporte tecnico, MusicGen para soundtrack, RVC/ACE-Step para voz cantada, Demucs para stems y ffmpeg para mezcla/export.
+- El sistema explicita que no debe priorizar canciones de 20 segundos, formato Short, repeticion excesiva, letras genericas ni TTS hablado como si fuera canto.
 - El proyecto fue inicializado como repositorio Git en `main` y subido a `https://github.com/jporras/song-ai`.
 - `docs/` queda como planeamiento inicial local y no se versiona en Git; el repositorio contiene solo el proyecto ejecutable, configuracion y documentacion operativa.
 - Se agrego estado de estudio IA en `GET /api/studio/status`: providers activos por rol, politica de SQLite como fuente activa, JSON como snapshots y handoffs via estado.
@@ -48,11 +54,64 @@ Completado:
 - Sprint 10: mezcla mock con verificacion de `ffmpeg` y contrato de stems.
 - Sprint 11: exportaciones completas planeadas por formato.
 - Sprint 12: plantillas reutilizables desde sets.
+- Sprint 13: estado de estudio IA, providers activos y contrato multi-modelo en UI/API.
 
 Pendiente siguiente:
-- Reemplazar mocks por providers reales sin cambiar el flujo.
-- Conectar `ModelOrchestrator` a workers bajo demanda.
-- Implementar descarga/carga controlada de modelos locales solo cuando el usuario lo active.
+- Conectar llama.cpp para Gemma 4 E4B IT GGUF y Qwen3 4B GGUF.
+- Conectar MusicGen small como primer generador real de soundtrack.
+- Definir worker de voz cantada con RVC/ACE-Step.
+- Conectar Demucs y ffmpeg para stems, mezcla y export WAV/MP3.
+- Implementar carga por demanda y liberacion de memoria entre modelos.
+
+## Alcance De Cancion
+
+El sistema debe crear una cancion completa de cuna, infantil/emocional o familiar personalizada. Puede usar nombre propio, narrativa suave, tono poetico y estructura musical completa.
+
+Estructuras soportadas:
+- intro,
+- verso 1,
+- pre-coro opcional,
+- coro,
+- verso 2,
+- puente opcional,
+- coro final,
+- outro.
+
+El sistema debe poder producir:
+- letra original de buena calidad,
+- estructura musical completa,
+- soundtrack/instrumental,
+- voz cantada,
+- mezcla final,
+- exportacion de audio,
+- video opcional solo como fase futura.
+
+No se considera objetivo principal:
+- canciones de 20 segundos,
+- formato Short,
+- repeticion excesiva,
+- letras genericas,
+- TTS hablado como si fuera canto.
+
+## Stack Local/Hibrido
+
+LLM via llama.cpp:
+- `interpreter`: Gemma 4 E4B IT GGUF para entender intencion, pedir/inferir datos faltantes, decidir estilo, tono y estructura, y coordinar servicios.
+- `lyrics`: Gemma 4 E4B IT GGUF para crear letra completa, mejorar metrica/rima, adaptar tono, estructurar secciones y generar prompts musicales.
+- `technical`: Qwen3 4B GGUF para soporte tecnico, codigo, debugging y arquitectura.
+
+Audio:
+- `soundtrack`: MusicGen small inicialmente; MusicGen medium si el hardware lo permite.
+- `singing_voice`: RVC / ACE-Step; so-vits-svc opcional.
+- `stems`: Demucs.
+- `mixer`: ffmpeg.
+
+Restricciones de ejecucion:
+- proyecto local/hibrido para portatil de 16 GB RAM,
+- no cargar todos los modelos al mismo tiempo,
+- cargar por demanda y liberar memoria,
+- persistir progreso en SQLite,
+- emitir eventos de progreso al usuario.
 
 ## Estructura
 
@@ -99,6 +158,23 @@ El contenedor `song-ai-app` incluye Node.js para construir Vue/Vite y Python/Fas
 SQLite guarda el indice de rutas de configuraciones JSON en `data/song_ai.sqlite`.
 
 No se usa Nginx en esta etapa porque FastAPI sirve la API y el frontend compilado por Vite desde el mismo contenedor. Si mas adelante se separan frontend/backend o se requiere reverse proxy/cache TLS, se agregara una carpeta `nginx/` con su configuracion Docker.
+
+### Uso Desde La UI
+
+1. Abre `http://localhost:8000`.
+2. En `Instrumental`, usa o ajusta los valores por defecto de cancion de cuna: genero `lullaby`, mood `tender`, BPM `72`, piano, music box, soft pad y strings.
+3. Guarda el instrumental.
+4. En `Melodia`, usa una guia de voz cantada suave, rango medio y estructura completa.
+5. Guarda la melodia.
+6. En `Letra`, usa el tema `lullaby for {name}` y placeholders como `name=Isabella`.
+7. Guarda la letra.
+8. En `Produccion`, crea el set/proyecto. El set solo se habilita si existen instrumental, melodia y letra.
+9. Crea el sample/checkpoint.
+10. Crea la cancion completa mock.
+11. Prepara mezcla y exports.
+12. En `Biblioteca`, revisa providers activos, estado del estudio IA, tasks, model runs, historico del proyecto y rutas JSON indexadas.
+
+El flujo actual crea artefactos mock, pero respeta el contrato final: cancion completa con letra original, estructura musical, soundtrack, voz cantada, mezcla y exportacion de audio. No apunta a Shorts ni a TTS hablado.
 
 ### Backend Web Local
 
@@ -153,7 +229,7 @@ El menu guia el flujo creativo:
 - marcar favoritos,
 - listar favoritos,
 - crear un set valido con los primeros drafts disponibles,
-- crear un sample mock desde el ultimo set,
+- crear un sample/checkpoint mock desde el ultimo set,
 - crear una cancion completa mock desde el ultimo sample.
 - listar providers disponibles,
 - preparar mezcla mock,
@@ -168,7 +244,7 @@ Flujo sugerido:
 3. Crear letra
 4. Listar drafts
 7. Crear set valido
-8. Crear sample mock
+8. Crear sample/checkpoint mock
 9. Crear cancion completa mock
 ```
 
@@ -227,7 +303,7 @@ Cada set es un proyecto musical y contiene:
 - IDs de instrumental, melodia y letra.
 - `compatibility_data`: estado de compatibilidad entre assets.
 
-Los samples mock se guardan en `data/samples/<sample_id>/sample.json` y `preview.txt`.
+Los samples mock se guardan en `data/samples/<sample_id>/sample.json` y `preview.txt`. En el alcance actual el sample es un checkpoint de calidad antes de la cancion completa, no el formato final ni un Short.
 
 Las canciones completas se guardan en `data/songs/<song_id>/`.
 
@@ -256,6 +332,14 @@ Formatos comunes planeados para `stems/`:
 - versiones `.flac` cuando se quiera compresion lossless.
 
 En la fase actual mock todavia no se genera audio real. Se crea `exports/final_mix.mock.txt` para marcar donde quedara el archivo final cuando se implemente el pipeline de audio con providers/ffmpeg.
+
+La cancion final real debe pasar por:
+- letra completa y prompt musical con Gemma,
+- soundtrack/instrumental con MusicGen,
+- voz cantada con RVC/ACE-Step,
+- stems opcionales con Demucs,
+- mezcla y normalizacion con ffmpeg,
+- export WAV/MP3.
 
 Las plantillas reutilizables se guardan en `data/templates/<template_id>/template.json`.
 

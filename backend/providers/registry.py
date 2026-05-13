@@ -1,4 +1,4 @@
-from config.model_settings import HuggingFaceModelSettings
+from config.model_settings import HuggingFaceModelSettings, LocalModelSettings
 from providers.base import InterpreterProvider, LyricsProvider, MusicProvider, VoiceProvider
 from providers.huggingface import (
     HuggingFaceInterpreterProvider,
@@ -12,8 +12,13 @@ from providers.pro import ProLyricsProvider, ProMusicProvider, ProVoiceProvider
 
 
 class ProviderRegistry:
-    def __init__(self, hf_settings: HuggingFaceModelSettings | None = None) -> None:
+    def __init__(
+        self,
+        hf_settings: HuggingFaceModelSettings | None = None,
+        local_settings: LocalModelSettings | None = None,
+    ) -> None:
         self.hf_settings = hf_settings
+        self.local_settings = local_settings
         self.interpreter_providers: list[InterpreterProvider] = [LocalInterpreterProvider()]
         self.music_providers: list[MusicProvider] = [LocalMusicProvider()]
         self.voice_providers: list[VoiceProvider] = [LocalVoiceProvider()]
@@ -50,13 +55,24 @@ class ProviderRegistry:
             "source_of_truth": "sqlite",
             "json_policy": "snapshots_regenerables",
             "mode": "mock_first_provider_ready",
+            "primary_goal": "complete_lullaby_or_children_emotional_song",
+            "priority_order": [
+                "good_lyrics",
+                "emotional_intent",
+                "musical_structure",
+                "coherent_soundtrack",
+                "sung_voice",
+                "final_mix",
+            ],
             "provider_contract": {
                 "interchangeable": True,
                 "direct_prompt_chaining": False,
                 "handoffs_via_state": ["sqlite", "tasks", "intent.json", "manifest.json", "set.json"],
+                "memory_policy": "load_on_demand_and_release",
             },
             "active_providers": active_providers,
             "model_status": self.model_status(),
+            "recommended_stack": self.recommended_stack(),
             "ready_roles": [
                 role
                 for role, provider in active_providers.items()
@@ -65,9 +81,34 @@ class ProviderRegistry:
         }
 
     def model_status(self) -> dict[str, object]:
+        local = self.local_settings.to_dict() if self.local_settings is not None else {}
         if self.hf_settings is None:
-            return {"huggingface": {"enabled": False, "reason": "No HuggingFace settings loaded"}}
-        return {"huggingface": HuggingFaceProviderStatus(self.hf_settings).to_dict()}
+            return {
+                "local": local,
+                "huggingface": {"enabled": False, "reason": "No HuggingFace settings loaded"},
+            }
+        return {
+            "local": local,
+            "huggingface": HuggingFaceProviderStatus(self.hf_settings).to_dict(),
+        }
+
+    def recommended_stack(self) -> dict[str, object]:
+        if self.local_settings is None:
+            return {}
+        return {
+            "llm": {
+                "interpreter": self.local_settings.interpreter_model,
+                "lyrics": self.local_settings.lyrics_model,
+                "technical": self.local_settings.technical_model,
+                "runtime": "llama.cpp",
+            },
+            "audio": {
+                "soundtrack": self.local_settings.soundtrack_model,
+                "singing_voice": self.local_settings.singing_voice_engine,
+                "stems": self.local_settings.stems_model,
+                "mixer": self.local_settings.mixer_engine,
+            },
+        }
 
     def _summarize(
         self,
@@ -106,7 +147,7 @@ class ProviderRegistry:
         }
 
     def _provider_status(self, provider_name: str) -> str:
-        if provider_name.startswith("local-"):
+        if provider_name.startswith(("local-", "llamacpp-", "musicgen-", "singing-voice-")):
             return "ready"
         if provider_name.startswith("huggingface-"):
             if self.hf_settings is not None and self.hf_settings.enabled:

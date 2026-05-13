@@ -18,12 +18,12 @@ class MockInstrumentalExplorer:
 
     def create_random(self) -> Path:
         return self.create_from_intent(
-            mood="warm",
-            genre="pop ballad",
-            bpm=96,
+            mood="tender",
+            genre="lullaby",
+            bpm=72,
             key="C major",
-            instruments=["piano", "soft drums", "bass"],
-            energy="medium",
+            instruments=["piano", "music box", "soft pad", "strings"],
+            energy="low",
             mode="random",
         )
 
@@ -45,7 +45,7 @@ class MockInstrumentalExplorer:
             instruments=instruments,
             energy=energy,
             vocal_style="soft lead",
-            lyrics_context=f"{genre} instrumental for a personalized song",
+            lyrics_context=f"{genre} soundtrack for a complete personalized lullaby or emotional children song",
         )
         manifest = Manifest(asset_id=asset_id, asset_type=AssetType.INSTRUMENTAL.value, provider="mock-local")
         draft = AssetDraft(
@@ -57,14 +57,15 @@ class MockInstrumentalExplorer:
         )
         draft_path = self.storage.save_asset_draft(draft)
         (draft_path / "instrumental.txt").write_text(
-            "Mock instrumental preview placeholder.\n"
+            "Mock soundtrack/instrumental placeholder for a complete song.\n"
             f"Mode: {mode}\n"
             f"Genre: {genre}\n"
             f"Mood: {mood}\n"
             f"BPM: {bpm}\n"
             f"Key: {key}\n"
             f"Instruments: {', '.join(instruments)}\n"
-            f"Energy: {energy}\n",
+            f"Energy: {energy}\n"
+            "Goal: support a full tender song, not a short repetitive loop.\n",
             encoding="utf-8",
         )
         return draft_path
@@ -76,11 +77,11 @@ class MockMelodyExplorer:
 
     def create_guided(self) -> Path:
         return self.create_from_intent(
-            mood="hopeful",
-            vocal_style="intimate tenor guide",
+            mood="tender",
+            vocal_style="soft lullaby singing",
             range_hint="medium",
-            structure="verse, chorus",
-            energy="medium",
+            structure="intro, verse 1, chorus, verse 2, final chorus, outro",
+            energy="low",
             mode="guided",
         )
 
@@ -101,7 +102,7 @@ class MockMelodyExplorer:
             instruments=["voice guide"],
             energy=energy,
             vocal_style=vocal_style,
-            lyrics_context=f"adaptable {structure} melody with {range_hint} vocal range",
+            lyrics_context=f"singable {structure} melody with {range_hint} vocal range for a complete lullaby",
         )
         manifest = Manifest(asset_id=asset_id, asset_type=AssetType.MELODY.value, provider="mock-local")
         draft = AssetDraft(
@@ -113,13 +114,14 @@ class MockMelodyExplorer:
         )
         draft_path = self.storage.save_asset_draft(draft)
         (draft_path / "melody.txt").write_text(
-            "Mock vocal melody guide placeholder.\n"
+            "Mock sung vocal melody guide placeholder.\n"
             f"Mode: {mode}\n"
             f"Vocal style: {vocal_style}\n"
             f"Range: {range_hint}\n"
             f"Structure: {structure}\n"
             f"Mood: {mood}\n"
-            f"Energy: {energy}\n",
+            f"Energy: {energy}\n"
+            "Goal: sung interpretation, not spoken TTS.\n",
             encoding="utf-8",
         )
         return draft_path
@@ -131,11 +133,11 @@ class MockLyricsExplorer:
 
     def create_markdown(self) -> Path:
         return self.create_from_intent(
-            theme="song for {name} about {occasion}",
+            theme="lullaby for {name}",
             language="Spanish",
-            tone="grateful",
-            structure="verse, chorus",
-            placeholders={"name": "Nombre", "occasion": "Ocasion"},
+            tone="tender",
+            structure="intro, verse 1, chorus, verse 2, bridge, final chorus, outro",
+            placeholders={"name": "Isabella", "image": "estrellita", "promise": "siempre cuidarte"},
             mode="markdown",
         )
 
@@ -154,9 +156,9 @@ class MockLyricsExplorer:
             key="C major",
             mood=tone,
             instruments=["lyrical phrasing"],
-            energy="medium",
-            vocal_style="clear emotional delivery",
-            lyrics_context=f"{language} lyrics: {theme}",
+            energy="low",
+            vocal_style="soft lullaby singing",
+            lyrics_context=f"{language} complete emotional lyrics: {theme}",
             placeholders=placeholders,
         )
         manifest = Manifest(asset_id=asset_id, asset_type=AssetType.LYRICS.value, provider="mock-local")
@@ -169,14 +171,29 @@ class MockLyricsExplorer:
         )
         draft_path = self.storage.save_asset_draft(draft)
         (draft_path / "lyrics.md").write_text(
-            "# Letra mock\n\n"
+            "# Letra mock completa\n\n"
             f"Idioma: {language}\n\n"
             f"Tono: {tone}\n\n"
             f"Tema: {theme}\n\n"
-            "## Verso\n"
-            "Hoy canto para {name}, con el alma en la voz.\n\n"
+            "## Intro\n"
+            "Duerme suave, {name}, la noche ya llego.\n\n"
+            "## Verso 1\n"
+            "Una {image} baja despacio a tu balcon,\n"
+            "trae luz en las manos y calma en la voz.\n\n"
             "## Coro\n"
-            "Que esta {occasion} brille como una cancion.\n",
+            "{name}, mi cielo, respira sin temor,\n"
+            "que en cada latido te guarda mi amor.\n\n"
+            "## Verso 2\n"
+            "Si el viento pregunta por donde andarás,\n"
+            "le dire que en mis sueños aprendiste a volar.\n\n"
+            "## Puente\n"
+            "Y aunque el mundo sea grande, yo voy a cantar\n"
+            "para {promise} hasta verte descansar.\n\n"
+            "## Coro final\n"
+            "{name}, mi cielo, la luna te abrazo,\n"
+            "duerme entre canciones, mañana hay sol.\n\n"
+            "## Outro\n"
+            "Duerme suave, {name}, aqui estoy yo.\n",
             encoding="utf-8",
         )
         return draft_path

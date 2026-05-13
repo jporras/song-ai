@@ -13,7 +13,7 @@ from providers.registry import ProviderRegistry
 def main() -> None:
     settings = Settings.load()
     storage = StorageManager(settings.data_dir)
-    providers = ProviderRegistry(settings.hf_models)
+    providers = ProviderRegistry(settings.hf_models, settings.local_models)
     created = storage.ensure_project_layout()
     studio_status = providers.studio_status()
 

@@ -25,7 +25,10 @@ class SongService:
         self.audio_mixer = AudioMixer(storage)
         self.export_builder = ExportBuilder(storage)
         self.template_builder = TemplateBuilder(storage)
-        self.provider_registry = ProviderRegistry(settings.hf_models if settings else None)
+        self.provider_registry = ProviderRegistry(
+            settings.hf_models if settings else None,
+            settings.local_models if settings else None,
+        )
         self.model_orchestrator = ModelOrchestrator(storage, self.provider_registry)
 
     def bootstrap(self) -> None:
@@ -99,7 +102,7 @@ class SongService:
         project_name = str(payload.get("project_name", "")).strip() or "Proyecto automatico"
         description = str(payload.get("description", "")).strip()
         if not description:
-            description = "Proyecto creado con los primeros drafts disponibles."
+            description = "Cancion completa creada con los primeros drafts disponibles."
         return self.path_response(
             self.set_builder.create_first_valid_set(
                 project_name=project_name,
@@ -137,7 +140,7 @@ class SongService:
                     f"y letra {song_set['lyrics_id']}."
                 ),
                 "compatibility_status": compatibility.get("status", "unknown"),
-                "next_suggestion": "El set ya tiene los puntos 1, 2 y 3 completos. Generar sample si aun no existe; si existe, pasar a cancion completa.",
+                "next_suggestion": "El set ya tiene instrumental, melodia y letra. Genera un sample como checkpoint y luego produce la cancion completa con soundtrack, voz cantada, mezcla y exports.",
             },
         }
 

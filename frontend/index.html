@@ -9,7 +9,7 @@
     <div id="app">
       <aside class="sidebar">
         <h1>Song AI</h1>
-        <p>Construye canciones por assets: instrumental, melodia y letra.</p>
+        <p>Crea canciones completas: letra, estructura, soundtrack, voz cantada, mezcla y export.</p>
         <nav>
           <button v-for="tab in tabs" :key="tab.id" :class="{active: activeTab === tab.id}" @click="activeTab = tab.id">
             {{ tab.label }}
@@ -208,7 +208,7 @@
           </div>
           <div class="field-block project-form">
             <span>Proyecto / Set</span>
-            <small>El set es el proyecto musical que agrupa los puntos 1, 2 y 3: instrumental, melodia y letra. La IA de asistencia recuerda esos requisitos antes de crear sample o cancion completa.</small>
+            <small>El set es el proyecto musical que agrupa instrumental, melodia y letra. La meta es una cancion completa, no un Short ni una letra repetitiva.</small>
             <div class="grid two">
               <label>Nombre del proyecto
                 <input v-model="projectSet.project_name" placeholder="Ej: Cumpleanos de Ana" />
@@ -307,7 +307,8 @@
             <div class="actions compact">
               <button @click="simulateHandoff('intent_extractor', 'extract_intent')">Simular extractor</button>
               <button @click="simulateHandoff('lyrics', 'improve_lyrics')">Simular letras</button>
-              <button @click="simulateHandoff('music', 'prepare_music_prompt')">Simular musica</button>
+              <button @click="simulateHandoff('soundtrack', 'generate_soundtrack')">Simular soundtrack</button>
+              <button @click="simulateHandoff('singing_voice', 'generate_sung_voice')">Simular voz cantada</button>
             </div>
           </div>
           <h2>Tasks</h2>
