@@ -153,6 +153,9 @@ class SongService:
     def model_status(self) -> dict[str, object]:
         return self.provider_registry.model_status()
 
+    def studio_status(self) -> dict[str, object]:
+        return self.provider_registry.studio_status()
+
     def orchestration_status(self) -> dict[str, object]:
         return self.model_orchestrator.status()
 

@@ -328,6 +328,33 @@ input {
   background: #fbfdff;
 }
 
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.provider-card,
+.studio-policy {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfdff;
+}
+
+.provider-card span,
+.studio-policy span {
+  color: #334155;
+  overflow-wrap: anywhere;
+}
+
+.studio-policy {
+  margin-bottom: 16px;
+}
+
 .orchestrator-panel span,
 .orchestrator-panel small {
   display: block;

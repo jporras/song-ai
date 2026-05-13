@@ -279,6 +279,23 @@
             </dl>
           </div>
           <h2>Providers</h2>
+          <div class="provider-grid">
+            <article v-for="provider in studioStatus.active_providers" :key="provider.type" class="provider-card">
+              <strong>{{ provider.type }}</strong>
+              <span>{{ provider.name }}</span>
+              <small>Estado: {{ provider.status }}</small>
+              <small>{{ provider.capabilities.join(', ') }}</small>
+            </article>
+          </div>
+          <div class="studio-policy">
+            <strong>Contrato del estudio IA</strong>
+            <span>Fuente activa: {{ studioStatus.source_of_truth || 'sqlite' }}</span>
+            <span>JSON: {{ studioStatus.json_policy || 'snapshots_regenerables' }}</span>
+            <span>Handoffs: {{ studioStatus.provider_contract?.handoffs_via_state?.join(', ') }}</span>
+          </div>
+          <h2>Modelos locales</h2>
+          <pre>{{ modelStatus }}</pre>
+          <h2>Catalogo completo de providers</h2>
           <pre>{{ providers }}</pre>
           <h2>Orquestacion multi-modelo</h2>
           <div class="orchestrator-panel">

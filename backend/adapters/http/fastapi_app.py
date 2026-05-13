@@ -76,6 +76,11 @@ def get_model_status() -> dict[str, Any]:
     return ok(service.model_status())
 
 
+@app.get("/api/studio/status")
+def get_studio_status() -> dict[str, Any]:
+    return ok(service.studio_status())
+
+
 @app.get("/api/orchestration/status")
 def get_orchestration_status() -> dict[str, Any]:
     return ok(service.orchestration_status())

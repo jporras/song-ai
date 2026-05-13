@@ -7,14 +7,14 @@ from providers.huggingface import (
     HuggingFaceProviderStatus,
     HuggingFaceVoiceProvider,
 )
-from providers.local import LocalLyricsProvider, LocalMusicProvider, LocalVoiceProvider
+from providers.local import LocalInterpreterProvider, LocalLyricsProvider, LocalMusicProvider, LocalVoiceProvider
 from providers.pro import ProLyricsProvider, ProMusicProvider, ProVoiceProvider
 
 
 class ProviderRegistry:
     def __init__(self, hf_settings: HuggingFaceModelSettings | None = None) -> None:
         self.hf_settings = hf_settings
-        self.interpreter_providers: list[InterpreterProvider] = []
+        self.interpreter_providers: list[InterpreterProvider] = [LocalInterpreterProvider()]
         self.music_providers: list[MusicProvider] = [LocalMusicProvider()]
         self.voice_providers: list[VoiceProvider] = [LocalVoiceProvider()]
         self.lyrics_providers: list[LyricsProvider] = [LocalLyricsProvider()]
@@ -36,6 +36,34 @@ class ProviderRegistry:
         }
         return summary
 
+    def active_providers(self) -> dict[str, dict[str, object]]:
+        return {
+            "interpreter": self._active_provider("interpreter", self.interpreter_providers),
+            "music": self._active_provider("music", self.music_providers),
+            "voice": self._active_provider("voice", self.voice_providers),
+            "lyrics": self._active_provider("lyrics", self.lyrics_providers),
+        }
+
+    def studio_status(self) -> dict[str, object]:
+        active_providers = self.active_providers()
+        return {
+            "source_of_truth": "sqlite",
+            "json_policy": "snapshots_regenerables",
+            "mode": "mock_first_provider_ready",
+            "provider_contract": {
+                "interchangeable": True,
+                "direct_prompt_chaining": False,
+                "handoffs_via_state": ["sqlite", "tasks", "intent.json", "manifest.json", "set.json"],
+            },
+            "active_providers": active_providers,
+            "model_status": self.model_status(),
+            "ready_roles": [
+                role
+                for role, provider in active_providers.items()
+                if provider.get("status") in {"ready", "placeholder_ready"}
+            ],
+        }
+
     def model_status(self) -> dict[str, object]:
         if self.hf_settings is None:
             return {"huggingface": {"enabled": False, "reason": "No HuggingFace settings loaded"}}
@@ -45,4 +73,45 @@ class ProviderRegistry:
         self,
         providers: list[InterpreterProvider] | list[MusicProvider] | list[VoiceProvider] | list[LyricsProvider],
     ) -> list[dict[str, object]]:
-        return [{"name": provider.name(), "capabilities": provider.capabilities()} for provider in providers]
+        return [
+            {
+                "name": provider.name(),
+                "capabilities": provider.capabilities(),
+                "status": self._provider_status(provider.name()),
+            }
+            for provider in providers
+        ]
+
+    def _active_provider(
+        self,
+        provider_type: str,
+        providers: list[InterpreterProvider] | list[MusicProvider] | list[VoiceProvider] | list[LyricsProvider],
+    ) -> dict[str, object]:
+        if not providers:
+            return {
+                "type": provider_type,
+                "name": f"{provider_type}-mock-provider",
+                "capabilities": ["mock_handoff"],
+                "status": "placeholder_ready",
+                "reason": "No concrete provider configured yet; orchestrator keeps the contract alive with a mock.",
+            }
+
+        provider = providers[0]
+        return {
+            "type": provider_type,
+            "name": provider.name(),
+            "capabilities": provider.capabilities(),
+            "status": self._provider_status(provider.name()),
+            "reason": "First registered provider is active for this role.",
+        }
+
+    def _provider_status(self, provider_name: str) -> str:
+        if provider_name.startswith("local-"):
+            return "ready"
+        if provider_name.startswith("huggingface-"):
+            if self.hf_settings is not None and self.hf_settings.enabled:
+                return "configured"
+            return "disabled"
+        if provider_name.startswith("pro-"):
+            return "placeholder_ready"
+        return "unknown"

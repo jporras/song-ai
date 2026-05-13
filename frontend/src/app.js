@@ -63,6 +63,8 @@ createApp({
       sets: [],
       selectedSet: null,
       providers: {},
+      studioStatus: {},
+      modelStatus: {},
       orchestrationStatus: {},
       tasks: [],
       modelRuns: [],
@@ -171,9 +173,17 @@ createApp({
       this.options = payload.data;
     },
     async loadProviders() {
-      const response = await fetch(apiUrl("/api/providers"));
-      const payload = await response.json();
+      const [providersResponse, studioResponse, modelResponse] = await Promise.all([
+        fetch(apiUrl("/api/providers")),
+        fetch(apiUrl("/api/studio/status")),
+        fetch(apiUrl("/api/models/status")),
+      ]);
+      const payload = await providersResponse.json();
+      const studioPayload = await studioResponse.json();
+      const modelPayload = await modelResponse.json();
       this.providers = payload.data;
+      this.studioStatus = studioPayload.data;
+      this.modelStatus = modelPayload.data;
     },
     async loadOrchestration() {
       const [statusResponse, tasksResponse, runsResponse] = await Promise.all([

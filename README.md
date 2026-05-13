@@ -13,8 +13,11 @@ La aplicacion esta pensada para funcionar primero con mocks y providers locales,
 Sprint actual: Sprint 13 en ejecucion: migracion web con backend hexagonal, Vue, Docker, SQLite y preparacion para modelos locales.
 
 Ultimo ajuste:
-- Se agrego `docs/MULTI_MODEL_MASTER_SPEC.md` como especificacion maestra del sistema multi-modelo.
-- Estructura alineada con `docs/TECHNICAL_SPEC.md`: el codigo Python vive en `backend/`.
+- El proyecto fue inicializado como repositorio Git en `main` y subido a `https://github.com/jporras/song-ai`.
+- `docs/` queda como planeamiento inicial local y no se versiona en Git; el repositorio contiene solo el proyecto ejecutable, configuracion y documentacion operativa.
+- Se agrego estado de estudio IA en `GET /api/studio/status`: providers activos por rol, politica de SQLite como fuente activa, JSON como snapshots y handoffs via estado.
+- La UI de Biblioteca muestra providers activos, estado de modelos locales y contrato del estudio IA.
+- Estructura alineada con arquitectura backend/frontend: el codigo Python vive en `backend/`.
 - Entorno virtual local creado en `.venv` con Python 3.11.0.
 - Las opciones de estado/verificacion/listado de carpetas salieron del menu principal y ahora viven como diagnostico de test.
 - El menu principal ahora guia al usuario por procesos creativos: instrumental, melodia, letra, set, sample y cancion completa.
@@ -48,21 +51,8 @@ Completado:
 
 Pendiente siguiente:
 - Reemplazar mocks por providers reales sin cambiar el flujo.
-- Conectar `ModelOrchestrator` a providers reales y workers bajo demanda.
-
-## Especificacion Maestra
-
-La vision multi-modelo vive en:
-
-- `docs/MULTI_MODEL_MASTER_SPEC.md`
-
-Ese documento define:
-- filosofia del sistema como estudio musical IA,
-- roles de assistant, intent extractor, music providers, voice providers y audio pipeline,
-- handoffs entre modelos,
-- persistencia con SQLite como fuente activa,
-- JSON exportables como snapshots,
-- fases completas desde conversacion inicial hasta exportacion y plantillas.
+- Conectar `ModelOrchestrator` a workers bajo demanda.
+- Implementar descarga/carga controlada de modelos locales solo cuando el usuario lo active.
 
 ## Estructura
 
@@ -87,7 +77,6 @@ data/
   samples/
   songs/
   templates/
-docs/
 frontend/
   src/
 ```
@@ -293,6 +282,21 @@ La API expone este indice en:
 GET /api/json-configs
 ```
 
+El estado activo del estudio IA se expone en:
+
+```text
+GET /api/studio/status
+GET /api/models/status
+GET /api/providers
+```
+
+`GET /api/studio/status` indica:
+- providers activos por rol (`interpreter`, `music`, `voice`, `lyrics`),
+- que SQLite es la fuente activa,
+- que los JSON son snapshots regenerables,
+- que los handoffs entre modelos deben pasar por SQLite, tasks, `intent.json`, `manifest.json` o `set.json`,
+- que no hay prompts encadenados directamente entre modelos.
+
 Los sets tambien se guardan en SQLite para que la interfaz pueda listarlos, mostrarlos como proyectos y enseñar su configuracion cuando el usuario lo pida:
 
 ```text
@@ -305,6 +309,7 @@ GET /api/tasks
 GET /api/model-runs
 GET /api/project-events
 POST /api/orchestration/handoff
+GET /api/studio/status
 ```
 
 `POST /api/sets` recibe opcionalmente:

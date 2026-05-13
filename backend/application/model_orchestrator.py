@@ -28,7 +28,8 @@ class ModelOrchestrator:
         self.provider_registry = provider_registry
 
     def status(self) -> dict[str, object]:
-        latest_task = self.storage.list_tasks()[0] if self.storage.list_tasks() else None
+        tasks = self.storage.list_tasks()
+        latest_task = tasks[0] if tasks else None
         return {
             "mode": "mock_orchestrator",
             "memory_policy": "one_heavy_model_at_a_time",
@@ -36,6 +37,7 @@ class ModelOrchestrator:
             "active_model": None,
             "latest_task": latest_task,
             "available_roles": list(self.ROLE_PROVIDER_KEYS),
+            "active_providers": self.provider_registry.active_providers(),
         }
 
     def run_handoff(self, payload: dict[str, object]) -> dict[str, object]:
@@ -173,13 +175,7 @@ class ModelOrchestrator:
 
     def select_provider(self, model_role: str) -> dict[str, object]:
         provider_key = self.ROLE_PROVIDER_KEYS[model_role]
-        providers = self.provider_registry.summary().get(provider_key, [])
-        if not providers:
-            return {
-                "name": f"{model_role}-mock-provider",
-                "capabilities": ["mock_handoff"],
-            }
-        return providers[0]
+        return self.provider_registry.active_providers()[provider_key]
 
     def build_mock_result(
         self,

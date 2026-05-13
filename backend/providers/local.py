@@ -1,4 +1,20 @@
-from providers.base import LyricsProvider, MusicProvider, VoiceProvider
+from providers.base import InterpreterProvider, LyricsProvider, MusicProvider, VoiceProvider
+
+
+class LocalInterpreterProvider(InterpreterProvider):
+    def name(self) -> str:
+        return "local-interpreter-mock"
+
+    def capabilities(self) -> list[str]:
+        return ["intent_interpretation_mock", "project_guidance_mock", "handoff_planning_mock"]
+
+    def interpret(self, text: str, target: str) -> dict[str, object]:
+        return {
+            "target": target,
+            "input": text,
+            "mode": "local_mock",
+            "summary": "Interpretacion local sin API real, lista para persistirse como estado.",
+        }
 
 
 class LocalMusicProvider(MusicProvider):
