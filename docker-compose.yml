@@ -1,0 +1,13 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: song-ai-app
+    ports:
+      - "8000:8000"
+    volumes:
+      - song_ai_data:/app/data
+
+volumes:
+  song_ai_data:

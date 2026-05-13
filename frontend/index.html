@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Song AI Generator</title>
+  </head>
+  <body>
+    <div id="app">
+      <aside class="sidebar">
+        <h1>Song AI</h1>
+        <p>Construye canciones por assets: instrumental, melodia y letra.</p>
+        <nav>
+          <button v-for="tab in tabs" :key="tab.id" :class="{active: activeTab === tab.id}" @click="activeTab = tab.id">
+            {{ tab.label }}
+          </button>
+        </nav>
+      </aside>
+
+      <main class="workspace">
+        <section class="toolbar">
+          <div>
+            <strong>{{ currentTab.label }}</strong>
+            <span>{{ currentTab.hint }}</span>
+          </div>
+          <button @click="refreshDrafts">Actualizar drafts</button>
+        </section>
+
+        <section v-if="activeTab === 'instrumental'" class="panel">
+          <div class="grid">
+            <label class="field-card">Genero
+              <small>{{ help('Estilo o genero') }}</small>
+              <select v-model="instrumental.genre">
+                <option v-for="item in options.genres" :key="item">{{ item }}</option>
+              </select>
+              <div class="inline-input">
+                <input v-model="custom.instrumental.genre" placeholder="Otro genero o idea libre" />
+                <button @click="applyCustom('instrumental', 'genre')">Usar</button>
+              </div>
+            </label>
+            <label class="field-card">Mood
+              <small>{{ help('Atmosfera emocional') }}</small>
+              <select v-model="instrumental.mood">
+                <option v-for="item in options.moods" :key="item">{{ item }}</option>
+              </select>
+              <div class="inline-input">
+                <input v-model="custom.instrumental.mood" placeholder="Ej: feliz pero nostalgico" />
+                <button @click="applyCustom('instrumental', 'mood')">Usar</button>
+              </div>
+            </label>
+            <label class="field-card">BPM
+              <small>{{ help('BPM') }}</small>
+              <select v-model.number="instrumental.bpm">
+                <option v-for="item in options.bpm_presets" :key="item" :value="Number(item)">{{ item }}</option>
+              </select>
+              <div class="inline-input">
+                <input v-model="custom.instrumental.bpm" placeholder="Ej: 112" />
+                <button @click="applyCustom('instrumental', 'bpm')">Usar</button>
+              </div>
+            </label>
+            <label class="field-card">Tonalidad
+              <small>{{ help('Tonalidad') }}</small>
+              <select v-model="instrumental.key">
+                <option v-for="item in options.keys" :key="item">{{ item }}</option>
+              </select>
+              <div class="inline-input">
+                <input v-model="custom.instrumental.key" placeholder="Ej: A minor" />
+                <button @click="applyCustom('instrumental', 'key')">Usar</button>
+              </div>
+            </label>
+            <label class="field-card">Energia
+              <small>{{ help('Energia') }}</small>
+              <select v-model="instrumental.energy">
+                <option v-for="item in options.energies" :key="item">{{ item }}</option>
+              </select>
+            </label>
+          </div>
+          <div class="field-block">
+            <span>Instrumentos</span>
+            <small>{{ help('Instrumentos') }}</small>
+            <div class="family-grid">
+              <article v-for="(family, familyName) in options.instrument_families" :key="familyName" class="family">
+                <header>
+                  <strong>{{ familyName }}</strong>
+                  <button @click="selectInstrumentFamily(familyName)">Agregar familia</button>
+                </header>
+                <div class="chips">
+                  <button
+                    v-for="instrument in family"
+                    :key="instrument"
+                    :class="['chip-button', { selected: instrumental.instruments.includes(instrument) }]"
+                    @click="toggleInstrument(instrument)"
+                  >
+                    {{ instrument }}
+                  </button>
+                </div>
+              </article>
+            </div>
+            <div class="selection-summary">
+              <strong>Seleccionados:</strong>
+              <span>{{ instrumental.instruments.join(', ') || 'ninguno' }}</span>
+              <button @click="clearInstruments">Limpiar</button>
+            </div>
+          </div>
+          <button class="primary" @click="createInstrumental">Guardar instrumental</button>
+        </section>
+
+        <section v-if="activeTab === 'melody'" class="panel">
+          <div class="grid">
+            <label class="field-card">Estilo vocal
+              <small>{{ help('Estilo vocal') }}</small>
+              <select v-model="melody.vocal_style">
+                <option v-for="item in options.vocal_styles" :key="item">{{ item }}</option>
+              </select>
+              <div class="inline-input">
+                <input v-model="custom.melody.vocal_style" placeholder="Ej: voz femenina calida" />
+                <button @click="applyCustom('melody', 'vocal_style')">Usar</button>
+              </div>
+            </label>
+            <label class="field-card">Rango
+              <small>{{ help('Rango vocal') }}</small>
+              <select v-model="melody.range_hint">
+                <option v-for="item in options.vocal_ranges" :key="item">{{ item }}</option>
+              </select>
+            </label>
+            <label class="field-card">Estructura
+              <small>{{ help('Estructura') }}</small>
+              <select v-model="melody.structure">
+                <option v-for="item in options.song_structures" :key="item">{{ item }}</option>
+              </select>
+              <div class="inline-input">
+                <input v-model="custom.melody.structure" placeholder="Ej: verso, precoro, coro grande" />
+                <button @click="applyCustom('melody', 'structure')">Usar</button>
+              </div>
+            </label>
+            <label class="field-card">Mood
+              <small>{{ help('Intencion emocional') }}</small>
+              <select v-model="melody.mood">
+                <option v-for="item in options.moods" :key="item">{{ item }}</option>
+              </select>
+            </label>
+            <label class="field-card">Energia
+              <small>{{ help('Energia') }}</small>
+              <select v-model="melody.energy">
+                <option v-for="item in options.energies" :key="item">{{ item }}</option>
+              </select>
+            </label>
+          </div>
+          <button class="primary" @click="createMelody">Guardar melodia</button>
+        </section>
+
+        <section v-if="activeTab === 'lyrics'" class="panel">
+          <div class="grid">
+            <label class="field-card">Idioma
+              <small>{{ help('Idioma') }}</small>
+              <select v-model="lyrics.language">
+                <option v-for="item in options.languages" :key="item">{{ item }}</option>
+              </select>
+            </label>
+            <label class="field-card">Tono
+              <small>{{ help('Tono emocional') }}</small>
+              <select v-model="lyrics.tone">
+                <option v-for="item in options.moods" :key="item">{{ item }}</option>
+              </select>
+            </label>
+            <label class="field-card">Tema
+              <small>{{ help('Tema de la cancion') }}</small>
+              <select v-model="lyrics.theme">
+                <option v-for="item in options.lyric_themes" :key="item">{{ item }}</option>
+              </select>
+              <div class="inline-input">
+                <input v-model="custom.lyrics.theme" placeholder="Ej: una cancion para {name}" />
+                <button @click="applyCustom('lyrics', 'theme')">Usar</button>
+              </div>
+            </label>
+            <label class="field-card">Estructura
+              <small>{{ help('Estructura lirica') }}</small>
+              <select v-model="lyrics.structure">
+                <option v-for="item in options.song_structures" :key="item">{{ item }}</option>
+              </select>
+            </label>
+          </div>
+          <div class="field-block">
+            <span>Placeholders</span>
+            <small>Campos que se reemplazan despues, como nombre u ocasion.</small>
+            <div class="actions compact">
+              <button v-for="(_, name) in options.placeholder_presets" :key="name" @click="setPlaceholderPreset(name)">
+                {{ name }}
+              </button>
+            </div>
+            <div class="grid two">
+              <label>name <input v-model="lyrics.placeholders.name" /></label>
+              <label>occasion <input v-model="lyrics.placeholders.occasion" /></label>
+            </div>
+          </div>
+          <button class="primary" @click="createLyrics">Guardar letra</button>
+        </section>
+
+        <section v-if="activeTab === 'production'" class="panel">
+          <div class="assistant-card">
+            <strong>Asistencia IA</strong>
+            <p>{{ assistantReminder }}</p>
+            <div class="readiness-grid">
+              <span v-for="item in draftReadiness" :key="item.type" :class="['readiness-pill', { ready: item.count > 0 }]">
+                {{ item.label }}: {{ item.count > 0 ? 'completo' : 'pendiente' }}
+              </span>
+            </div>
+          </div>
+          <div class="field-block project-form">
+            <span>Proyecto / Set</span>
+            <small>El set es el proyecto musical que agrupa los puntos 1, 2 y 3: instrumental, melodia y letra. La IA de asistencia recuerda esos requisitos antes de crear sample o cancion completa.</small>
+            <div class="grid two">
+              <label>Nombre del proyecto
+                <input v-model="projectSet.project_name" placeholder="Ej: Cumpleanos de Ana" />
+              </label>
+              <label>Descripcion
+                <input v-model="projectSet.description" placeholder="Ej: Balada pop calida para una dedicatoria familiar" />
+              </label>
+            </div>
+          </div>
+          <div class="step-list">
+            <article v-for="step in productionSteps" :key="step.url" class="step">
+              <div>
+                <strong>{{ step.label }}</strong>
+                <span>{{ step.hint }}</span>
+              </div>
+              <button v-if="step.url === '/api/sets'" :disabled="!canCreateSet" @click="createSet">Ejecutar</button>
+              <button v-else @click="postAction(step.url, {}, step.label)">Ejecutar</button>
+            </article>
+          </div>
+        </section>
+
+        <section v-if="activeTab === 'library'" class="panel">
+          <h2>Drafts</h2>
+          <div class="list">
+            <article v-for="draft in drafts" :key="draft.asset_id">
+              <strong>{{ draft.asset_type }}</strong>
+              <span>{{ draft.asset_id }}</span>
+              <button @click="favorite(draft.asset_id)">Favorito</button>
+            </article>
+          </div>
+          <h2>Sets guardados en SQLite</h2>
+          <div class="section-actions">
+            <button @click="postAction('/api/sets/export', {}, 'Sets exportados')">Exportar sets a JSON</button>
+          </div>
+          <div class="list">
+            <article v-for="songSet in sets" :key="songSet.set_id" class="set-row">
+              <strong>{{ songSet.project_name }}</strong>
+              <span>
+                {{ songSet.description || songSet.ai_management.summary }}
+                <small>{{ songSet.created_at }}</small>
+              </span>
+              <button @click="showSet(songSet.set_id)">Ver config</button>
+            </article>
+          </div>
+          <div v-if="selectedSet" class="set-detail">
+            <h3>Configuracion del set</h3>
+            <dl>
+              <dt>Proyecto</dt>
+              <dd>{{ selectedSet.project_name }}</dd>
+              <dt>Fecha</dt>
+              <dd>{{ selectedSet.created_at }}</dd>
+              <dt>Descripcion</dt>
+              <dd>{{ selectedSet.description }}</dd>
+              <dt>ID tecnico</dt>
+              <dd>{{ selectedSet.set_id }}</dd>
+              <dt>Instrumental</dt>
+              <dd>{{ selectedSet.instrumental_id }}</dd>
+              <dt>Melodia</dt>
+              <dd>{{ selectedSet.melody_id }}</dd>
+              <dt>Letra</dt>
+              <dd>{{ selectedSet.lyrics_id }}</dd>
+              <dt>Compatibilidad</dt>
+              <dd>{{ selectedSet.ai_management.compatibility_status }}</dd>
+              <dt>Sugerencia IA</dt>
+              <dd>{{ selectedSet.ai_management.next_suggestion }}</dd>
+              <dt>JSON</dt>
+              <dd>{{ selectedSet.json_path }}</dd>
+            </dl>
+          </div>
+          <h2>Providers</h2>
+          <pre>{{ providers }}</pre>
+          <h2>Orquestacion multi-modelo</h2>
+          <div class="orchestrator-panel">
+            <div>
+              <strong>Estado</strong>
+              <span>{{ orchestrationStatus.mode || 'sin estado' }}</span>
+              <small>Politica: {{ orchestrationStatus.memory_policy || 'pendiente' }}</small>
+            </div>
+            <div class="actions compact">
+              <button @click="simulateHandoff('intent_extractor', 'extract_intent')">Simular extractor</button>
+              <button @click="simulateHandoff('lyrics', 'improve_lyrics')">Simular letras</button>
+              <button @click="simulateHandoff('music', 'prepare_music_prompt')">Simular musica</button>
+            </div>
+          </div>
+          <h2>Tasks</h2>
+          <div class="list">
+            <article v-for="task in tasks" :key="task.task_id" class="task-row">
+              <strong>{{ task.status }} {{ task.progress }}%</strong>
+              <span>{{ task.task_type }} / {{ task.model_role }}<small>{{ task.message }}</small></span>
+              <button @click="loadOrchestration">Actualizar</button>
+            </article>
+          </div>
+          <h2>Model runs</h2>
+          <div class="list">
+            <article v-for="run in modelRuns" :key="run.run_id" class="task-row">
+              <strong>{{ run.status }}</strong>
+              <span>{{ run.provider_name }} / {{ run.model_name }}<small>{{ run.model_role }}</small></span>
+              <small>{{ run.started_at }}</small>
+            </article>
+          </div>
+          <h2>Historico del proyecto</h2>
+          <div class="timeline">
+            <article v-for="event in projectEvents" :key="event.event_id" class="timeline-event">
+              <strong>{{ event.phase }}</strong>
+              <span>{{ event.actor }} / {{ event.model_role }} / {{ event.status }}</span>
+              <p>{{ event.message }}</p>
+              <small>{{ event.project_name }} - {{ event.created_at }}</small>
+            </article>
+          </div>
+          <h2>Rutas JSON indexadas en SQLite</h2>
+          <div class="list">
+            <article v-for="item in jsonConfigs" :key="item.id">
+              <strong>{{ item.kind }}</strong>
+              <span>{{ item.path }}</span>
+              <small>{{ item.created_at }}</small>
+            </article>
+          </div>
+        </section>
+
+        <section class="log">
+          <strong>Actividad</strong>
+          <p v-for="item in messages" :key="item">{{ item }}</p>
+        </section>
+
+        <footer class="assistant-footer">
+          <div>
+            <strong>{{ footerAssistant.title }}</strong>
+            <p>{{ footerAssistant.message }}</p>
+            <div class="readiness-grid">
+              <span v-for="item in footerAssistant.checks" :key="item.type" :class="['readiness-pill', { ready: item.count > 0 }]">
+                {{ item.label }}: {{ item.count > 0 ? 'listo' : 'faltante' }}
+              </span>
+            </div>
+          </div>
+          <div class="footer-actions">
+            <button v-for="action in footerAssistant.actions" :key="action.label" @click="activeTab = action.tab">
+              {{ action.label }}
+            </button>
+          </div>
+        </footer>
+      </main>
+    </div>
+    <script type="module" src="/src/app.js"></script>
+  </body>
+</html>
