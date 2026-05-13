@@ -82,8 +82,63 @@ class StorageManager:
                 return draft
         return None
 
+    def get_asset_draft_detail(self, asset_id: str) -> dict[str, object]:
+        draft = self.find_asset_draft(asset_id)
+        if draft is None:
+            raise ValueError("Asset no encontrado.")
+
+        draft_dir = Path(draft["path"])
+        detail: dict[str, object] = {**draft}
+        for name in ("manifest.json", "intent.json", "metadata.json"):
+            path = draft_dir / name
+            if path.exists():
+                detail[name.replace(".json", "")] = self.read_json(path)
+
+        asset_type = str(draft["asset_type"])
+        content_file = {
+            AssetType.INSTRUMENTAL.value: "instrumental.txt",
+            AssetType.MELODY.value: "melody.txt",
+            AssetType.LYRICS.value: "lyrics.md",
+        }.get(asset_type)
+        if content_file:
+            path = draft_dir / content_file
+            if path.exists():
+                detail["content_path"] = str(path)
+                detail["content"] = path.read_text(encoding="utf-8")
+        return detail
+
     def list_asset_drafts_by_type(self, asset_type: AssetType) -> list[dict[str, str]]:
         return [draft for draft in self.list_asset_drafts() if draft["asset_type"] == asset_type.value]
+
+    def get_lyrics_markdown(self, asset_id: str) -> dict[str, str]:
+        draft = self.find_asset_draft(asset_id)
+        if draft is None or draft["asset_type"] != AssetType.LYRICS.value:
+            raise ValueError("Letra no encontrada.")
+
+        lyrics_path = Path(draft["path"]) / "lyrics.md"
+        if not lyrics_path.exists():
+            raise ValueError("El draft de letra no tiene lyrics.md.")
+
+        return {
+            "asset_id": asset_id,
+            "path": str(lyrics_path),
+            "content": lyrics_path.read_text(encoding="utf-8"),
+        }
+
+    def update_lyrics_markdown(self, asset_id: str, content: str) -> dict[str, str]:
+        draft = self.find_asset_draft(asset_id)
+        if draft is None or draft["asset_type"] != AssetType.LYRICS.value:
+            raise ValueError("Letra no encontrada.")
+        if not content.strip():
+            raise ValueError("La letra no puede quedar vacia.")
+
+        lyrics_path = Path(draft["path"]) / "lyrics.md"
+        lyrics_path.write_text(content.rstrip() + "\n", encoding="utf-8")
+        return {
+            "asset_id": asset_id,
+            "path": str(lyrics_path),
+            "content": lyrics_path.read_text(encoding="utf-8"),
+        }
 
     def favorite_asset(self, asset_id: str) -> dict[str, str] | None:
         draft = self.find_asset_draft(asset_id)
@@ -158,6 +213,15 @@ class StorageManager:
         payload["path"] = latest["path"]
         return payload
 
+    def list_samples_for_set(self, set_id: str) -> list[dict[str, object]]:
+        samples: list[dict[str, object]] = []
+        for sample in self.list_samples():
+            payload = self.read_json(Path(sample["path"]) / "sample.json")
+            if str(payload.get("set_id", "")) == set_id:
+                payload["path"] = sample["path"]
+                samples.append(payload)
+        return samples
+
     def list_songs(self) -> list[dict[str, str]]:
         songs_dir = self.data_dir / "songs"
         if not songs_dir.exists():
@@ -179,6 +243,15 @@ class StorageManager:
         payload = self.read_json(Path(latest["path"]) / "song.json")
         payload["path"] = latest["path"]
         return payload
+
+    def list_songs_for_set(self, set_id: str) -> list[dict[str, object]]:
+        songs: list[dict[str, object]] = []
+        for song in self.list_songs():
+            payload = self.read_json(Path(song["path"]) / "song.json")
+            if str(payload.get("set_id", "")) == set_id:
+                payload["path"] = song["path"]
+                songs.append(payload)
+        return songs
 
     def get_asset_draft_dir(self, asset_type: AssetType, asset_id: str) -> Path:
         return self.get_asset_parent_dir(asset_type) / asset_id

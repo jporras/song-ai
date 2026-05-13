@@ -194,9 +194,47 @@
             </div>
           </div>
           <button class="primary" @click="createLyrics">Guardar letra</button>
+          <div class="lyrics-editor">
+            <header>
+              <div>
+                <h3>Editor de letra</h3>
+                <small>Modifica el `lyrics.md` del draft seleccionado sin tocar instrumental ni melodia.</small>
+              </div>
+              <div class="editor-actions">
+                <select v-model="lyricsEditor.selectedAssetId" @change="loadLyricsDraft()">
+                  <option value="">Seleccionar letra</option>
+                  <option v-for="draft in lyricsDrafts" :key="draft.asset_id" :value="draft.asset_id">
+                    {{ draft.asset_id }}
+                  </option>
+                </select>
+                <button :disabled="!lyricsEditor.selectedAssetId || !lyricsEditor.dirty" @click="saveLyricsDraft">
+                  Guardar cambios
+                </button>
+              </div>
+            </header>
+            <textarea
+              v-model="lyricsEditor.content"
+              :disabled="!lyricsEditor.selectedAssetId"
+              placeholder="Selecciona una letra existente o crea una nueva para editarla aqui."
+              @input="lyricsEditor.dirty = true"
+            ></textarea>
+            <div class="editor-meta">
+              <small>{{ lyricsEditor.path || 'Sin archivo seleccionado' }}</small>
+              <small>{{ lyricsEditor.dirty ? 'Cambios sin guardar' : 'Guardado' }}</small>
+            </div>
+          </div>
         </section>
 
         <section v-if="activeTab === 'production'" class="panel">
+          <div v-if="activeProject" class="active-project">
+            <strong>Proyecto activo: {{ activeProject.project.project_name }}</strong>
+            <span>{{ activeProject.project.description }}</span>
+            <small>
+              Set {{ activeProject.set.set_id }} -
+              {{ activeProject.samples.length }} sample(s) -
+              {{ activeProject.songs.length }} cancion(es)
+            </small>
+          </div>
           <div class="assistant-card">
             <strong>Asistencia IA</strong>
             <p>{{ assistantReminder }}</p>
@@ -205,6 +243,38 @@
                 {{ item.label }}: {{ item.count > 0 ? 'completo' : 'pendiente' }}
               </span>
             </div>
+          </div>
+          <div class="gemma-card">
+            <header>
+              <div>
+                <strong>Gemma transversal</strong>
+                <span>Gemma 4 E4B IT GGUF - modo mock hasta conectar llama.cpp</span>
+              </div>
+              <button @click="askGemmaAssistant" :disabled="gemmaAssistant.loading">
+                {{ gemmaAssistant.loading ? 'Revisando...' : 'Consultar Gemma' }}
+              </button>
+            </header>
+            <textarea
+              v-model="gemmaAssistant.question"
+              placeholder="Pregunta al asistente sobre el proyecto activo."
+            ></textarea>
+            <div v-if="gemmaAssistant.response" class="gemma-response">
+              <strong>{{ gemmaAssistant.response.project_name || 'Sin proyecto activo' }}</strong>
+              <p>{{ gemmaAssistant.response.message }}</p>
+              <div class="chips">
+                <span v-for="item in gemmaAssistant.response.context_used" :key="item" class="context-chip">{{ item }}</span>
+              </div>
+              <ul>
+                <li v-for="item in gemmaAssistant.response.recommendations" :key="item">{{ item }}</li>
+              </ul>
+            </div>
+          </div>
+          <div class="quick-export">
+            <div>
+              <strong>MP3 predefinido</strong>
+              <span>Crea la cancion de cuna para Isabella con los defaults actuales y exporta WAV/MP3.</span>
+            </div>
+            <button class="primary" @click="createPresetMp3">Crear MP3 predefinido</button>
           </div>
           <div class="field-block project-form">
             <span>Proyecto / Set</span>
@@ -250,8 +320,29 @@
                 {{ songSet.description || songSet.ai_management.summary }}
                 <small>{{ songSet.created_at }}</small>
               </span>
-              <button @click="showSet(songSet.set_id)">Ver config</button>
+              <div class="row-actions">
+                <button @click="loadProject(songSet.set_id)">Cargar proyecto</button>
+                <button @click="showSet(songSet.set_id)">Ver config</button>
+              </div>
             </article>
+          </div>
+          <div v-if="activeProject" class="project-context">
+            <h3>Proyecto activo</h3>
+            <dl>
+              <dt>Nombre</dt>
+              <dd>{{ activeProject.project.project_name }}</dd>
+              <dt>Instrumental</dt>
+              <dd>{{ activeProject.assets.instrumental.asset_id }}</dd>
+              <dt>Melodia</dt>
+              <dd>{{ activeProject.assets.melody.asset_id }}</dd>
+              <dt>Letra</dt>
+              <dd>{{ activeProject.assets.lyrics.asset_id }}</dd>
+              <dt>Samples</dt>
+              <dd>{{ activeProject.samples.length }}</dd>
+              <dt>Canciones</dt>
+              <dd>{{ activeProject.songs.length }}</dd>
+            </dl>
+            <pre>{{ activeProject.assets.lyrics.content }}</pre>
           </div>
           <div v-if="selectedSet" class="set-detail">
             <h3>Configuracion del set</h3>

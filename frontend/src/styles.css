@@ -127,12 +127,19 @@ small {
 }
 
 select,
-input {
+input,
+textarea {
   width: 100%;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
   padding: 10px;
   font: inherit;
+}
+
+textarea {
+  min-height: 360px;
+  resize: vertical;
+  line-height: 1.45;
 }
 
 .field-block {
@@ -226,6 +233,75 @@ input {
   margin: -4px 0 10px;
 }
 
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.active-project,
+.project-context {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+  background: #eff6ff;
+}
+
+.active-project span,
+.active-project small {
+  color: #334155;
+}
+
+.project-context dl {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 8px 14px;
+  margin: 0;
+}
+
+.project-context dt {
+  font-weight: 700;
+}
+
+.project-context dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.lyrics-editor {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 16px;
+}
+
+.lyrics-editor header,
+.editor-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.lyrics-editor h3 {
+  margin: 0 0 4px;
+}
+
+.editor-actions {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 8px;
+}
+
+.editor-meta {
+  color: #64748b;
+}
+
 .assistant-card {
   display: grid;
   gap: 8px;
@@ -240,6 +316,67 @@ input {
   margin: 0;
   color: #334155;
   line-height: 1.45;
+}
+
+.gemma-card,
+.quick-export {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+  background: #eef2ff;
+}
+
+.gemma-card header,
+.quick-export {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.gemma-card header {
+  display: grid;
+  gap: 12px;
+}
+
+.gemma-card span,
+.quick-export span {
+  display: block;
+  color: #475569;
+  margin-top: 4px;
+}
+
+.gemma-card textarea {
+  min-height: 92px;
+}
+
+.gemma-response {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid #c7d2fe;
+  padding-top: 12px;
+}
+
+.gemma-response p {
+  margin: 0;
+  color: #334155;
+  line-height: 1.45;
+}
+
+.gemma-response ul {
+  margin: 0;
+  padding-left: 20px;
+  color: #334155;
+}
+
+.context-chip {
+  border: 1px solid #a5b4fc;
+  border-radius: 999px;
+  padding: 6px 9px;
+  background: white;
+  color: #3730a3;
+  font-size: 13px;
 }
 
 .readiness-grid {
@@ -469,6 +606,17 @@ pre {
   }
 
   .assistant-footer {
+    grid-template-columns: 1fr;
+  }
+
+  .gemma-card header,
+  .quick-export {
+    grid-template-columns: 1fr;
+  }
+
+  .lyrics-editor header,
+  .editor-actions,
+  .editor-meta {
     grid-template-columns: 1fr;
   }
 

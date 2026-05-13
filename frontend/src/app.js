@@ -55,6 +55,12 @@ createApp({
         structure: "intro, verse 1, chorus, verse 2, bridge, final chorus, outro",
         placeholders: { name: "Isabella", image: "estrellita", promise: "siempre cuidarte" },
       },
+      lyricsEditor: {
+        selectedAssetId: "",
+        content: "",
+        path: "",
+        dirty: false,
+      },
       projectSet: {
         project_name: "Cancion de cuna para Isabella",
         description: "Cancion de cuna completa, tierna y poetica con soundtrack suave y voz cantada.",
@@ -62,6 +68,12 @@ createApp({
       drafts: [],
       sets: [],
       selectedSet: null,
+      activeProject: null,
+      gemmaAssistant: {
+        question: "Que sigue para terminar esta cancion?",
+        response: null,
+        loading: false,
+      },
       providers: {},
       studioStatus: {},
       modelStatus: {},
@@ -92,8 +104,9 @@ createApp({
         { label: "3. Crear cancion", hint: "Prepara pipeline completo: letra, estructura, soundtrack, voz cantada, stems, mezcla y exports.", url: "/api/songs" },
         { label: "4. Preparar mezcla", hint: "Prepara mezcla de voz cantada + instrumental y verifica ffmpeg.", url: "/api/mix" },
         { label: "5. Preparar exports", hint: "Crea manifest y rutas de formatos finales.", url: "/api/exports" },
-        { label: "6. Exportar sets JSON", hint: "Regenera los set.json desde SQLite y sobrescribe archivos previos con el mismo nombre.", url: "/api/sets/export" },
-        { label: "7. Guardar plantilla", hint: "Guarda el set como plantilla reutilizable.", url: "/api/templates" },
+        { label: "6. Generar WAV/MP3", hint: "Crea final_mix.wav y final_mix.mp3 si ffmpeg esta disponible; en modo mock deja trazabilidad del export.", url: "/api/audio-exports" },
+        { label: "7. Exportar sets JSON", hint: "Regenera los set.json desde SQLite y sobrescribe archivos previos con el mismo nombre.", url: "/api/sets/export" },
+        { label: "8. Guardar plantilla", hint: "Guarda el set como plantilla reutilizable.", url: "/api/templates" },
       ];
     },
     draftReadiness() {
@@ -112,6 +125,12 @@ createApp({
     },
     canCreateSet() {
       return this.draftReadiness.every((item) => item.count > 0);
+    },
+    lyricsDrafts() {
+      return this.drafts.filter((draft) => draft.asset_type === "lyrics");
+    },
+    activeProjectId() {
+      return this.activeProject?.set?.set_id || this.selectedSet?.set_id || "";
     },
     assistantReminder() {
       if (this.canCreateSet) {
@@ -220,6 +239,29 @@ createApp({
       }
       this.selectedSet = payload.data;
     },
+    async loadProject(setId) {
+      const response = await fetch(apiUrl(`/api/projects/${setId}`));
+      const payload = await response.json();
+      if (!payload.ok) {
+        this.messages.unshift(payload.detail || "No se pudo cargar el proyecto.");
+        return;
+      }
+
+      this.activeProject = payload.data;
+      this.selectedSet = payload.data.set;
+      this.projectSet.project_name = payload.data.project.project_name;
+      this.projectSet.description = payload.data.project.description;
+
+      const lyricsAsset = payload.data.assets.lyrics;
+      this.lyricsEditor = {
+        selectedAssetId: lyricsAsset.asset_id,
+        content: lyricsAsset.content || "",
+        path: lyricsAsset.content_path || "",
+        dirty: false,
+      };
+      this.projectEvents = payload.data.events;
+      this.messages.unshift(`Proyecto cargado: ${payload.data.project.project_name}`);
+    },
     async loadJsonConfigs() {
       const response = await fetch(apiUrl("/api/json-configs"));
       const payload = await response.json();
@@ -236,9 +278,93 @@ createApp({
     async createLyrics() {
       await this.postAction("/api/lyrics", this.lyrics, "Letra guardada");
       await this.refreshDrafts();
+      const latestLyrics = this.lyricsDrafts[this.lyricsDrafts.length - 1];
+      if (latestLyrics) {
+        await this.loadLyricsDraft(latestLyrics.asset_id);
+      }
+    },
+    async loadLyricsDraft(assetId = this.lyricsEditor.selectedAssetId) {
+      if (!assetId) {
+        this.messages.unshift("Selecciona una letra para editar.");
+        return;
+      }
+      const response = await fetch(apiUrl(`/api/lyrics/${assetId}`));
+      const payload = await response.json();
+      if (!payload.ok) {
+        this.messages.unshift(payload.detail || "No se pudo cargar la letra.");
+        return;
+      }
+      this.lyricsEditor = {
+        selectedAssetId: payload.data.asset_id,
+        content: payload.data.content,
+        path: payload.data.path,
+        dirty: false,
+      };
+    },
+    async saveLyricsDraft() {
+      if (!this.lyricsEditor.selectedAssetId) {
+        this.messages.unshift("Selecciona una letra para guardar.");
+        return;
+      }
+      const response = await fetch(apiUrl(`/api/lyrics/${this.lyricsEditor.selectedAssetId}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: this.lyricsEditor.content }),
+      });
+      const payload = await response.json();
+      if (!payload.ok) {
+        this.messages.unshift(payload.detail || "No se pudo guardar la letra.");
+        return;
+      }
+      this.lyricsEditor.content = payload.data.content;
+      this.lyricsEditor.path = payload.data.path;
+      this.lyricsEditor.dirty = false;
+      this.messages.unshift(`Letra actualizada: ${payload.data.asset_id}`);
     },
     async createSet() {
       await this.postAction("/api/sets", this.projectSet, "Proyecto/set guardado");
+    },
+    async createPresetMp3() {
+      const response = await fetch(apiUrl("/api/presets/lullaby/mp3"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const payload = await response.json();
+      if (!payload.ok) {
+        this.messages.unshift(payload.detail || "No se pudo crear el MP3 predefinido.");
+        return;
+      }
+      this.activeProject = payload.data.project;
+      this.selectedSet = payload.data.project.set;
+      this.projectSet.project_name = payload.data.project.project.project_name;
+      this.projectSet.description = payload.data.project.project.description;
+      await this.refreshDrafts();
+      await this.loadSets();
+      await this.loadOrchestration();
+      await this.loadJsonConfigs();
+      const mp3Detail = payload.data.mp3 || "MP3 pendiente";
+      this.messages.unshift(`${payload.data.summary} ${mp3Detail}`);
+    },
+    async askGemmaAssistant() {
+      this.gemmaAssistant.loading = true;
+      const response = await fetch(apiUrl("/api/assistant/gemma"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          set_id: this.activeProjectId,
+          question: this.gemmaAssistant.question,
+        }),
+      });
+      const payload = await response.json();
+      this.gemmaAssistant.loading = false;
+      if (!payload.ok) {
+        this.messages.unshift(payload.detail || "Gemma no pudo revisar el proyecto.");
+        return;
+      }
+      this.gemmaAssistant.response = payload.data;
+      await this.loadOrchestration();
+      this.messages.unshift(`Gemma transversal: ${payload.data.status}`);
     },
     async simulateHandoff(modelRole = "intent_extractor", taskType = "extract_intent") {
       await this.postAction(

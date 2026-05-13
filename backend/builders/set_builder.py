@@ -36,3 +36,27 @@ class SetBuilder:
             },
         )
         return self.storage.save_song_set(song_set)
+
+    def create_from_asset_ids(
+        self,
+        instrumental_id: str,
+        melody_id: str,
+        lyrics_id: str,
+        project_name: str,
+        description: str,
+        rule: str = "selected_assets",
+    ) -> Path:
+        song_set = SongSet(
+            set_id=generate_id("set"),
+            project_name=project_name,
+            description=description,
+            created_at=datetime.now(timezone.utc).isoformat(),
+            instrumental_id=instrumental_id,
+            melody_id=melody_id,
+            lyrics_id=lyrics_id,
+            compatibility_data={
+                "status": "mock_validated",
+                "rule": rule,
+            },
+        )
+        return self.storage.save_song_set(song_set)

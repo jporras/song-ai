@@ -39,6 +39,9 @@ Ultimo ajuste:
 - `AGENTS.md` tambien define que la IA debe ayudar a completar una cancion acorde al proyecto activo usando nombre, descripcion, intents, assets y set como contexto.
 - Se inicio `ModelOrchestrator` en modo mock: registra handoffs, tasks y model runs en SQLite sin cargar modelos reales todavia.
 - Cada proyecto conserva un historico de pasos (`project_events`) con fecha, fase, actor/modelo, estado y mensaje para reconstruir el camino de creacion de la cancion.
+- Produccion ahora muestra explicitamente el paso `Generar WAV/MP3`; en modo mock crea `exports/final_mix.wav` como audio valido de prueba y genera `final_mix.mp3` si `ffmpeg` esta disponible.
+- Produccion incluye `Crear MP3 predefinido`, que arma la cancion de cuna para Isabella con los defaults actuales, crea set/sample/cancion/mezcla y exporta WAV/MP3 en un solo flujo.
+- Produccion incluye `Gemma transversal`, asistente de proyecto activo en modo mock hasta conectar llama.cpp; usa set, intents, assets, samples, canciones y eventos como contexto.
 
 Completado:
 - Sprint 1: estructura modular, menu principal, carpetas de datos y storage basico.
@@ -153,7 +156,7 @@ docker compose up --build
 Servicio:
 - Aplicacion web Vue + backend API: `http://localhost:8000`
 
-El contenedor `song-ai-app` incluye Node.js para construir Vue/Vite y Python/FastAPI para ejecutar el backend. Los datos se guardan en el volumen Docker `song_ai_data`.
+El contenedor `song-ai-app` incluye Node.js para construir Vue/Vite, Python/FastAPI para ejecutar el backend y `ffmpeg` para generar MP3 desde el WAV de mezcla. Los datos se guardan en el volumen Docker `song_ai_data`.
 
 SQLite guarda el indice de rutas de configuraciones JSON en `data/song_ai.sqlite`.
 
@@ -168,13 +171,32 @@ No se usa Nginx en esta etapa porque FastAPI sirve la API y el frontend compilad
 5. Guarda la melodia.
 6. En `Letra`, usa el tema `lullaby for {name}` y placeholders como `name=Isabella`.
 7. Guarda la letra.
-8. En `Produccion`, crea el set/proyecto. El set solo se habilita si existen instrumental, melodia y letra.
-9. Crea el sample/checkpoint.
-10. Crea la cancion completa mock.
-11. Prepara mezcla y exports.
-12. En `Biblioteca`, revisa providers activos, estado del estudio IA, tasks, model runs, historico del proyecto y rutas JSON indexadas.
+8. En `Editor de letra`, selecciona un draft de letra, modifica el Markdown y guarda cambios. Esto actualiza `lyrics.md` sin tocar instrumental ni melodia.
+9. En `Produccion`, crea el set/proyecto. El set solo se habilita si existen instrumental, melodia y letra.
+10. Crea el sample/checkpoint.
+11. Crea la cancion completa mock.
+12. Si quieres validar rapido el flujo por defecto, usa `Crear MP3 predefinido` para generar la cancion de cuna de Isabella con set, sample, cancion, mezcla y WAV/MP3.
+13. Para el flujo manual: prepara mezcla.
+14. Prepara exports.
+15. Genera WAV/MP3. En fase mock se crea `final_mix.wav` y, dentro del contenedor Docker, `final_mix.mp3` usando `ffmpeg`.
+16. Usa `Gemma transversal` para pedir sugerencias sobre el proyecto activo. En esta fase no carga llama.cpp todavia; registra handoffs mock y usa SQLite como fuente activa.
+17. En `Biblioteca`, revisa providers activos, estado del estudio IA, tasks, model runs, historico del proyecto y rutas JSON indexadas.
 
 El flujo actual crea artefactos mock, pero respeta el contrato final: cancion completa con letra original, estructura musical, soundtrack, voz cantada, mezcla y exportacion de audio. No apunta a Shorts ni a TTS hablado.
+
+### Proyectos Activos
+
+La aplicacion trabaja sobre proyectos de canciones. Un proyecto activo corresponde a un set y debe cargar transversalmente:
+- nombre y descripcion del proyecto,
+- instrumental seleccionado,
+- melodia seleccionada,
+- letra seleccionada y su `lyrics.md` editable,
+- set activo,
+- samples asociados,
+- canciones asociadas,
+- eventos de progreso del proyecto.
+
+Desde `Biblioteca`, usa `Cargar proyecto` sobre un set guardado. Al cargarlo, la app actualiza el formulario de proyecto, la configuracion visible, el editor de letra y el contexto usado por la asistencia IA.
 
 ### Backend Web Local
 
@@ -234,6 +256,9 @@ El menu guia el flujo creativo:
 - listar providers disponibles,
 - preparar mezcla mock,
 - preparar exportaciones,
+- generar WAV/MP3 desde la cancion mas reciente,
+- crear MP3 predefinido de la cancion de cuna base,
+- consultar el asistente Gemma transversal sobre el proyecto activo,
 - guardar plantilla reutilizable.
 
 Flujo sugerido:
@@ -331,7 +356,7 @@ Formatos comunes planeados para `stems/`:
 - `music.wav`
 - versiones `.flac` cuando se quiera compresion lossless.
 
-En la fase actual mock todavia no se genera audio real. Se crea `exports/final_mix.mock.txt` para marcar donde quedara el archivo final cuando se implemente el pipeline de audio con providers/ffmpeg.
+En la fase actual mock se puede generar `exports/final_mix.wav` como audio valido de prueba para verificar el flujo de exportacion. En Docker tambien se genera `exports/final_mix.mp3` con `ffmpeg`; si se ejecuta fuera de Docker y `ffmpeg` no esta disponible, queda `exports/final_mix.mp3.pending.txt`. El archivo `exports/final_mix.mock.txt` sigue marcando donde se reemplazara el contenido por la mezcla real cuando se conecten providers de audio.
 
 La cancion final real debe pasar por:
 - letra completa y prompt musical con Gemma,
@@ -386,8 +411,16 @@ Los sets tambien se guardan en SQLite para que la interfaz pueda listarlos, most
 ```text
 GET /api/sets
 GET /api/sets/{set_id}
+GET /api/projects/{set_id}
 POST /api/sets
+POST /api/presets/lullaby/mp3
 POST /api/sets/export
+GET /api/lyrics/{asset_id}
+PUT /api/lyrics/{asset_id}
+POST /api/mix
+POST /api/exports
+POST /api/audio-exports
+POST /api/assistant/gemma
 GET /api/orchestration/status
 GET /api/tasks
 GET /api/model-runs

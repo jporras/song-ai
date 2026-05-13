@@ -61,6 +61,11 @@ def get_set(set_id: str) -> dict[str, Any]:
     return run_action(lambda: service.get_set(set_id))
 
 
+@app.get("/api/projects/{set_id}")
+def get_project(set_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.get_project(set_id))
+
+
 @app.get("/api/favorites")
 def get_favorites() -> dict[str, Any]:
     return ok(service.list_favorites())
@@ -121,6 +126,16 @@ def create_lyrics(payload: dict[str, Any]) -> dict[str, Any]:
     return run_action(lambda: service.create_lyrics(payload))
 
 
+@app.get("/api/lyrics/{asset_id}")
+def get_lyrics(asset_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.get_lyrics(asset_id))
+
+
+@app.put("/api/lyrics/{asset_id}")
+def update_lyrics(asset_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.update_lyrics(asset_id, payload))
+
+
 @app.post("/api/favorites")
 def favorite_asset(payload: dict[str, Any]) -> dict[str, Any]:
     return run_action(lambda: service.favorite_asset(payload))
@@ -131,9 +146,19 @@ def create_set(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     return run_action(lambda: service.create_set(payload or {}))
 
 
+@app.post("/api/presets/lullaby/mp3")
+def create_default_lullaby_mp3() -> dict[str, Any]:
+    return run_action(service.create_default_lullaby_mp3)
+
+
 @app.post("/api/sets/export")
 def export_sets_to_json() -> dict[str, Any]:
     return run_action(service.export_sets_to_json)
+
+
+@app.post("/api/assistant/gemma")
+def run_gemma_assistant(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    return run_action(lambda: service.gemma_assistant(payload or {}))
 
 
 @app.post("/api/orchestration/handoff")
@@ -159,6 +184,11 @@ def prepare_mix() -> dict[str, Any]:
 @app.post("/api/exports")
 def prepare_exports() -> dict[str, Any]:
     return run_action(service.prepare_exports)
+
+
+@app.post("/api/audio-exports")
+def generate_audio_exports() -> dict[str, Any]:
+    return run_action(service.generate_audio_exports)
 
 
 @app.post("/api/templates")
