@@ -20,6 +20,7 @@ class LocalPipelineStatus:
 class LocalSongPipeline:
     def __init__(self, settings: LocalModelSettings) -> None:
         self.settings = settings
+        self._full_song_available_cache: bool | None = None
 
     def status(self) -> LocalPipelineStatus:
         full_song_configured = bool(self.settings.full_song_command.strip())
@@ -186,14 +187,20 @@ class LocalSongPipeline:
         if not command:
             return False
         if "acestep_generate.py" in command:
-            result = subprocess.run(
-                ["python", "-c", "from acestep.pipeline_ace_step import ACEStepPipeline"],
-                capture_output=True,
-                text=True,
-                env=self._command_env(),
-                timeout=30,
-            )
-            return result.returncode == 0
+            if self._full_song_available_cache is not None:
+                return self._full_song_available_cache
+            try:
+                result = subprocess.run(
+                    ["python", "-c", "from acestep.pipeline_ace_step import ACEStepPipeline"],
+                    capture_output=True,
+                    text=True,
+                    env=self._command_env(),
+                    timeout=8,
+                )
+                self._full_song_available_cache = result.returncode == 0
+            except subprocess.TimeoutExpired:
+                self._full_song_available_cache = False
+            return self._full_song_available_cache
         return True
 
     def _full_song_detail(self, configured: bool, available: bool) -> str:

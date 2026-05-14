@@ -44,6 +44,7 @@ Ultimo ajuste:
 - Produccion incluye `Cancion local final`, que solo genera final si existen comandos locales reales para soundtrack, voz cantada y ffmpeg. Si falta algo, no entrega un MP3 final falso.
 - El pipeline local valida disponibilidad real de ACE-Step antes de marcarlo como listo; si el comando falla, la API devuelve error JSON legible en vez de tumbar la UI.
 - Cuando `Full Song` esta listo, `Soundtrack` y `Singing Voice` se muestran como ruta alternativa/opcional por stems, no como bloqueo rojo.
+- La descarga `Guardar MP3 final` exige `local_final_manifest.json`; una maqueta mock con guia vocal sintetica ya no se puede confundir ni descargar como cancion final local.
 - El modo pro queda en pausa: no se registran providers pagos/remotos en el pipeline activo.
 - Produccion incluye `Estado local del sistema`: lista componentes, servicios/volumenes, comandos locales y bootstrap con indicador visual, boton para consultar estado y boton para preparar/reiniciar bootstrap en segundo plano.
 - Produccion incluye `Fases del proyecto/set`: muestra si ya estan completos instrumental, melodia, letra, set, sample, cancion, mezcla, exports y final local MP3.

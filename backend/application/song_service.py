@@ -675,12 +675,18 @@ class SongService:
 
         song_dir = Path(str(latest_song["path"]))
         export_path = song_dir / "exports" / f"final_mix.{safe_extension}"
+        local_final_manifest = song_dir / "exports" / "local_final_manifest.json"
         if not export_path.exists():
             if safe_extension == "mp3":
                 pending_path = song_dir / "exports" / "final_mix.mp3.pending.txt"
                 if pending_path.exists():
                     raise ValueError("El MP3 aun no esta disponible. Genera el export dentro de Docker o instala ffmpeg.")
             raise ValueError(f"No existe final_mix.{safe_extension}. Genera WAV/MP3 antes de descargar.")
+        if not local_final_manifest.exists():
+            raise ValueError(
+                "El archivo disponible es una maqueta tecnica, no una cancion final local con voz cantada. "
+                "Usa 'Generar cancion local final' y espera a que se cree local_final_manifest.json."
+            )
 
         set_id = str(latest_song.get("set_id", ""))
         song_set = self.storage.get_indexed_set(set_id)

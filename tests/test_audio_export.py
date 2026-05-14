@@ -301,9 +301,8 @@ class AudioExportTest(unittest.TestCase):
                 duration = wav_file.getnframes() / wav_file.getframerate()
             self.assertGreaterEqual(duration, 18)
 
-            download_path, filename = service.latest_audio_export_file("wav")
-            self.assertEqual(download_path, wav_path)
-            self.assertTrue(filename.endswith(".wav"))
+            with self.assertRaisesRegex(ValueError, "maqueta tecnica"):
+                service.latest_audio_export_file("wav")
 
     @unittest.skipIf(os.name == "nt" and not shutil.which("ffmpeg"), "ffmpeg no esta disponible en este entorno")
     def test_local_final_song_uses_configured_local_audio_commands(self) -> None:
@@ -337,6 +336,9 @@ class AudioExportTest(unittest.TestCase):
             self.assertEqual(result["mode"], "local_final_song")
             self.assertTrue(Path(str(result["mp3"])).exists())
             self.assertTrue(Path(str(result["wav"])).exists())
+            download_path, filename = service.latest_audio_export_file("mp3")
+            self.assertEqual(download_path, Path(str(result["mp3"])))
+            self.assertTrue(filename.endswith(".mp3"))
 
 
 if __name__ == "__main__":
