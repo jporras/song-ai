@@ -381,6 +381,10 @@ textarea {
   background: #f59e0b;
 }
 
+.status-dot.optional {
+  background: #64748b;
+}
+
 .status-dot.idle {
   background: #64748b;
 }

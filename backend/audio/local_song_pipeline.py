@@ -56,6 +56,14 @@ class LocalSongPipeline:
         ffmpeg_ready = bool(requirements[-1]["configured"])
         full_song_ready = bool(requirements[0]["configured"]) and ffmpeg_ready
         stems_ready = bool(requirements[1]["configured"]) and bool(requirements[2]["configured"]) and ffmpeg_ready
+        if full_song_ready:
+            for requirement in requirements:
+                if requirement["role"] in {"soundtrack", "singing_voice"}:
+                    requirement["required_for_real_output"] = False
+                    requirement["detail"] = (
+                        f"{requirement['engine']} es ruta alternativa por stems; no es requerido "
+                        "porque Full Song ya genera la cancion completa."
+                    )
         missing = self._missing(requirements, full_song_ready, stems_ready)
         return LocalPipelineStatus(ready=full_song_ready or stems_ready, missing=missing, requirements=requirements)
 

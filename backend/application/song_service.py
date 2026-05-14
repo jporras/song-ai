@@ -517,11 +517,13 @@ class SongService:
             },
         ]
         for requirement in list(local_pipeline.get("requirements", [])):
+            configured = bool(requirement.get("configured"))
+            optional = requirement.get("required_for_real_output") is False
             components.append(
                 {
                     "id": str(requirement["role"]),
                     "label": str(requirement["role"]).replace("_", " ").title(),
-                    "status": "ready" if requirement.get("configured") else "missing",
+                    "status": "ready" if configured else "optional" if optional else "missing",
                     "detail": str(requirement.get("detail", requirement.get("engine", ""))),
                     "restartable": True,
                 }
@@ -545,7 +547,11 @@ class SongService:
 
         return {
             "mode": "local_only",
-            "ready": all(component["status"] == "ready" for component in components if component["id"] != "bootstrap"),
+            "ready": all(
+                component["status"] in {"ready", "optional"}
+                for component in components
+                if component["id"] != "bootstrap"
+            ),
             "components": components,
             "bootstrap": bootstrap_status,
             "local_pipeline": local_pipeline,
