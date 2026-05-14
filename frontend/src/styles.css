@@ -31,6 +31,56 @@ body {
   line-height: 1.45;
 }
 
+.sidebar-project,
+.sidebar-phases {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 12px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #172033;
+}
+
+.sidebar-project span,
+.sidebar-project small {
+  color: #cbd5e1;
+  overflow-wrap: anywhere;
+}
+
+.sidebar-section-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.sidebar-section-header button {
+  padding: 6px 8px;
+  background: #1f2937;
+  border-color: #475569;
+  color: #e5e7eb;
+}
+
+.sidebar-phase-list {
+  display: grid;
+  gap: 6px;
+}
+
+.sidebar-phase {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  color: #cbd5e1;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.sidebar-phase.ready {
+  color: #bbf7d0;
+}
+
 nav {
   display: grid;
   gap: 8px;
@@ -418,6 +468,30 @@ textarea {
   line-height: 1.45;
 }
 
+.production-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 16px;
+  align-items: start;
+}
+
+.production-main {
+  display: grid;
+  gap: 14px;
+}
+
+.production-view .project-form,
+.production-view .step-list {
+  grid-column: 1;
+}
+
+.production-chat {
+  position: sticky;
+  top: 16px;
+  grid-column: 2;
+  grid-row: 1 / span 3;
+}
+
 .gemma-card,
 .qwen-card,
 .quick-export,
@@ -695,8 +769,16 @@ pre {
 }
 
 .log p {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 10px;
   margin: 8px 0 0;
   color: #334155;
+}
+
+.log time {
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
 }
 
 .assistant-footer {
@@ -730,6 +812,21 @@ pre {
 
   .assistant-footer {
     grid-template-columns: 1fr;
+  }
+
+  .production-view {
+    grid-template-columns: 1fr;
+  }
+
+  .production-view .project-form,
+  .production-view .step-list,
+  .production-chat {
+    grid-column: 1;
+  }
+
+  .production-chat {
+    position: static;
+    grid-row: auto;
   }
 
   .gemma-card header,

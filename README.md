@@ -47,13 +47,15 @@ Ultimo ajuste:
 - La descarga `Guardar MP3 final` exige `local_final_manifest.json`; una maqueta mock con guia vocal sintetica ya no se puede confundir ni descargar como cancion final local.
 - El modo pro queda en pausa: no se registran providers pagos/remotos en el pipeline activo.
 - Produccion incluye `Estado local del sistema`: lista componentes, servicios/volumenes, comandos locales y bootstrap con indicador visual, boton para consultar estado y boton para preparar/reiniciar bootstrap en segundo plano.
-- Produccion incluye `Fases del proyecto/set`: muestra si ya estan completos instrumental, melodia, letra, set, sample, cancion, mezcla, exports y final local MP3.
+- La barra lateral muestra el set activo y las fases del proyecto/set para que el avance este siempre visible mientras se trabaja.
+- Produccion centra la charla del usuario en Gemma; Qwen queda como apoyo tecnico interno del orquestador y no como chat directo.
+- La actividad local muestra hora con minutos y segundos en cada evento visible.
 - La API de fases usa una ruta estatica prioritaria (`/api/projects/phases`) y la UI tolera respuestas fallidas para no dejar la pantalla en blanco.
 - El bootstrap de Docker arranca en segundo plano junto con FastAPI para que reparaciones largas de modelos/dependencias no dejen la UI sin responder.
 - FastAPI no usa `provider-cache/python` como `PYTHONPATH` global; ese cache se inyecta solo en comandos/probes de audio para evitar que una reparacion pip afecte el servidor vivo.
 - Las pruebas de import de ACE-Step se ejecutan en subprocess aislado para que un fallo nativo de Torch/diffusers no tumbe FastAPI.
-- Produccion incluye `Gemma transversal`, asistente de proyecto activo via llama.cpp cuando `SONG_AI_LLAMA_CPP_ENABLED=true`; si llama.cpp no responde, conserva guia local y deja la app ejecutable.
-- Produccion incluye `Qwen tecnico`, rol separado para ajustes tecnicos, debugging, arquitectura, workers, SQLite, ffmpeg y pipeline. Qwen no reemplaza a Gemma en creatividad musical.
+- Produccion incluye charla con Gemma para el proyecto activo via llama.cpp cuando `SONG_AI_LLAMA_CPP_ENABLED=true`; si llama.cpp no responde, conserva guia local y deja la app ejecutable.
+- Qwen tecnico queda como rol interno para ajustes de pipeline, workers, SQLite y ffmpeg; el usuario habla con Gemma y Gemma registra el handoff tecnico.
 
 Completado:
 - Sprint 1: estructura modular, menu principal, carpetas de datos y storage basico.
@@ -263,12 +265,12 @@ No se usa Nginx en esta etapa porque FastAPI sirve la API y el frontend compilad
 9. En `Produccion`, crea el set/proyecto. El set solo se habilita si existen instrumental, melodia y letra.
 10. Crea el sample/checkpoint.
 11. Crea la cancion completa mock.
-12. Si quieres validar rapido el flujo por defecto, usa `Crear MP3 predefinido` para generar la cancion de cuna de Isabella con set, sample, cancion, mezcla y WAV/MP3.
+12. Si quieres validar rapido el flujo por defecto, usa `Crear maqueta` para generar la cancion de cuna de Isabella con set, sample, cancion, mezcla y WAV/MP3 mock.
 13. Para el flujo manual: prepara mezcla.
 14. Prepara exports.
 15. Genera WAV/MP3. En fase mock se crea `final_mix.wav` y, dentro del contenedor Docker, `final_mix.mp3` usando `ffmpeg`.
-16. Usa `Gemma transversal` para pedir sugerencias sobre el proyecto activo. Si llama.cpp esta activo, Gemma responde desde `POST /completion`; si no, usa guia local y registra handoffs en SQLite.
-17. Usa `Qwen tecnico` para ajustes de codigo/pipeline, errores, workers, ffmpeg, SQLite y arquitectura.
+16. Usa la charla con Gemma para pedir sugerencias sobre el proyecto activo. Si llama.cpp esta activo, Gemma responde desde `POST /completion`; si no, usa guia local y registra handoffs en SQLite.
+17. Qwen no se expone como chat del usuario en Produccion: Gemma traduce la necesidad musical y registra un handoff tecnico interno hacia Qwen cuando corresponde.
 18. En `Biblioteca`, revisa providers activos, estado del estudio IA, tasks, model runs, historico del proyecto y rutas JSON indexadas.
 
 El flujo tiene dos salidas diferenciadas:
@@ -411,8 +413,8 @@ El menu guia el flujo creativo:
 - preparar exportaciones,
 - generar WAV/MP3 desde la cancion mas reciente,
 - crear MP3 predefinido de la cancion de cuna base,
-- consultar el asistente Gemma transversal sobre el proyecto activo,
-- consultar Qwen tecnico para ajustes de implementacion y pipeline,
+- consultar a Gemma sobre el proyecto activo,
+- dejar que Gemma coordine internamente ajustes tecnicos con Qwen,
 - guardar plantilla reutilizable.
 
 Flujo sugerido:

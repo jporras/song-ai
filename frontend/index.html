@@ -15,6 +15,26 @@
             {{ tab.label }}
           </button>
         </nav>
+        <section class="sidebar-project">
+          <strong>Set seleccionado</strong>
+          <span>{{ activeProject?.project?.project_name || selectedSet?.project_name || 'Sin set activo' }}</span>
+          <small v-if="activeProject">
+            {{ activeProject.samples.length }} sample(s) - {{ activeProject.songs.length }} cancion(es)
+          </small>
+          <small v-else>Selecciona o crea un set para avanzar.</small>
+        </section>
+        <section class="sidebar-phases">
+          <div class="sidebar-section-header">
+            <strong>Fases</strong>
+            <button @click="refreshSystemStatus">Actualizar</button>
+          </div>
+          <div class="sidebar-phase-list">
+            <span v-for="phase in projectPhases.phases" :key="phase.id" :class="['sidebar-phase', { ready: phase.ready }]">
+              <span :class="['status-dot', phase.status]"></span>
+              {{ phase.label }}
+            </span>
+          </div>
+        </section>
       </aside>
 
       <main class="workspace">
@@ -225,84 +245,97 @@
           </div>
         </section>
 
-        <section v-if="activeTab === 'production'" class="panel">
-          <div v-if="activeProject" class="active-project">
-            <strong>Proyecto activo: {{ activeProject.project.project_name }}</strong>
-            <span>{{ activeProject.project.description }}</span>
-            <small>
-              Set {{ activeProject.set.set_id }} -
-              {{ activeProject.samples.length }} sample(s) -
-              {{ activeProject.songs.length }} cancion(es)
-            </small>
-          </div>
-          <div class="assistant-card">
-            <strong>Asistencia IA</strong>
-            <p>{{ assistantReminder }}</p>
-            <div class="readiness-grid">
-              <span v-for="item in draftReadiness" :key="item.type" :class="['readiness-pill', { ready: item.count > 0 }]">
-                {{ item.label }}: {{ item.count > 0 ? 'completo' : 'pendiente' }}
-              </span>
+        <section v-if="activeTab === 'production'" class="panel production-view">
+          <div class="production-main">
+            <div v-if="activeProject" class="active-project">
+              <strong>Proyecto activo: {{ activeProject.project.project_name }}</strong>
+              <span>{{ activeProject.project.description }}</span>
+              <small>
+                Set {{ activeProject.set.set_id }} -
+                {{ activeProject.samples.length }} sample(s) -
+                {{ activeProject.songs.length }} cancion(es)
+              </small>
             </div>
-          </div>
-          <div class="system-card">
-            <header>
-              <div>
-                <strong>Estado local del sistema</strong>
-                <span>Componentes, servicios y volumenes necesarios para generar la cancion final.</span>
+            <div class="assistant-card">
+              <strong>Asistencia IA</strong>
+              <p>{{ assistantReminder }}</p>
+              <div class="readiness-grid">
+                <span v-for="item in draftReadiness" :key="item.type" :class="['readiness-pill', { ready: item.count > 0 }]">
+                  {{ item.label }}: {{ item.count > 0 ? 'completo' : 'pendiente' }}
+                </span>
               </div>
-              <div class="row-actions">
-                <button @click="refreshSystemStatus">Consultar estado</button>
-                <button @click="restartBootstrap" :disabled="systemStatus.bootstrap?.status === 'running'">
-                  {{ systemStatus.bootstrap?.status === 'running' ? 'Preparando...' : 'Preparar/reiniciar' }}
-                </button>
-                <button @click="upgradeBootstrap" :disabled="systemStatus.bootstrap?.status === 'running'">
-                  Actualizar dependencias
-                </button>
-              </div>
-            </header>
-            <div class="component-grid">
-              <article v-for="component in systemStatus.components" :key="component.id" class="component-card">
-                <span :class="['status-dot', component.status]"></span>
+            </div>
+            <div class="system-card">
+              <header>
                 <div>
-                  <strong>{{ component.label }}</strong>
-                  <small>{{ component.status }}</small>
-                  <span>{{ component.detail }}</span>
+                  <strong>Estado local del sistema</strong>
+                  <span>Componentes, servicios y volumenes necesarios para generar la cancion final.</span>
                 </div>
-              </article>
-            </div>
-          </div>
-          <div class="system-card">
-            <header>
-              <div>
-                <strong>Fases del proyecto/set</strong>
-                <span>{{ projectPhases.project_name || 'Sin proyecto cargado' }}</span>
+                <div class="row-actions">
+                  <button @click="refreshSystemStatus">Consultar estado</button>
+                  <button @click="restartBootstrap" :disabled="systemStatus.bootstrap?.status === 'running'">
+                    {{ systemStatus.bootstrap?.status === 'running' ? 'Preparando...' : 'Preparar/reiniciar' }}
+                  </button>
+                  <button @click="upgradeBootstrap" :disabled="systemStatus.bootstrap?.status === 'running'">
+                    Actualizar dependencias
+                  </button>
+                </div>
+              </header>
+              <div class="component-grid">
+                <article v-for="component in systemStatus.components" :key="component.id" class="component-card">
+                  <span :class="['status-dot', component.status]"></span>
+                  <div>
+                    <strong>{{ component.label }}</strong>
+                    <small>{{ component.status }}</small>
+                    <span>{{ component.detail }}</span>
+                  </div>
+                </article>
               </div>
-              <button @click="refreshSystemStatus">Actualizar fases</button>
-            </header>
-            <div class="phase-grid">
-              <span v-for="phase in projectPhases.phases" :key="phase.id" :class="['phase-pill', { ready: phase.ready }]">
-                <span :class="['status-dot', phase.status]"></span>
-                {{ phase.label }}
-              </span>
+            </div>
+            <div class="quick-export">
+              <div>
+                <strong>Cancion local final</strong>
+                <span>Genera instrumental, voz cantada y mezcla usando herramientas locales configuradas. El modo pro esta en pausa.</span>
+                <small>{{ localFinalStatusMessage }}</small>
+              </div>
+              <button class="primary" :disabled="!canGenerateLocalFinalSong" @click="generateLocalFinalSong">
+                {{ bootstrapRunning ? 'Preparando...' : 'Generar cancion local final' }}
+              </button>
+            </div>
+            <div class="download-export">
+              <div>
+                <strong>Guardar MP3 final en mi equipo</strong>
+                <span>Descarga solo el MP3 creado por la cancion local final. La maqueta tecnica no se ofrece como final.</span>
+                <small v-if="downloadStatus">{{ downloadStatus }}</small>
+              </div>
+              <button @click="saveLatestMp3">Guardar MP3</button>
+            </div>
+            <div class="quick-export muted-export">
+              <div>
+                <strong>Maqueta tecnica</strong>
+                <span>Crea WAV/MP3 mock para probar archivos, stems y descarga. No es una cancion final.</span>
+              </div>
+              <button @click="createPresetMp3">Crear maqueta</button>
             </div>
           </div>
-          <div class="gemma-card">
+          <aside class="gemma-card production-chat">
             <header>
               <div>
-                <strong>Gemma transversal</strong>
-                <span>Gemma 4 E4B IT GGUF - via llama.cpp si esta activo; guia local si no responde</span>
+                <strong>Charla con Gemma</strong>
+                <span>Gemma entiende la intencion musical y coordina internamente los ajustes tecnicos con Qwen.</span>
               </div>
               <button @click="askGemmaAssistant" :disabled="gemmaAssistant.loading">
-                {{ gemmaAssistant.loading ? 'Revisando...' : 'Consultar Gemma' }}
+                {{ gemmaAssistant.loading ? 'Revisando...' : 'Enviar' }}
               </button>
             </header>
             <textarea
               v-model="gemmaAssistant.question"
-              placeholder="Pregunta al asistente sobre el proyecto activo."
+              placeholder="Cuentale a Gemma que quieres ajustar del proyecto activo."
             ></textarea>
             <div v-if="gemmaAssistant.response" class="gemma-response">
               <strong>{{ gemmaAssistant.response.project_name || 'Sin proyecto activo' }}</strong>
               <p>{{ gemmaAssistant.response.message }}</p>
+              <small>{{ gemmaAssistant.response.technical_handoff_note || 'Qwen permanece como apoyo tecnico interno del orquestador.' }}</small>
               <div class="chips">
                 <span v-for="item in gemmaAssistant.response.context_used" :key="item" class="context-chip">{{ item }}</span>
               </div>
@@ -310,54 +343,7 @@
                 <li v-for="item in gemmaAssistant.response.recommendations" :key="item">{{ item }}</li>
               </ul>
             </div>
-          </div>
-          <div class="qwen-card">
-            <header>
-              <div>
-                <strong>Qwen tecnico</strong>
-                <span>Qwen3 4B GGUF - ajustes tecnicos, debugging, workers, SQLite y ffmpeg</span>
-              </div>
-              <button @click="askQwenAssistant" :disabled="qwenAssistant.loading">
-                {{ qwenAssistant.loading ? 'Revisando...' : 'Consultar Qwen' }}
-              </button>
-            </header>
-            <textarea
-              v-model="qwenAssistant.question"
-              placeholder="Pregunta tecnica sobre el pipeline o la exportacion."
-            ></textarea>
-            <div v-if="qwenAssistant.response" class="gemma-response">
-              <strong>{{ qwenAssistant.response.model }}</strong>
-              <p>{{ qwenAssistant.response.message }}</p>
-              <div class="chips">
-                <span v-for="item in qwenAssistant.response.scope" :key="item" class="context-chip">{{ item }}</span>
-              </div>
-            </div>
-          </div>
-          <div class="quick-export">
-            <div>
-              <strong>Cancion local final</strong>
-              <span>Genera instrumental, voz cantada y mezcla usando herramientas locales configuradas. El modo pro esta en pausa.</span>
-              <small>{{ localFinalStatusMessage }}</small>
-            </div>
-            <button class="primary" :disabled="!canGenerateLocalFinalSong" @click="generateLocalFinalSong">
-              {{ bootstrapRunning ? 'Preparando...' : 'Generar cancion local final' }}
-            </button>
-          </div>
-          <div class="quick-export muted-export">
-            <div>
-              <strong>Maqueta tecnica</strong>
-              <span>Crea WAV/MP3 mock para probar archivos, stems y descarga. No es una cancion final.</span>
-            </div>
-            <button @click="createPresetMp3">Crear maqueta</button>
-          </div>
-          <div class="download-export">
-            <div>
-              <strong>Guardar MP3 final en mi equipo</strong>
-              <span>Descarga solo el MP3 creado por la cancion local final. La maqueta tecnica no se ofrece como final.</span>
-              <small v-if="downloadStatus">{{ downloadStatus }}</small>
-            </div>
-            <button @click="saveLatestMp3">Guardar MP3</button>
-          </div>
+          </aside>
           <div class="field-block project-form">
             <span>Proyecto / Set</span>
             <small>El set es el proyecto musical que agrupa instrumental, melodia y letra. La meta es una cancion completa, no un Short ni una letra repetitiva.</small>
@@ -531,10 +517,13 @@
 
         <section class="log">
           <strong>Actividad</strong>
-          <p v-for="item in messages" :key="item">{{ item }}</p>
+          <p v-for="item in messages" :key="item.id">
+            <time>{{ item.time }}</time>
+            <span>{{ item.text }}</span>
+          </p>
         </section>
 
-        <footer class="assistant-footer">
+        <footer v-if="activeTab !== 'production'" class="assistant-footer">
           <div>
             <strong>{{ footerAssistant.title }}</strong>
             <p>{{ footerAssistant.message }}</p>

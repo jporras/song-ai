@@ -251,6 +251,7 @@ class SongService:
                 "context_used": [],
                 "recommendations": readiness["recommendations"],
                 "readiness": readiness,
+                "technical_handoff_note": "Gemma conversa con el usuario; Qwen queda reservado para ajustes tecnicos internos cuando exista proyecto activo.",
             }
 
         set_data = dict(project["set"])
@@ -272,6 +273,21 @@ class SongService:
                     "melody_intent": assets["melody"].get("intent", {}),
                     "lyrics_intent": assets["lyrics"].get("intent", {}),
                     "set": set_data,
+                },
+            }
+        )
+        technical_handoff = self.model_orchestrator.run_handoff(
+            {
+                "model_role": "technical",
+                "task_type": "gemma_to_qwen_pipeline_review",
+                "phase": "technical_review",
+                "project_id": str(set_data["set_id"]),
+                "project_name": str(set_data["project_name"]),
+                "description": f"Gemma traduce la solicitud del usuario para revision tecnica interna: {question}",
+                "question": question,
+                "context": {
+                    "missing_before_final": readiness["missing"],
+                    "local_pipeline": self.local_pipeline_status(),
                 },
             }
         )
@@ -299,6 +315,8 @@ class SongService:
             "readiness": readiness,
             "llama_cpp": self.provider_registry.llama_cpp_status(),
             "handoff": handoff,
+            "technical_handoff": technical_handoff,
+            "technical_handoff_note": "Gemma conversa con el usuario y envio un handoff interno a Qwen para revisar el pipeline tecnico.",
         }
 
     def qwen_technical_assistant(self, payload: dict[str, object] | None = None) -> dict[str, object]:

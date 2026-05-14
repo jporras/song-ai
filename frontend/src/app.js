@@ -210,6 +210,22 @@ createApp({
     await this.loadJsonConfigs();
   },
   methods: {
+    addMessage(text) {
+      const now = new Date();
+      this.messages.unshift({
+        id: `${now.getTime()}-${Math.random().toString(16).slice(2)}`,
+        time: now.toLocaleString("es-CO", {
+          hour12: false,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+        text,
+      });
+    },
     async loadOptions() {
       const response = await fetch(apiUrl("/api/options"));
       const payload = await response.json();
@@ -267,7 +283,7 @@ createApp({
       const response = await fetch(apiUrl(`/api/sets/${setId}`));
       const payload = await response.json();
       if (!payload.ok) {
-        this.messages.unshift(payload.detail || "No se pudo cargar el set");
+        this.addMessage(payload.detail || "No se pudo cargar el set");
         return;
       }
       this.selectedSet = payload.data;
@@ -276,7 +292,7 @@ createApp({
       const response = await fetch(apiUrl(`/api/projects/${setId}`));
       const payload = await response.json();
       if (!payload.ok) {
-        this.messages.unshift(payload.detail || "No se pudo cargar el proyecto.");
+        this.addMessage(payload.detail || "No se pudo cargar el proyecto.");
         return;
       }
 
@@ -293,7 +309,7 @@ createApp({
         dirty: false,
       };
       this.projectEvents = payload.data.events;
-      this.messages.unshift(`Proyecto cargado: ${payload.data.project.project_name}`);
+      this.addMessage(`Proyecto cargado: ${payload.data.project.project_name}`);
       await this.loadProviders();
     },
     async loadJsonConfigs() {
@@ -334,13 +350,13 @@ createApp({
     },
     async loadLyricsDraft(assetId = this.lyricsEditor.selectedAssetId) {
       if (!assetId) {
-        this.messages.unshift("Selecciona una letra para editar.");
+        this.addMessage("Selecciona una letra para editar.");
         return;
       }
       const response = await fetch(apiUrl(`/api/lyrics/${assetId}`));
       const payload = await response.json();
       if (!payload.ok) {
-        this.messages.unshift(payload.detail || "No se pudo cargar la letra.");
+        this.addMessage(payload.detail || "No se pudo cargar la letra.");
         return;
       }
       this.lyricsEditor = {
@@ -352,7 +368,7 @@ createApp({
     },
     async saveLyricsDraft() {
       if (!this.lyricsEditor.selectedAssetId) {
-        this.messages.unshift("Selecciona una letra para guardar.");
+        this.addMessage("Selecciona una letra para guardar.");
         return;
       }
       const response = await fetch(apiUrl(`/api/lyrics/${this.lyricsEditor.selectedAssetId}`), {
@@ -362,13 +378,13 @@ createApp({
       });
       const payload = await response.json();
       if (!payload.ok) {
-        this.messages.unshift(payload.detail || "No se pudo guardar la letra.");
+        this.addMessage(payload.detail || "No se pudo guardar la letra.");
         return;
       }
       this.lyricsEditor.content = payload.data.content;
       this.lyricsEditor.path = payload.data.path;
       this.lyricsEditor.dirty = false;
-      this.messages.unshift(`Letra actualizada: ${payload.data.asset_id}`);
+      this.addMessage(`Letra actualizada: ${payload.data.asset_id}`);
     },
     async createSet() {
       await this.postAction("/api/sets", this.projectSet, "Proyecto/set guardado");
@@ -381,7 +397,7 @@ createApp({
       });
       const payload = await response.json();
       if (!payload.ok) {
-        this.messages.unshift(payload.detail || "No se pudo crear el MP3 predefinido.");
+        this.addMessage(payload.detail || "No se pudo crear el MP3 predefinido.");
         return;
       }
       this.activeProject = payload.data.project;
@@ -394,11 +410,11 @@ createApp({
       await this.loadJsonConfigs();
       await this.loadProviders();
       const mp3Detail = payload.data.mp3 || "MP3 pendiente";
-      this.messages.unshift(`${payload.data.summary} ${mp3Detail}`);
+      this.addMessage(`${payload.data.summary} ${mp3Detail}`);
     },
     async refreshSystemStatus() {
       await this.loadProviders();
-      this.messages.unshift("Estado de componentes actualizado.");
+      this.addMessage("Estado de componentes actualizado.");
     },
     async restartBootstrap() {
       const response = await fetch(apiUrl("/api/system/bootstrap/restart"), {
@@ -408,11 +424,11 @@ createApp({
       });
       const payload = await this.readApiPayload(response, {});
       if (!payload.ok) {
-        this.messages.unshift(payload.detail || "No se pudo iniciar el bootstrap.");
+        this.addMessage(payload.detail || "No se pudo iniciar el bootstrap.");
         return;
       }
       await this.loadProviders();
-      this.messages.unshift(payload.data.message || "Bootstrap iniciado. Consulta el estado en unos minutos.");
+      this.addMessage(payload.data.message || "Bootstrap iniciado. Consulta el estado en unos minutos.");
     },
     async upgradeBootstrap() {
       const response = await fetch(apiUrl("/api/system/bootstrap/upgrade"), {
@@ -422,15 +438,15 @@ createApp({
       });
       const payload = await this.readApiPayload(response, {});
       if (!payload.ok) {
-        this.messages.unshift(payload.detail || "No se pudo actualizar el bootstrap.");
+        this.addMessage(payload.detail || "No se pudo actualizar el bootstrap.");
         return;
       }
       await this.loadProviders();
-      this.messages.unshift(payload.data.message || "Actualizacion iniciada. Consulta el estado en unos minutos.");
+      this.addMessage(payload.data.message || "Actualizacion iniciada. Consulta el estado en unos minutos.");
     },
     async generateLocalFinalSong() {
       if (!this.canGenerateLocalFinalSong) {
-        this.messages.unshift(this.localFinalStatusMessage);
+        this.addMessage(this.localFinalStatusMessage);
         await this.loadProviders();
         return;
       }
@@ -441,13 +457,13 @@ createApp({
       });
       const payload = await this.readApiPayload(response, {});
       if (!payload.ok) {
-        this.messages.unshift(payload.detail || "No se pudo generar la cancion final local.");
+        this.addMessage(payload.detail || "No se pudo generar la cancion final local.");
         await this.loadProviders();
         return;
       }
       await this.loadProviders();
       await this.loadJsonConfigs();
-      this.messages.unshift(`${payload.data.summary} ${payload.data.mp3 || ""}`);
+      this.addMessage(`${payload.data.summary} ${payload.data.mp3 || ""}`);
     },
     async saveLatestMp3() {
       this.downloadStatus = "Preparando descarga...";
@@ -457,7 +473,7 @@ createApp({
         const payload = await response.json().catch(() => ({}));
         const message = payload.detail || "No se pudo descargar el MP3. Genera WAV/MP3 primero.";
         this.downloadStatus = message;
-        this.messages.unshift(message);
+        this.addMessage(message);
         return;
       }
 
@@ -472,7 +488,7 @@ createApp({
         await writable.write(blob);
         await writable.close();
         this.downloadStatus = `MP3 guardado: ${filename}`;
-        this.messages.unshift(this.downloadStatus);
+        this.addMessage(this.downloadStatus);
         return;
       }
 
@@ -485,7 +501,7 @@ createApp({
       link.remove();
       URL.revokeObjectURL(url);
       this.downloadStatus = "Descarga iniciada. El navegador decide la carpeta o pregunta donde guardarlo segun su configuracion.";
-      this.messages.unshift(this.downloadStatus);
+      this.addMessage(this.downloadStatus);
     },
     filenameFromDisposition(disposition) {
       const match = disposition?.match(/filename="?([^"]+)"?/i);
@@ -504,12 +520,12 @@ createApp({
       const payload = await response.json();
       this.gemmaAssistant.loading = false;
       if (!payload.ok) {
-        this.messages.unshift(payload.detail || "Gemma no pudo revisar el proyecto.");
+        this.addMessage(payload.detail || "Gemma no pudo revisar el proyecto.");
         return;
       }
       this.gemmaAssistant.response = payload.data;
       await this.loadOrchestration();
-      this.messages.unshift(`Gemma transversal: ${payload.data.status}`);
+      this.addMessage(`Gemma transversal: ${payload.data.status}`);
     },
     async askQwenAssistant() {
       this.qwenAssistant.loading = true;
@@ -524,12 +540,12 @@ createApp({
       const payload = await response.json();
       this.qwenAssistant.loading = false;
       if (!payload.ok) {
-        this.messages.unshift(payload.detail || "Qwen no pudo revisar el ajuste tecnico.");
+        this.addMessage(payload.detail || "Qwen no pudo revisar el ajuste tecnico.");
         return;
       }
       this.qwenAssistant.response = payload.data;
       await this.loadOrchestration();
-      this.messages.unshift(`Qwen tecnico: ${payload.data.status}`);
+      this.addMessage(`Qwen tecnico: ${payload.data.status}`);
     },
     async simulateHandoff(modelRole = "intent_extractor", taskType = "extract_intent") {
       await this.postAction(
@@ -556,11 +572,11 @@ createApp({
       });
       const payload = await this.readApiPayload(response, {});
       if (!payload.ok) {
-        this.messages.unshift(payload.detail || payload.error || "Error");
+        this.addMessage(payload.detail || payload.error || "Error");
         return;
       }
       const detail = payload.data?.summary || payload.data?.id || payload.data?.path || "";
-      this.messages.unshift(`${successLabel}: ${detail}`);
+      this.addMessage(`${successLabel}: ${detail}`);
       await this.loadJsonConfigs();
       await this.loadSets();
       await this.loadOrchestration();
