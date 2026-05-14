@@ -73,6 +73,79 @@ class AudioExportTest(unittest.TestCase):
             self.assertTrue((temp_path / "providers").exists())
             self.assertTrue((temp_path / "provider-cache" / "python").exists())
 
+    def test_docker_bootstrap_markers_skip_existing_installs(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            temp_path = Path(temp_dir)
+            marker = temp_path / "provider-cache" / ".ace-step.installed"
+            package = "git+https://github.com/ace-step/ACE-Step.git"
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(f"{package}\npython={sys.version.split()[0]}\n", encoding="utf-8")
+            with patch.object(docker_bootstrap, "CACHE_ROOT", temp_path / "provider-cache"), patch.object(
+                docker_bootstrap,
+                "ACE_STEP_MARKER",
+                marker,
+            ), patch.dict(
+                os.environ,
+                {
+                    "SONG_AI_BOOTSTRAP_UPGRADE": "false",
+                    "SONG_AI_ACE_STEP_PACKAGE": package,
+                },
+                clear=False,
+            ), patch("subprocess.run") as run:
+                installed = docker_bootstrap.install_ace_step(upgrade=False)
+
+            self.assertFalse(installed)
+            run.assert_not_called()
+
+    def test_docker_bootstrap_existing_modules_create_marker_without_reinstall(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            temp_path = Path(temp_dir)
+            marker = temp_path / "provider-cache" / ".ace-step.installed"
+            package = "git+https://github.com/ace-step/ACE-Step.git"
+            with patch.object(docker_bootstrap, "ACE_STEP_MARKER", marker), patch.dict(
+                os.environ,
+                {
+                    "SONG_AI_BOOTSTRAP_UPGRADE": "false",
+                    "SONG_AI_ACE_STEP_PACKAGE": package,
+                },
+                clear=False,
+            ), patch.object(docker_bootstrap, "modules_available", return_value=True), patch("subprocess.run") as run:
+                installed = docker_bootstrap.install_ace_step(upgrade=False)
+
+            self.assertFalse(installed)
+            self.assertTrue(marker.exists())
+            self.assertIn(package, marker.read_text(encoding="utf-8"))
+            run.assert_not_called()
+
+    def test_docker_bootstrap_upgrade_ignores_existing_markers(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            temp_path = Path(temp_dir)
+            marker = temp_path / "provider-cache" / ".ace-step.installed"
+            package = "git+https://github.com/ace-step/ACE-Step.git"
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(package, encoding="utf-8")
+            with patch.object(docker_bootstrap, "CACHE_ROOT", temp_path / "provider-cache"), patch.object(
+                docker_bootstrap,
+                "PIP_CACHE",
+                temp_path / "provider-cache" / "pip",
+            ), patch.object(
+                docker_bootstrap,
+                "PYTHON_TARGET",
+                temp_path / "provider-cache" / "python",
+            ), patch.object(
+                docker_bootstrap,
+                "ACE_STEP_MARKER",
+                marker,
+            ), patch.dict(
+                os.environ,
+                {"SONG_AI_ACE_STEP_PACKAGE": package},
+                clear=False,
+            ), patch("subprocess.run") as run:
+                installed = docker_bootstrap.install_ace_step(upgrade=True)
+
+            self.assertTrue(installed)
+            self.assertIn("--upgrade", run.call_args.args[0])
+
     def test_local_tool_wrappers_are_available(self) -> None:
         for tool_name in (
             "musicgen_generate.py",

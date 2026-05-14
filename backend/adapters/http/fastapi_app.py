@@ -37,31 +37,34 @@ class BootstrapRunner:
         with self.lock:
             return dict(self.state)
 
-    def start(self) -> dict[str, Any]:
+    def start(self, upgrade: bool = False) -> dict[str, Any]:
         with self.lock:
             if self.state["status"] == "running":
                 return dict(self.state)
             self.state = {
                 "status": "running",
-                "message": "Bootstrap ejecutandose en segundo plano.",
+                "message": "Bootstrap actualizando dependencias en segundo plano." if upgrade else "Bootstrap ejecutandose en segundo plano.",
+                "upgrade": upgrade,
                 "result": {},
             }
-        thread = Thread(target=self._run, daemon=True)
+        thread = Thread(target=self._run, kwargs={"upgrade": upgrade}, daemon=True)
         thread.start()
         return self.status()
 
-    def _run(self) -> None:
+    def _run(self, upgrade: bool = False) -> None:
         try:
-            result = run_bootstrap(force=True)
+            result = run_bootstrap(force=True, upgrade=upgrade)
             state = {
                 "status": "ready",
-                "message": "Bootstrap finalizado.",
+                "message": "Bootstrap actualizado." if upgrade else "Bootstrap finalizado.",
+                "upgrade": upgrade,
                 "result": result,
             }
         except Exception as error:
             state = {
                 "status": "error",
                 "message": str(error),
+                "upgrade": upgrade,
                 "result": {},
             }
         with self.lock:
@@ -148,6 +151,11 @@ def get_system_status() -> dict[str, Any]:
 @app.post("/api/system/bootstrap/restart")
 def restart_bootstrap() -> dict[str, Any]:
     return ok(bootstrap_runner.start())
+
+
+@app.post("/api/system/bootstrap/upgrade")
+def upgrade_bootstrap() -> dict[str, Any]:
+    return ok(bootstrap_runner.start(upgrade=True))
 
 
 @app.get("/api/projects/phases")

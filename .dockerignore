@@ -5,3 +5,6 @@ docs/
 tests/
 .git/
 .env
+data/
+frontend/node_modules/
+frontend/dist/

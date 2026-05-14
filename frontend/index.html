@@ -255,6 +255,9 @@
                 <button @click="restartBootstrap" :disabled="systemStatus.bootstrap?.status === 'running'">
                   {{ systemStatus.bootstrap?.status === 'running' ? 'Preparando...' : 'Preparar/reiniciar' }}
                 </button>
+                <button @click="upgradeBootstrap" :disabled="systemStatus.bootstrap?.status === 'running'">
+                  Actualizar dependencias
+                </button>
               </div>
             </header>
             <div class="component-grid">

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+import importlib.util
 import os
 import shutil
 import subprocess
 import sys
 import urllib.request
+from datetime import datetime, timezone
 
 
 MODEL_ROOT = Path(os.getenv("SONG_AI_MODEL_ROOT", "/app/models"))
@@ -13,11 +15,16 @@ PROVIDER_ROOT = Path(os.getenv("SONG_AI_PROVIDER_ROOT", "/app/providers"))
 CACHE_ROOT = Path(os.getenv("SONG_AI_PROVIDER_CACHE", "/app/provider-cache"))
 PYTHON_TARGET = CACHE_ROOT / "python"
 PIP_CACHE = CACHE_ROOT / "pip"
+LOCAL_AUDIO_MARKER = CACHE_ROOT / ".local-audio-deps.installed"
+ACE_STEP_MARKER = CACHE_ROOT / ".ace-step.installed"
 
 
-def run_bootstrap(force: bool = False) -> dict[str, object]:
+def run_bootstrap(force: bool = False, upgrade: bool = False) -> dict[str, object]:
     summary: dict[str, object] = {
         "enabled": force or enabled("SONG_AI_BOOTSTRAP_ON_START"),
+        "upgrade": upgrade or enabled("SONG_AI_BOOTSTRAP_UPGRADE"),
+        "python": sys.version.split()[0],
+        "policy": "idempotent_no_auto_upgrade",
         "directories": [],
         "installed_deps": False,
         "downloads": [],
@@ -28,11 +35,9 @@ def run_bootstrap(force: bool = False) -> dict[str, object]:
         return summary
 
     if enabled("SONG_AI_INSTALL_LOCAL_AUDIO_DEPS"):
-        install_local_audio_deps()
-        summary["installed_deps"] = True
+        summary["installed_deps"] = install_local_audio_deps(bool(summary["upgrade"]))
     if enabled("SONG_AI_INSTALL_ACE_STEP"):
-        install_ace_step()
-        summary["installed_ace_step"] = True
+        summary["installed_ace_step"] = install_ace_step(bool(summary["upgrade"]))
 
     download_url_models(summary)
     download_huggingface_models(summary)
@@ -58,42 +63,33 @@ def ensure_directories(summary: dict[str, object]) -> None:
     summary["directories"] = [str(directory) for directory in directories]
 
 
-def install_local_audio_deps() -> None:
+def install_local_audio_deps(upgrade: bool = False) -> bool:
     requirements = Path("/app/backend/requirements-local-audio.txt")
     if not requirements.exists():
         raise RuntimeError(f"No existe {requirements}")
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "--cache-dir",
-            str(PIP_CACHE),
-            "--target",
-            str(PYTHON_TARGET),
-            "-r",
-            str(requirements),
-        ],
-        check=True,
-    )
+    marker_content = requirements.read_text(encoding="utf-8")
+    if marker_current(LOCAL_AUDIO_MARKER, marker_content, upgrade):
+        return False
+    if not upgrade and modules_available(["huggingface_hub", "transformers", "scipy", "torch"]):
+        write_marker(LOCAL_AUDIO_MARKER, marker_content)
+        return False
+    command = pip_install_command(upgrade) + ["-r", str(requirements)]
+    subprocess.run(command, check=True)
+    write_marker(LOCAL_AUDIO_MARKER, marker_content)
+    return True
 
 
-def install_ace_step() -> None:
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "--cache-dir",
-            str(PIP_CACHE),
-            "--target",
-            str(PYTHON_TARGET),
-            "git+https://github.com/ace-step/ACE-Step.git",
-        ],
-        check=True,
-    )
+def install_ace_step(upgrade: bool = False) -> bool:
+    requirement = os.getenv("SONG_AI_ACE_STEP_PACKAGE", "git+https://github.com/ace-step/ACE-Step.git").strip()
+    if marker_current(ACE_STEP_MARKER, requirement, upgrade):
+        return False
+    if not upgrade and modules_available(["acestep"]):
+        write_marker(ACE_STEP_MARKER, requirement)
+        return False
+    command = pip_install_command(upgrade) + [requirement]
+    subprocess.run(command, check=True)
+    write_marker(ACE_STEP_MARKER, requirement)
+    return True
 
 
 def download_url_models(summary: dict[str, object]) -> None:
@@ -164,3 +160,45 @@ def split_list(value: str) -> list[str]:
 
 def safe_name(value: str) -> str:
     return "".join(character if character.isalnum() or character in "._-" else "_" for character in value)
+
+
+def pip_install_command(upgrade: bool = False) -> list[str]:
+    command = [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--disable-pip-version-check",
+        "--cache-dir",
+        str(PIP_CACHE),
+        "--target",
+        str(PYTHON_TARGET),
+    ]
+    if upgrade or enabled("SONG_AI_BOOTSTRAP_UPGRADE"):
+        command.extend(["--upgrade", "--upgrade-strategy", "eager"])
+    return command
+
+
+def marker_current(path: Path, content: str, upgrade: bool = False) -> bool:
+    if upgrade or enabled("SONG_AI_BOOTSTRAP_UPGRADE"):
+        return False
+    if not path.exists():
+        return False
+    marker = path.read_text(encoding="utf-8")
+    return marker.startswith(content) and f"python={sys.version.split()[0]}" in marker
+
+
+def write_marker(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    marker = "\n".join(
+        [
+            content,
+            f"python={sys.version.split()[0]}",
+            f"updated_at={datetime.now(timezone.utc).isoformat()}",
+        ]
+    )
+    path.write_text(marker, encoding="utf-8")
+
+
+def modules_available(module_names: list[str]) -> bool:
+    return all(importlib.util.find_spec(module_name) is not None for module_name in module_names)

@@ -384,6 +384,20 @@ createApp({
       await this.loadProviders();
       this.messages.unshift(payload.data.message || "Bootstrap iniciado. Consulta el estado en unos minutos.");
     },
+    async upgradeBootstrap() {
+      const response = await fetch(apiUrl("/api/system/bootstrap/upgrade"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const payload = await response.json();
+      if (!payload.ok) {
+        this.messages.unshift(payload.detail || "No se pudo actualizar el bootstrap.");
+        return;
+      }
+      await this.loadProviders();
+      this.messages.unshift(payload.data.message || "Actualizacion iniciada. Consulta el estado en unos minutos.");
+    },
     async generateLocalFinalSong() {
       const response = await fetch(apiUrl("/api/local-final-song"), {
         method: "POST",

@@ -181,7 +181,11 @@ docker compose up --build
 Servicio:
 - Aplicacion web Vue + backend API: `http://localhost:8000`
 
-El contenedor `song-ai-app` incluye Node.js para construir Vue/Vite, Python/FastAPI para ejecutar el backend y `ffmpeg` para generar MP3 desde el WAV de mezcla. Los datos se guardan en el volumen Docker `song_ai_data`.
+El contenedor se construye en dos etapas:
+- `frontend-builder`: usa Node.js solo para compilar Vue/Vite.
+- `runtime`: usa `python:3.11-slim-bookworm` para ejecutar FastAPI, audio y bootstrap.
+
+Node.js no queda en el runtime final porque la app sirve `frontend/dist` ya compilado. Python queda fijado en 3.11 por compatibilidad con modelos y librerias de audio. Las dependencias base del backend (`fastapi`, `uvicorn`) van en la imagen Docker; las dependencias pesadas/variables de audio se instalan en volumen Docker mediante bootstrap.
 
 Volumenes Docker persistentes:
 - `song_ai_data`: proyectos, SQLite, sets, samples, canciones y exports.
@@ -189,12 +193,20 @@ Volumenes Docker persistentes:
 - `song_ai_providers`: repositorios/adaptadores locales clonados para providers gratuitos.
 - `song_ai_provider_cache`: cache pip y paquetes Python instalados en runtime para audio local.
 
+Politica de actualizacion:
+- Docker no actualiza Python ni paquetes base a ciegas; eso cambia solo cuando se reconstruye la imagen con cambios del proyecto.
+- El bootstrap no reinstala dependencias pesadas si ya existen marcadores compatibles en el volumen.
+- Si el volumen ya tiene paquetes Python instalados de una version anterior pero no tiene marcador, el bootstrap detecta modulos importables, crea el marcador y evita repetir `pip install`.
+- Si cambian `requirements-local-audio.txt`, `SONG_AI_ACE_STEP_PACKAGE`, URLs de modelos o repos configurados, el bootstrap descarga/instala lo necesario.
+- No hay cron automatico porque actualizar modelos/librerias sin control puede romper compatibilidad con Python 3.11 o con los pesos descargados. La actualizacion interna existe como tarea de UI/API bajo demanda.
+
 El contenedor puede preparar dependencias/modelos al arrancar si se activa el bootstrap:
 
 ```text
 SONG_AI_BOOTSTRAP_ON_START=true
 SONG_AI_INSTALL_LOCAL_AUDIO_DEPS=true
 SONG_AI_INSTALL_ACE_STEP=true
+SONG_AI_BOOTSTRAP_UPGRADE=false
 SONG_AI_DOWNLOAD_MUSICGEN=true
 SONG_AI_MUSICGEN_MODEL_ID=facebook/musicgen-small
 ```
@@ -208,7 +220,15 @@ SONG_AI_VOICE_MODEL_URL=https://...
 SONG_AI_PROVIDER_REPOS=acestep=https://github.com/.../ACE-Step.git;rvc=https://github.com/.../RVC.git
 ```
 
-El bootstrap es idempotente: crea carpetas y solo descarga/clona cuando falta contenido. Si los procesos son largos, se puede levantar el Docker y dejar que el contenedor termine de instalar en ejecucion. Los modelos y librerias quedan en volumenes Docker, no en carpetas temporales del contenedor.
+El bootstrap es idempotente: crea carpetas y solo descarga/clona/instala cuando falta contenido. Si los procesos son largos, se puede levantar el Docker y dejar que el contenedor termine de instalar en ejecucion. Los modelos y librerias quedan en volumenes Docker, no en carpetas temporales del contenedor.
+
+Si necesitas reemplazar o actualizar librerias ya instaladas en `song_ai_provider_cache`, activa:
+
+```text
+SONG_AI_BOOTSTRAP_UPGRADE=true
+```
+
+Con ese flag, pip usa `--upgrade --upgrade-strategy eager`. Sin ese flag, el bootstrap usa marcadores en el volumen y deteccion de modulos ya instalados para evitar reinstalar y evitar warnings de carpetas ya existentes. El runtime tambien desactiva el aviso de nueva version de pip para que los logs se concentren en el estado real del pipeline.
 
 La ruta final local por defecto en Docker usa ACE-Step como generador completo de cancion:
 
@@ -304,7 +324,10 @@ La generacion final local se ejecuta con:
 ```text
 POST /api/local-final-song
 POST /api/system/bootstrap/restart
+POST /api/system/bootstrap/upgrade
 ```
+
+`/api/system/bootstrap/upgrade` permite actualizar/reemplazar dependencias internas del contenedor desde la UI, sin entrar al Docker. Ejecuta el bootstrap con `pip --upgrade --upgrade-strategy eager` y conserva los volumenes.
 
 ### Proyectos Activos
 
