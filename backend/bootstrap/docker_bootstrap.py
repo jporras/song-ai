@@ -68,9 +68,10 @@ def install_local_audio_deps(upgrade: bool = False) -> bool:
     if not requirements.exists():
         raise RuntimeError(f"No existe {requirements}")
     marker_content = requirements.read_text(encoding="utf-8")
-    if marker_current(LOCAL_AUDIO_MARKER, marker_content, upgrade):
+    required_modules = ["huggingface_hub", "transformers", "scipy", "torch"]
+    if marker_current(LOCAL_AUDIO_MARKER, marker_content, upgrade) and modules_available(required_modules):
         return False
-    if not upgrade and modules_available(["huggingface_hub", "transformers", "scipy", "torch"]):
+    if not upgrade and modules_available(required_modules):
         write_marker(LOCAL_AUDIO_MARKER, marker_content)
         return False
     command = pip_install_command(upgrade) + ["-r", str(requirements)]
@@ -81,7 +82,7 @@ def install_local_audio_deps(upgrade: bool = False) -> bool:
 
 def install_ace_step(upgrade: bool = False) -> bool:
     requirement = os.getenv("SONG_AI_ACE_STEP_PACKAGE", "git+https://github.com/ace-step/ACE-Step.git").strip()
-    if marker_current(ACE_STEP_MARKER, requirement, upgrade):
+    if marker_current(ACE_STEP_MARKER, requirement, upgrade) and modules_available(["acestep"]):
         return False
     if not upgrade and modules_available(["acestep"]):
         write_marker(ACE_STEP_MARKER, requirement)

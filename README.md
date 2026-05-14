@@ -195,7 +195,7 @@ Volumenes Docker persistentes:
 
 Politica de actualizacion:
 - Docker no actualiza Python ni paquetes base a ciegas; eso cambia solo cuando se reconstruye la imagen con cambios del proyecto.
-- El bootstrap no reinstala dependencias pesadas si ya existen marcadores compatibles en el volumen.
+- El bootstrap no reinstala dependencias pesadas si ya existen marcadores compatibles en el volumen y los modulos Python requeridos son importables.
 - Si el volumen ya tiene paquetes Python instalados de una version anterior pero no tiene marcador, el bootstrap detecta modulos importables, crea el marcador y evita repetir `pip install`.
 - Si cambian `requirements-local-audio.txt`, `SONG_AI_ACE_STEP_PACKAGE`, URLs de modelos o repos configurados, el bootstrap descarga/instala lo necesario.
 - No hay cron automatico porque actualizar modelos/librerias sin control puede romper compatibilidad con Python 3.11 o con los pesos descargados. La actualizacion interna existe como tarea de UI/API bajo demanda.
@@ -228,7 +228,7 @@ Si necesitas reemplazar o actualizar librerias ya instaladas en `song_ai_provide
 SONG_AI_BOOTSTRAP_UPGRADE=true
 ```
 
-Con ese flag, pip usa `--upgrade --upgrade-strategy eager`. Sin ese flag, el bootstrap usa marcadores en el volumen y deteccion de modulos ya instalados para evitar reinstalar y evitar warnings de carpetas ya existentes. El runtime tambien desactiva el aviso de nueva version de pip para que los logs se concentren en el estado real del pipeline.
+Con ese flag, pip usa `--upgrade --upgrade-strategy eager`. Sin ese flag, el bootstrap usa marcadores en el volumen y deteccion de modulos ya instalados para evitar reinstalar y evitar warnings de carpetas ya existentes. Si hay marcador pero los modulos no importan correctamente, se considera instalacion incompleta y se reinstala. El runtime tambien desactiva el aviso de nueva version de pip para que los logs se concentren en el estado real del pipeline.
 
 La ruta final local por defecto en Docker usa ACE-Step como generador completo de cancion:
 

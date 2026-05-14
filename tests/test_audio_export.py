@@ -91,11 +91,39 @@ class AudioExportTest(unittest.TestCase):
                     "SONG_AI_ACE_STEP_PACKAGE": package,
                 },
                 clear=False,
-            ), patch("subprocess.run") as run:
+            ), patch.object(docker_bootstrap, "modules_available", return_value=True), patch("subprocess.run") as run:
                 installed = docker_bootstrap.install_ace_step(upgrade=False)
 
             self.assertFalse(installed)
             run.assert_not_called()
+
+    def test_docker_bootstrap_marker_reinstalls_when_modules_are_missing(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            temp_path = Path(temp_dir)
+            marker = temp_path / "provider-cache" / ".ace-step.installed"
+            package = "git+https://github.com/ace-step/ACE-Step.git"
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(f"{package}\npython={sys.version.split()[0]}\n", encoding="utf-8")
+            with patch.object(docker_bootstrap, "PIP_CACHE", temp_path / "provider-cache" / "pip"), patch.object(
+                docker_bootstrap,
+                "PYTHON_TARGET",
+                temp_path / "provider-cache" / "python",
+            ), patch.object(
+                docker_bootstrap,
+                "ACE_STEP_MARKER",
+                marker,
+            ), patch.dict(
+                os.environ,
+                {
+                    "SONG_AI_BOOTSTRAP_UPGRADE": "false",
+                    "SONG_AI_ACE_STEP_PACKAGE": package,
+                },
+                clear=False,
+            ), patch.object(docker_bootstrap, "modules_available", return_value=False), patch("subprocess.run") as run:
+                installed = docker_bootstrap.install_ace_step(upgrade=False)
+
+            self.assertTrue(installed)
+            run.assert_called_once()
 
     def test_docker_bootstrap_existing_modules_create_marker_without_reinstall(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
