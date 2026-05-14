@@ -209,12 +209,12 @@ createApp({
         fetch(apiUrl("/api/system/status")),
         fetch(apiUrl(`/api/projects/phases${this.activeProjectId ? `?set_id=${this.activeProjectId}` : ""}`)),
       ]);
-      const payload = await providersResponse.json();
-      const studioPayload = await studioResponse.json();
-      const modelPayload = await modelResponse.json();
-      const localPipelinePayload = await localPipelineResponse.json();
-      const systemPayload = await systemResponse.json();
-      const phasesPayload = await phasesResponse.json();
+      const payload = await this.readApiPayload(providersResponse, {});
+      const studioPayload = await this.readApiPayload(studioResponse, {});
+      const modelPayload = await this.readApiPayload(modelResponse, {});
+      const localPipelinePayload = await this.readApiPayload(localPipelineResponse, {});
+      const systemPayload = await this.readApiPayload(systemResponse, {});
+      const phasesPayload = await this.readApiPayload(phasesResponse, { phases: [] });
       this.providers = payload.data;
       this.studioStatus = studioPayload.data;
       this.modelStatus = modelPayload.data;
@@ -285,6 +285,13 @@ createApp({
       const response = await fetch(apiUrl("/api/json-configs"));
       const payload = await response.json();
       this.jsonConfigs = payload.data;
+    },
+    async readApiPayload(response, fallbackData = {}) {
+      const payload = await response.json().catch(() => ({ ok: false, data: fallbackData }));
+      if (!response.ok || payload.ok === false) {
+        return { ok: false, data: fallbackData, detail: payload.detail || "API no disponible" };
+      }
+      return payload;
     },
     async createInstrumental() {
       await this.postAction("/api/instrumentals", this.instrumental, "Instrumental guardado");

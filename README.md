@@ -45,6 +45,7 @@ Ultimo ajuste:
 - El modo pro queda en pausa: no se registran providers pagos/remotos en el pipeline activo.
 - Produccion incluye `Estado local del sistema`: lista componentes, servicios/volumenes, comandos locales y bootstrap con indicador visual, boton para consultar estado y boton para preparar/reiniciar bootstrap en segundo plano.
 - Produccion incluye `Fases del proyecto/set`: muestra si ya estan completos instrumental, melodia, letra, set, sample, cancion, mezcla, exports y final local MP3.
+- La API de fases usa una ruta estatica prioritaria (`/api/projects/phases`) y la UI tolera respuestas fallidas para no dejar la pantalla en blanco.
 - Produccion incluye `Gemma transversal`, asistente de proyecto activo via llama.cpp cuando `SONG_AI_LLAMA_CPP_ENABLED=true`; si llama.cpp no responde, conserva guia local y deja la app ejecutable.
 - Produccion incluye `Qwen tecnico`, rol separado para ajustes tecnicos, debugging, arquitectura, workers, SQLite, ffmpeg y pipeline. Qwen no reemplaza a Gemma en creatividad musical.
 

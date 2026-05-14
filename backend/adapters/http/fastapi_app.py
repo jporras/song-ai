@@ -113,11 +113,6 @@ def get_set(set_id: str) -> dict[str, Any]:
     return run_action(lambda: service.get_set(set_id))
 
 
-@app.get("/api/projects/{set_id}")
-def get_project(set_id: str) -> dict[str, Any]:
-    return run_action(lambda: service.get_project(set_id))
-
-
 @app.get("/api/favorites")
 def get_favorites() -> dict[str, Any]:
     return ok(service.list_favorites())
@@ -161,6 +156,11 @@ def upgrade_bootstrap() -> dict[str, Any]:
 @app.get("/api/projects/phases")
 def get_project_phases(set_id: str | None = None) -> dict[str, Any]:
     return ok(service.project_phase_status(set_id))
+
+
+@app.get("/api/projects/{set_id}")
+def get_project(set_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.get_project(set_id))
 
 
 @app.get("/api/orchestration/status")
