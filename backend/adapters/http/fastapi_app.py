@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 from threading import Lock, Thread
 from typing import Any
 
@@ -80,6 +81,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def start_bootstrap_on_startup() -> None:
+    if os.getenv("SONG_AI_BOOTSTRAP_ON_START", "false").strip().lower() in {"1", "true", "yes", "on"}:
+        bootstrap_runner.start()
 
 
 def ok(data: Any) -> dict[str, Any]:

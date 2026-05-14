@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import importlib.util
+import importlib
 from pathlib import Path
 import shutil
 import subprocess
@@ -178,7 +178,11 @@ class LocalSongPipeline:
         if not command:
             return False
         if "acestep_generate.py" in command:
-            return importlib.util.find_spec("acestep.pipeline_ace_step") is not None
+            try:
+                module = importlib.import_module("acestep.pipeline_ace_step")
+            except Exception:
+                return False
+            return hasattr(module, "ACEStepPipeline")
         return True
 
     def _full_song_detail(self, configured: bool, available: bool) -> str:

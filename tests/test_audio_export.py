@@ -92,7 +92,7 @@ class AudioExportTest(unittest.TestCase):
                     "SONG_AI_ACE_STEP_PACKAGE": package,
                 },
                 clear=False,
-            ), patch.object(docker_bootstrap, "modules_available", return_value=True), patch("subprocess.run") as run:
+            ), patch.object(docker_bootstrap, "ace_step_ready", return_value=True), patch("subprocess.run") as run:
                 installed = docker_bootstrap.install_ace_step(upgrade=False)
 
             self.assertFalse(installed)
@@ -120,7 +120,11 @@ class AudioExportTest(unittest.TestCase):
                     "SONG_AI_ACE_STEP_PACKAGE": package,
                 },
                 clear=False,
-            ), patch.object(docker_bootstrap, "modules_available", return_value=False), patch("subprocess.run") as run:
+            ), patch.object(docker_bootstrap, "modules_available", return_value=False), patch.object(
+                docker_bootstrap,
+                "ace_step_ready",
+                return_value=False,
+            ), patch("subprocess.run") as run:
                 installed = docker_bootstrap.install_ace_step(upgrade=False)
 
             self.assertTrue(installed)
@@ -138,13 +142,42 @@ class AudioExportTest(unittest.TestCase):
                     "SONG_AI_ACE_STEP_PACKAGE": package,
                 },
                 clear=False,
-            ), patch.object(docker_bootstrap, "modules_available", return_value=True), patch("subprocess.run") as run:
+            ), patch.object(docker_bootstrap, "ace_step_ready", return_value=True), patch("subprocess.run") as run:
                 installed = docker_bootstrap.install_ace_step(upgrade=False)
 
             self.assertFalse(installed)
             self.assertTrue(marker.exists())
             self.assertIn(package, marker.read_text(encoding="utf-8"))
             run.assert_not_called()
+
+    def test_docker_bootstrap_repairs_local_audio_deps_when_compatibility_probe_fails(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            temp_path = Path(temp_dir)
+            marker = temp_path / "provider-cache" / ".local-audio-deps.installed"
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            requirements = temp_path / "requirements-local-audio.txt"
+            requirements.write_text("huggingface_hub>=0.34.0,<1.0\n", encoding="utf-8")
+            marker.write_text(f"{requirements.read_text(encoding='utf-8')}\npython={sys.version.split()[0]}\n", encoding="utf-8")
+            with patch.object(docker_bootstrap, "LOCAL_AUDIO_MARKER", marker), patch.object(
+                docker_bootstrap,
+                "PIP_CACHE",
+                temp_path / "provider-cache" / "pip",
+            ), patch.object(
+                docker_bootstrap,
+                "PYTHON_TARGET",
+                temp_path / "provider-cache" / "python",
+            ), patch("pathlib.Path.exists", return_value=True), patch(
+                "pathlib.Path.read_text",
+                return_value=requirements.read_text(encoding="utf-8"),
+            ), patch.object(docker_bootstrap, "modules_available", return_value=True), patch.object(
+                docker_bootstrap,
+                "local_audio_deps_ready",
+                return_value=False,
+            ), patch("subprocess.run") as run:
+                installed = docker_bootstrap.install_local_audio_deps(upgrade=False)
+
+            self.assertTrue(installed)
+            self.assertIn("--upgrade", run.call_args.args[0])
 
     def test_docker_bootstrap_upgrade_ignores_existing_markers(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:

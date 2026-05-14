@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 import importlib.util
 import os
@@ -69,12 +70,14 @@ def install_local_audio_deps(upgrade: bool = False) -> bool:
         raise RuntimeError(f"No existe {requirements}")
     marker_content = requirements.read_text(encoding="utf-8")
     required_modules = ["huggingface_hub", "transformers", "scipy", "torch"]
-    if marker_current(LOCAL_AUDIO_MARKER, marker_content, upgrade) and modules_available(required_modules):
+    ready = local_audio_deps_ready()
+    if marker_current(LOCAL_AUDIO_MARKER, marker_content, upgrade) and ready:
         return False
-    if not upgrade and modules_available(required_modules):
+    if not upgrade and ready:
         write_marker(LOCAL_AUDIO_MARKER, marker_content)
         return False
-    command = pip_install_command(upgrade) + ["-r", str(requirements)]
+    needs_repair = modules_available(required_modules) and not ready
+    command = pip_install_command(upgrade or needs_repair) + ["-r", str(requirements)]
     subprocess.run(command, check=True)
     write_marker(LOCAL_AUDIO_MARKER, marker_content)
     return True
@@ -82,12 +85,14 @@ def install_local_audio_deps(upgrade: bool = False) -> bool:
 
 def install_ace_step(upgrade: bool = False) -> bool:
     requirement = os.getenv("SONG_AI_ACE_STEP_PACKAGE", "git+https://github.com/ace-step/ACE-Step.git").strip()
-    if marker_current(ACE_STEP_MARKER, requirement, upgrade) and modules_available(["acestep"]):
+    ready = ace_step_ready()
+    if marker_current(ACE_STEP_MARKER, requirement, upgrade) and ready:
         return False
-    if not upgrade and modules_available(["acestep"]):
+    if not upgrade and ready:
         write_marker(ACE_STEP_MARKER, requirement)
         return False
-    command = pip_install_command(upgrade) + [requirement]
+    needs_repair = modules_available(["acestep"]) and not ready
+    command = pip_install_command(upgrade or needs_repair) + [requirement]
     subprocess.run(command, check=True)
     write_marker(ACE_STEP_MARKER, requirement)
     return True
@@ -203,3 +208,21 @@ def write_marker(path: Path, content: str) -> None:
 
 def modules_available(module_names: list[str]) -> bool:
     return all(importlib.util.find_spec(module_name) is not None for module_name in module_names)
+
+
+def local_audio_deps_ready() -> bool:
+    if not modules_available(["huggingface_hub", "transformers", "scipy", "torch"]):
+        return False
+    try:
+        from huggingface_hub import DDUFEntry  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
+def ace_step_ready() -> bool:
+    try:
+        module = importlib.import_module("acestep.pipeline_ace_step")
+    except Exception:
+        return False
+    return hasattr(module, "ACEStepPipeline")
