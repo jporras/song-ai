@@ -24,24 +24,28 @@ class LocalInterpreterProvider(InterpreterProvider):
 
 class LocalMusicProvider(MusicProvider):
     def name(self) -> str:
-        return "musicgen-soundtrack-mock"
+        return "local-soundtrack-command"
 
     def capabilities(self) -> list[str]:
         return [
-            "lullaby_soundtrack_prompt",
-            "instrumental_draft",
-            "music_box_piano_pads_strings",
-            "sample_mock",
-            "full_song_mock",
+            "generate_instrumental_wav_from_local_command",
+            "uses_song_intent_and_music_prompt",
+            "requires_song_ai_soundtrack_command",
+            "local_only_no_pro_api",
         ]
 
 
 class LocalVoiceProvider(VoiceProvider):
     def name(self) -> str:
-        return "singing-voice-rvc-acestep-mock"
+        return "local-singing-voice-command"
 
     def capabilities(self) -> list[str]:
-        return ["sung_vocal_mock", "vocal_guide_mock", "timbre_adaptation_placeholder", "not_tts_spoken_voice"]
+        return [
+            "generate_sung_vocals_wav_from_local_command",
+            "uses_lyrics_and_music_prompt",
+            "requires_song_ai_singing_voice_command",
+            "not_tts_spoken_voice",
+        ]
 
 
 class LocalLyricsProvider(LyricsProvider):

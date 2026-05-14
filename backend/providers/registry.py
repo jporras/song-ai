@@ -1,12 +1,5 @@
 from config.model_settings import HuggingFaceModelSettings, LocalModelSettings
 from providers.base import InterpreterProvider, LyricsProvider, MusicProvider, VoiceProvider
-from providers.huggingface import (
-    HuggingFaceInterpreterProvider,
-    HuggingFaceLyricsProvider,
-    HuggingFaceMusicProvider,
-    HuggingFaceProviderStatus,
-    HuggingFaceVoiceProvider,
-)
 from providers.local import (
     LocalInterpreterProvider,
     LocalLyricsProvider,
@@ -15,7 +8,6 @@ from providers.local import (
     LocalVoiceProvider,
 )
 from providers.llamacpp import LlamaCppInterpreterProvider, LlamaCppLyricsProvider, LlamaCppTechnicalProvider
-from providers.pro import ProLyricsProvider, ProMusicProvider, ProVoiceProvider
 
 
 class ProviderRegistry:
@@ -38,14 +30,6 @@ class ProviderRegistry:
         self.interpreter_providers.append(LocalInterpreterProvider())
         self.technical_providers.append(LocalTechnicalProvider())
         self.lyrics_providers.append(LocalLyricsProvider())
-        if hf_settings is not None:
-            self.interpreter_providers.append(HuggingFaceInterpreterProvider(hf_settings))
-            self.music_providers.append(HuggingFaceMusicProvider(hf_settings))
-            self.voice_providers.append(HuggingFaceVoiceProvider(hf_settings))
-            self.lyrics_providers.append(HuggingFaceLyricsProvider(hf_settings))
-        self.music_providers.append(ProMusicProvider())
-        self.voice_providers.append(ProVoiceProvider())
-        self.lyrics_providers.append(ProLyricsProvider())
 
     def summary(self) -> dict[str, list[dict[str, object]]]:
         summary = {
@@ -71,7 +55,13 @@ class ProviderRegistry:
         return {
             "source_of_truth": "sqlite",
             "json_policy": "snapshots_regenerables",
-            "mode": "mock_first_provider_ready",
+            "mode": "local_only",
+            "final_modes": {
+                "available": ["local"],
+                "disabled": {
+                    "pro": "Desactivado en esta version. No se registran providers pagos ni remotos.",
+                },
+            },
             "primary_goal": "complete_lullaby_or_children_emotional_song",
             "priority_order": [
                 "good_lyrics",
@@ -90,6 +80,7 @@ class ProviderRegistry:
             "active_providers": active_providers,
             "model_status": self.model_status(),
             "recommended_stack": self.recommended_stack(),
+            "local_pipeline": self.local_pipeline_status(),
             "llama_cpp": self.llama_cpp_status(),
             "ready_roles": [
                 role
@@ -129,11 +120,15 @@ class ProviderRegistry:
         if self.hf_settings is None:
             return {
                 "local": local,
-                "huggingface": {"enabled": False, "reason": "No HuggingFace settings loaded"},
+                "external": {"enabled": False, "reason": "Build local-only: providers remotos/pro desactivados."},
             }
         return {
             "local": local,
-            "huggingface": HuggingFaceProviderStatus(self.hf_settings).to_dict(),
+            "external": {
+                "enabled": False,
+                "configured": self.hf_settings.enabled,
+                "reason": "Build local-only: no se registran providers HuggingFace/pro en el pipeline activo.",
+            },
         }
 
     def recommended_stack(self) -> dict[str, object]:
@@ -152,6 +147,71 @@ class ProviderRegistry:
                 "stems": self.local_settings.stems_model,
                 "mixer": self.local_settings.mixer_engine,
             },
+        }
+
+    def local_pipeline_status(self) -> dict[str, object]:
+        if self.local_settings is None:
+            return {
+                "mode": "local_only",
+                "ready": False,
+                "missing": ["settings"],
+                "requirements": [],
+            }
+        requirements = [
+            {
+                "role": "full_song",
+                "engine": "ACE-Step",
+                "model": "ACE-Step local command",
+                "required_for_real_output": True,
+                "configured": bool(self.local_settings.full_song_command.strip()),
+            },
+            {
+                "role": "interpreter_and_lyrics",
+                "engine": "llama.cpp",
+                "model": self.local_settings.interpreter_model,
+                "required_for_real_output": True,
+                "configured": self.local_settings.llama_cpp_enabled,
+            },
+            {
+                "role": "soundtrack",
+                "engine": "MusicGen",
+                "model": self.local_settings.soundtrack_model,
+                "required_for_real_output": True,
+                "configured": True,
+            },
+            {
+                "role": "singing_voice",
+                "engine": self.local_settings.singing_voice_engine,
+                "model": self.local_settings.singing_voice_engine,
+                "required_for_real_output": True,
+                "configured": True,
+            },
+            {
+                "role": "stems",
+                "engine": "Demucs",
+                "model": self.local_settings.stems_model,
+                "required_for_real_output": False,
+                "configured": True,
+            },
+            {
+                "role": "mix_and_export",
+                "engine": "ffmpeg",
+                "model": self.local_settings.mixer_engine,
+                "required_for_real_output": True,
+                "configured": True,
+            },
+        ]
+        missing = [
+            str(item["role"])
+            for item in requirements
+            if item["required_for_real_output"] and not item["configured"]
+        ]
+        return {
+            "mode": "local_only",
+            "ready": len(missing) == 0,
+            "missing": missing,
+            "requirements": requirements,
+            "note": "El pipeline final de esta version debe ejecutarse localmente; el modo pro no esta disponible.",
         }
 
     def _summarize(
@@ -191,14 +251,16 @@ class ProviderRegistry:
         }
 
     def _provider_status(self, provider_name: str) -> str:
+        if provider_name == "local-soundtrack-command":
+            if self.local_settings is not None and self.local_settings.soundtrack_command.strip():
+                return "configured"
+            return "requires_configuration"
+        if provider_name == "local-singing-voice-command":
+            if self.local_settings is not None and self.local_settings.singing_voice_command.strip():
+                return "configured"
+            return "requires_configuration"
         if provider_name.startswith(("local-", "llamacpp-", "musicgen-", "singing-voice-")):
             if provider_name.startswith("llamacpp-") and self.local_settings is not None:
                 return "configured" if self.local_settings.llama_cpp_enabled else "disabled"
             return "ready"
-        if provider_name.startswith("huggingface-"):
-            if self.hf_settings is not None and self.hf_settings.enabled:
-                return "configured"
-            return "disabled"
-        if provider_name.startswith("pro-"):
-            return "placeholder_ready"
         return "unknown"

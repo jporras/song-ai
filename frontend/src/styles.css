@@ -312,6 +312,102 @@ textarea {
   background: #eff6ff;
 }
 
+.system-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #d6dbe1;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+  background: #fbfdff;
+}
+
+.system-card header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.system-card header span {
+  display: block;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.component-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.component-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px;
+  background: white;
+}
+
+.component-card span:last-child {
+  display: block;
+  color: #475569;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  display: inline-block;
+  margin-top: 4px;
+  background: #94a3b8;
+}
+
+.status-dot.ready {
+  background: #16a34a;
+}
+
+.status-dot.missing,
+.status-dot.error {
+  background: #dc2626;
+}
+
+.status-dot.running {
+  background: #f59e0b;
+}
+
+.status-dot.idle {
+  background: #64748b;
+}
+
+.phase-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.phase-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 8px 10px;
+  color: #475569;
+  background: white;
+}
+
+.phase-pill.ready {
+  border-color: #16a34a;
+  background: #dcfce7;
+  color: #166534;
+}
+
 .assistant-card p {
   margin: 0;
   color: #334155;
@@ -320,7 +416,8 @@ textarea {
 
 .gemma-card,
 .qwen-card,
-.quick-export {
+.quick-export,
+.download-export {
   display: grid;
   gap: 12px;
   border: 1px solid #c7d2fe;
@@ -332,7 +429,8 @@ textarea {
 
 .gemma-card header,
 .qwen-card header,
-.quick-export {
+.quick-export,
+.download-export {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
 }
@@ -345,10 +443,26 @@ textarea {
 
 .gemma-card span,
 .qwen-card span,
-.quick-export span {
+.quick-export span,
+.download-export span {
   display: block;
   color: #475569;
   margin-top: 4px;
+}
+
+.download-export {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.muted-export {
+  border-color: #e5e7eb;
+  background: #f8fafc;
+}
+
+.download-export small {
+  display: block;
+  margin-top: 6px;
 }
 
 .gemma-card textarea,
@@ -616,7 +730,9 @@ pre {
 
   .gemma-card header,
   .qwen-card header,
-  .quick-export {
+  .quick-export,
+  .download-export,
+  .system-card header {
     grid-template-columns: 1fr;
   }
 

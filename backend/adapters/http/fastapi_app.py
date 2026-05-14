@@ -1,4 +1,5 @@
 from pathlib import Path
+from threading import Lock, Thread
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -7,6 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from application.song_service import SongService
+from bootstrap.docker_bootstrap import run_bootstrap
 from config.settings import Settings
 from core.storage import StorageManager
 
@@ -20,6 +22,53 @@ settings = Settings.load()
 storage = StorageManager(settings.data_dir)
 service = SongService(storage, settings)
 service.bootstrap()
+
+
+class BootstrapRunner:
+    def __init__(self) -> None:
+        self.lock = Lock()
+        self.state: dict[str, Any] = {
+            "status": "idle",
+            "message": "Bootstrap no iniciado desde la UI.",
+            "result": {},
+        }
+
+    def status(self) -> dict[str, Any]:
+        with self.lock:
+            return dict(self.state)
+
+    def start(self) -> dict[str, Any]:
+        with self.lock:
+            if self.state["status"] == "running":
+                return dict(self.state)
+            self.state = {
+                "status": "running",
+                "message": "Bootstrap ejecutandose en segundo plano.",
+                "result": {},
+            }
+        thread = Thread(target=self._run, daemon=True)
+        thread.start()
+        return self.status()
+
+    def _run(self) -> None:
+        try:
+            result = run_bootstrap(force=True)
+            state = {
+                "status": "ready",
+                "message": "Bootstrap finalizado.",
+                "result": result,
+            }
+        except Exception as error:
+            state = {
+                "status": "error",
+                "message": str(error),
+                "result": {},
+            }
+        with self.lock:
+            self.state = state
+
+
+bootstrap_runner = BootstrapRunner()
 
 app = FastAPI(title="Song AI Generator API", version="0.1.0")
 app.add_middleware(
@@ -84,6 +133,26 @@ def get_model_status() -> dict[str, Any]:
 @app.get("/api/studio/status")
 def get_studio_status() -> dict[str, Any]:
     return ok(service.studio_status())
+
+
+@app.get("/api/local-pipeline/status")
+def get_local_pipeline_status() -> dict[str, Any]:
+    return ok(service.local_pipeline_status())
+
+
+@app.get("/api/system/status")
+def get_system_status() -> dict[str, Any]:
+    return ok(service.system_status(bootstrap_runner.status()))
+
+
+@app.post("/api/system/bootstrap/restart")
+def restart_bootstrap() -> dict[str, Any]:
+    return ok(bootstrap_runner.start())
+
+
+@app.get("/api/projects/phases")
+def get_project_phases(set_id: str | None = None) -> dict[str, Any]:
+    return ok(service.project_phase_status(set_id))
 
 
 @app.get("/api/orchestration/status")
@@ -194,6 +263,21 @@ def prepare_exports() -> dict[str, Any]:
 @app.post("/api/audio-exports")
 def generate_audio_exports() -> dict[str, Any]:
     return run_action(service.generate_audio_exports)
+
+
+@app.post("/api/local-final-song")
+def generate_local_final_song() -> dict[str, Any]:
+    return run_action(service.generate_local_final_song)
+
+
+@app.get("/api/audio-exports/latest/download")
+def download_latest_audio_export(format: str = "mp3") -> FileResponse:
+    try:
+        path, filename = service.latest_audio_export_file(format)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    media_type = "audio/mpeg" if format.lower().strip().lstrip(".") == "mp3" else "audio/wav"
+    return FileResponse(path, media_type=media_type, filename=filename)
 
 
 @app.post("/api/templates")

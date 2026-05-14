@@ -1,4 +1,5 @@
 ﻿from pathlib import Path
+from datetime import datetime, timezone
 import json
 
 from adapters.sqlite.json_config_repository import JsonConfigRepository
@@ -34,6 +35,7 @@ class StorageManager:
             folder.mkdir(parents=True, exist_ok=True)
             if not existed:
                 created_or_existing.append(folder)
+        self.sync_legacy_sets_to_sqlite()
         return created_or_existing
 
     def list_data_folders(self) -> list[Path]:
@@ -181,6 +183,38 @@ class StorageManager:
             payload = self.read_json(set_path)
             song_sets.append({"set_id": str(payload["set_id"]), "path": str(set_dir)})
         return song_sets
+
+    def sync_legacy_sets_to_sqlite(self) -> dict[str, object]:
+        synced: list[str] = []
+        skipped: list[str] = []
+        for song_set in self.list_song_sets():
+            set_id = song_set["set_id"]
+            if self.set_repository.get_set(set_id) is not None:
+                skipped.append(set_id)
+                continue
+
+            set_path = Path(song_set["path"]) / "set.json"
+            payload = self.read_json(set_path)
+            song_set_model = SongSet.from_dict(
+                {
+                    **payload,
+                    "project_name": payload.get("project_name") or set_id,
+                    "description": payload.get("description") or "Proyecto migrado desde snapshot set.json.",
+                    "created_at": payload.get("created_at") or datetime.fromtimestamp(
+                        set_path.stat().st_mtime,
+                        timezone.utc,
+                    ).isoformat(),
+                }
+            )
+            self.set_repository.save_set(song_set_model, set_path)
+            synced.append(set_id)
+
+        return {
+            "synced_count": len(synced),
+            "skipped_count": len(skipped),
+            "synced": synced,
+            "skipped": skipped,
+        }
 
     def get_latest_song_set(self) -> dict[str, object] | None:
         song_sets = self.list_song_sets()

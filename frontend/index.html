@@ -244,6 +244,45 @@
               </span>
             </div>
           </div>
+          <div class="system-card">
+            <header>
+              <div>
+                <strong>Estado local del sistema</strong>
+                <span>Componentes, servicios y volumenes necesarios para generar la cancion final.</span>
+              </div>
+              <div class="row-actions">
+                <button @click="refreshSystemStatus">Consultar estado</button>
+                <button @click="restartBootstrap" :disabled="systemStatus.bootstrap?.status === 'running'">
+                  {{ systemStatus.bootstrap?.status === 'running' ? 'Preparando...' : 'Preparar/reiniciar' }}
+                </button>
+              </div>
+            </header>
+            <div class="component-grid">
+              <article v-for="component in systemStatus.components" :key="component.id" class="component-card">
+                <span :class="['status-dot', component.status]"></span>
+                <div>
+                  <strong>{{ component.label }}</strong>
+                  <small>{{ component.status }}</small>
+                  <span>{{ component.detail }}</span>
+                </div>
+              </article>
+            </div>
+          </div>
+          <div class="system-card">
+            <header>
+              <div>
+                <strong>Fases del proyecto/set</strong>
+                <span>{{ projectPhases.project_name || 'Sin proyecto cargado' }}</span>
+              </div>
+              <button @click="refreshSystemStatus">Actualizar fases</button>
+            </header>
+            <div class="phase-grid">
+              <span v-for="phase in projectPhases.phases" :key="phase.id" :class="['phase-pill', { ready: phase.ready }]">
+                <span :class="['status-dot', phase.status]"></span>
+                {{ phase.label }}
+              </span>
+            </div>
+          </div>
           <div class="gemma-card">
             <header>
               <div>
@@ -293,10 +332,27 @@
           </div>
           <div class="quick-export">
             <div>
-              <strong>MP3 predefinido</strong>
-              <span>Crea la cancion de cuna para Isabella con los defaults actuales y exporta WAV/MP3.</span>
+              <strong>Cancion local final</strong>
+              <span>Genera instrumental, voz cantada y mezcla usando herramientas locales configuradas. El modo pro esta en pausa.</span>
+              <small v-if="localPipeline.ready">Pipeline local listo para generar final.</small>
+              <small v-else>Falta configurar: {{ localPipeline.missing?.join(', ') || 'requisitos locales' }}.</small>
             </div>
-            <button class="primary" @click="createPresetMp3">Crear MP3 predefinido</button>
+            <button class="primary" @click="generateLocalFinalSong">Generar cancion local final</button>
+          </div>
+          <div class="quick-export muted-export">
+            <div>
+              <strong>Maqueta tecnica</strong>
+              <span>Crea WAV/MP3 mock para probar archivos, stems y descarga. No es una cancion final.</span>
+            </div>
+            <button @click="createPresetMp3">Crear maqueta</button>
+          </div>
+          <div class="download-export">
+            <div>
+              <strong>Guardar MP3 en mi equipo</strong>
+              <span>Descarga el ultimo `final_mix.mp3` generado dentro de Docker y elige donde guardarlo en tu maquina.</span>
+              <small v-if="downloadStatus">{{ downloadStatus }}</small>
+            </div>
+            <button @click="saveLatestMp3">Guardar MP3</button>
           </div>
           <div class="field-block project-form">
             <span>Proyecto / Set</span>
@@ -402,9 +458,19 @@
           </div>
           <div class="studio-policy">
             <strong>Contrato del estudio IA</strong>
+            <span>Modo final disponible: local</span>
+            <span>Modo pro: en pausa</span>
             <span>Fuente activa: {{ studioStatus.source_of_truth || 'sqlite' }}</span>
             <span>JSON: {{ studioStatus.json_policy || 'snapshots_regenerables' }}</span>
             <span>Handoffs: {{ studioStatus.provider_contract?.handoffs_via_state?.join(', ') }}</span>
+          </div>
+          <h2>Pipeline local final</h2>
+          <div class="list">
+            <article v-for="item in localPipeline.requirements" :key="item.role" class="task-row">
+              <strong>{{ item.configured ? 'listo' : 'faltante' }}</strong>
+              <span>{{ item.role }} / {{ item.engine }}<small>{{ item.detail }}</small></span>
+              <small>{{ item.required_for_real_output === false ? 'opcional' : 'requerido' }}</small>
+            </article>
           </div>
           <h2>Modelos locales</h2>
           <pre>{{ modelStatus }}</pre>

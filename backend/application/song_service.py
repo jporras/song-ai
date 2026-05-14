@@ -1,7 +1,11 @@
 from pathlib import Path
+import re
+import os
+import shutil
 from typing import Any
 
 from audio.mixer import AudioMixer
+from audio.local_song_pipeline import LocalSongPipeline
 from application.model_orchestrator import ModelOrchestrator
 from builders.export_builder import ExportBuilder
 from builders.full_song_builder import FullSongBuilder
@@ -52,6 +56,7 @@ class SongService:
         self.full_song_builder = FullSongBuilder(storage)
         self.audio_mixer = AudioMixer(storage)
         self.export_builder = ExportBuilder(storage)
+        self.local_song_pipeline = LocalSongPipeline(settings.local_models) if settings else None
         self.template_builder = TemplateBuilder(storage)
         self.provider_registry = ProviderRegistry(
             settings.hf_models if settings else None,
@@ -468,6 +473,132 @@ class SongService:
     def studio_status(self) -> dict[str, object]:
         return self.provider_registry.studio_status()
 
+    def local_pipeline_status(self) -> dict[str, object]:
+        if self.local_song_pipeline is None:
+            return {
+                "ready": False,
+                "missing": ["settings"],
+                "requirements": [],
+                "mode": "local_only",
+            }
+        status = self.local_song_pipeline.status()
+        return {
+            "ready": status.ready,
+            "missing": status.missing,
+            "requirements": status.requirements,
+            "mode": "local_only",
+            "pro_mode": "disabled",
+        }
+
+    def system_status(self, bootstrap_status: dict[str, object] | None = None) -> dict[str, object]:
+        bootstrap_status = bootstrap_status or {"status": "idle"}
+        local_pipeline = self.local_pipeline_status()
+        components: list[dict[str, object]] = [
+            {
+                "id": "sqlite",
+                "label": "SQLite activo",
+                "status": "ready" if self.storage.db_path.exists() else "missing",
+                "detail": str(self.storage.db_path),
+                "restartable": False,
+            },
+            {
+                "id": "ffmpeg",
+                "label": "ffmpeg mezcla/export",
+                "status": "ready" if shutil.which("ffmpeg") else "missing",
+                "detail": shutil.which("ffmpeg") or "No disponible en PATH del contenedor.",
+                "restartable": False,
+            },
+            {
+                "id": "bootstrap",
+                "label": "Bootstrap Docker",
+                "status": str(bootstrap_status.get("status", "idle")),
+                "detail": str(bootstrap_status.get("message", "Preparacion de modelos/providers en volumenes.")),
+                "restartable": True,
+            },
+        ]
+        for requirement in list(local_pipeline.get("requirements", [])):
+            components.append(
+                {
+                    "id": str(requirement["role"]),
+                    "label": str(requirement["role"]).replace("_", " ").title(),
+                    "status": "ready" if requirement.get("configured") else "missing",
+                    "detail": str(requirement.get("detail", requirement.get("engine", ""))),
+                    "restartable": True,
+                }
+            )
+
+        for env_name, label in (
+            ("SONG_AI_MODEL_ROOT", "Volumen de modelos"),
+            ("SONG_AI_PROVIDER_ROOT", "Volumen de providers"),
+            ("SONG_AI_PROVIDER_CACHE", "Cache de providers"),
+        ):
+            path = Path(os.getenv(env_name, ""))
+            components.append(
+                {
+                    "id": env_name.lower(),
+                    "label": label,
+                    "status": "ready" if path.exists() else "missing",
+                    "detail": str(path),
+                    "restartable": True,
+                }
+            )
+
+        return {
+            "mode": "local_only",
+            "ready": all(component["status"] == "ready" for component in components if component["id"] != "bootstrap"),
+            "components": components,
+            "bootstrap": bootstrap_status,
+            "local_pipeline": local_pipeline,
+        }
+
+    def project_phase_status(self, set_id: str | None = None) -> dict[str, object]:
+        project: dict[str, object] | None = None
+        if set_id:
+            project = self.get_project(set_id)
+        else:
+            sets = self.list_sets()
+            if sets:
+                project = self.get_project(str(sets[0]["set_id"]))
+
+        draft_counts = self._workflow_readiness(project)["draft_counts"]
+        samples = list(project["samples"]) if project else []
+        songs = list(project["songs"]) if project else []
+        latest_song_dir = Path(str(songs[-1]["path"])) if songs else None
+        phases = [
+            self._phase("instrumental", "1. Instrumental", int(draft_counts["instrumental"]) > 0),
+            self._phase("melody", "2. Melodia", int(draft_counts["melody"]) > 0),
+            self._phase("lyrics", "3. Letra", int(draft_counts["lyrics"]) > 0),
+            self._phase("set", "4. Set/proyecto", project is not None),
+            self._phase("sample", "5. Sample/checkpoint", len(samples) > 0),
+            self._phase("song", "6. Cancion completa", len(songs) > 0),
+            self._phase(
+                "mix",
+                "7. Mezcla preparada",
+                bool(latest_song_dir and (latest_song_dir / "mix" / "mix_manifest.json").exists()),
+            ),
+            self._phase(
+                "exports",
+                "8. Exports preparados",
+                bool(latest_song_dir and (latest_song_dir / "exports" / "manifest.json").exists()),
+            ),
+            self._phase(
+                "local_final",
+                "9. Final local MP3",
+                bool(
+                    latest_song_dir
+                    and (latest_song_dir / "exports" / "local_final_manifest.json").exists()
+                    and (latest_song_dir / "exports" / "final_mix.mp3").exists()
+                ),
+            ),
+        ]
+        return {
+            "set_id": str(project["set"]["set_id"]) if project else "",
+            "project_name": str(project["project"]["project_name"]) if project else "",
+            "ready_for_final": all(phase["ready"] for phase in phases[:6]),
+            "complete": all(phase["ready"] for phase in phases),
+            "phases": phases,
+        }
+
     def orchestration_status(self) -> dict[str, object]:
         return self.model_orchestrator.status()
 
@@ -505,8 +636,66 @@ class SongService:
     def generate_audio_exports(self) -> dict[str, str]:
         return self.path_response(self.export_builder.generate_latest_song_audio_exports())
 
+    def generate_local_final_song(self) -> dict[str, object]:
+        if self.local_song_pipeline is None:
+            raise ValueError("No hay configuracion local para generar cancion final.")
+        latest_song = self.storage.get_latest_song()
+        if latest_song is None:
+            raise ValueError("No hay cancion completa. Crea set, sample y cancion antes de generar final local.")
+        song_dir = Path(str(latest_song["path"]))
+        context = self.export_builder.load_render_context(latest_song)
+        result = self.local_song_pipeline.generate(context, song_dir)
+        self.storage.write_json(
+            song_dir / "exports" / "local_final_manifest.json",
+            {
+                "song_id": latest_song["song_id"],
+                "set_id": latest_song.get("set_id", ""),
+                **result,
+            },
+        )
+        return {
+            "summary": "Cancion final local generada sin modo pro.",
+            **result,
+        }
+
+    def latest_audio_export_file(self, extension: str = "mp3") -> tuple[Path, str]:
+        safe_extension = extension.lower().strip().lstrip(".")
+        if safe_extension not in {"mp3", "wav"}:
+            raise ValueError("Formato de descarga no soportado. Usa mp3 o wav.")
+
+        latest_song = self.storage.get_latest_song()
+        if latest_song is None:
+            raise ValueError("No hay cancion completa para descargar.")
+
+        song_dir = Path(str(latest_song["path"]))
+        export_path = song_dir / "exports" / f"final_mix.{safe_extension}"
+        if not export_path.exists():
+            if safe_extension == "mp3":
+                pending_path = song_dir / "exports" / "final_mix.mp3.pending.txt"
+                if pending_path.exists():
+                    raise ValueError("El MP3 aun no esta disponible. Genera el export dentro de Docker o instala ffmpeg.")
+            raise ValueError(f"No existe final_mix.{safe_extension}. Genera WAV/MP3 antes de descargar.")
+
+        set_id = str(latest_song.get("set_id", ""))
+        song_set = self.storage.get_indexed_set(set_id)
+        project_name = str(song_set.get("project_name", latest_song["song_id"])) if song_set else str(latest_song["song_id"])
+        filename = f"{self._safe_download_name(project_name)}.{safe_extension}"
+        return export_path, filename
+
     def save_template(self) -> dict[str, str]:
         return self.path_response(self.template_builder.save_latest_set_template())
 
     def path_response(self, path: Path) -> dict[str, str]:
         return {"path": str(path), "id": path.name}
+
+    def _phase(self, phase_id: str, label: str, ready: bool) -> dict[str, object]:
+        return {
+            "id": phase_id,
+            "label": label,
+            "ready": ready,
+            "status": "ready" if ready else "missing",
+        }
+
+    def _safe_download_name(self, value: str) -> str:
+        normalized = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip()).strip("._-")
+        return normalized or "song-ai-final-mix"

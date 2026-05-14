@@ -6,11 +6,11 @@ Sistema modular en Python para generar canciones personalizadas completas median
 - melodia vocal adaptable,
 - letra dinamica.
 
-La aplicacion esta pensada para funcionar primero con mocks y providers locales, y despues permitir providers profesionales sin acoplar el core. El caso guia actual es una cancion de cuna o cancion infantil/emocional completa, no un Short ni una letra simple repetitiva.
+La aplicacion se enfoca ahora en generar una cancion terminada con herramientas locales. El modo pro queda pausado hasta que el pipeline local produzca sin errores una cancion decente con instrumental, melodia, voz cantada y mezcla. El caso guia actual es una cancion de cuna o cancion infantil/emocional completa, no un Short ni una letra simple repetitiva.
 
 ## Estado Actual
 
-Sprint actual: Sprint 14 en ejecucion: alcance real de cancion completa de cuna/infantil emocional y preparacion del pipeline local/hibrido.
+Sprint actual: Sprint 15 en ejecucion: cierre del modo local real y pausa explicita del modo pro.
 
 Ultimo ajuste:
 - Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
@@ -41,6 +41,10 @@ Ultimo ajuste:
 - Cada proyecto conserva un historico de pasos (`project_events`) con fecha, fase, actor/modelo, estado y mensaje para reconstruir el camino de creacion de la cancion.
 - Produccion ahora muestra explicitamente el paso `Generar WAV/MP3`; en modo mock crea `exports/final_mix.wav` como audio valido de prueba y genera `final_mix.mp3` si `ffmpeg` esta disponible.
 - Produccion incluye `Crear MP3 predefinido`, que arma la cancion de cuna para Isabella con los defaults actuales, crea set/sample/cancion/mezcla y exporta WAV/MP3 en un solo flujo.
+- Produccion incluye `Cancion local final`, que solo genera final si existen comandos locales reales para soundtrack, voz cantada y ffmpeg. Si falta algo, no entrega un MP3 final falso.
+- El modo pro queda en pausa: no se registran providers pagos/remotos en el pipeline activo.
+- Produccion incluye `Estado local del sistema`: lista componentes, servicios/volumenes, comandos locales y bootstrap con indicador visual, boton para consultar estado y boton para preparar/reiniciar bootstrap en segundo plano.
+- Produccion incluye `Fases del proyecto/set`: muestra si ya estan completos instrumental, melodia, letra, set, sample, cancion, mezcla, exports y final local MP3.
 - Produccion incluye `Gemma transversal`, asistente de proyecto activo via llama.cpp cuando `SONG_AI_LLAMA_CPP_ENABLED=true`; si llama.cpp no responde, conserva guia local y deja la app ejecutable.
 - Produccion incluye `Qwen tecnico`, rol separado para ajustes tecnicos, debugging, arquitectura, workers, SQLite, ffmpeg y pipeline. Qwen no reemplaza a Gemma en creatividad musical.
 
@@ -54,7 +58,7 @@ Completado:
 - Sprint 7: full song builder mock desde el ultimo sample valido.
 
 - Sprint 8: providers locales mock intercambiables.
-- Sprint 9: providers pro placeholder sin APIs reales.
+- Sprint 9: modo pro pausado; no se registran providers pagos/remotos en el pipeline activo.
 - Sprint 10: mezcla mock con verificacion de `ffmpeg` y contrato de stems.
 - Sprint 11: exportaciones completas planeadas por formato.
 - Sprint 12: plantillas reutilizables desde sets.
@@ -62,9 +66,9 @@ Completado:
 
 Pendiente siguiente:
 - Levantar/instalar los binarios y modelos GGUF reales de llama.cpp para Gemma 4 E4B IT y Qwen3 4B; la app ya tiene cliente HTTP, providers y fallback local.
-- Conectar MusicGen small como primer generador real de soundtrack.
-- Definir worker de voz cantada con RVC/ACE-Step.
-- Conectar Demucs y ffmpeg para stems, mezcla y export WAV/MP3.
+- Configurar `SONG_AI_SOUNDTRACK_COMMAND` para generar `stems/instrumental.wav` localmente con MusicGen u otra herramienta gratuita.
+- Configurar `SONG_AI_SINGING_VOICE_COMMAND` para generar `stems/vocals.wav` localmente con RVC/ACE-Step u otra herramienta gratuita de voz cantada.
+- Usar ffmpeg local/Docker para mezclar y exportar `exports/final_mix.wav` y `exports/final_mix.mp3`.
 - Implementar carga por demanda y liberacion de memoria entre modelos.
 
 ## Alcance De Cancion
@@ -179,6 +183,41 @@ Servicio:
 
 El contenedor `song-ai-app` incluye Node.js para construir Vue/Vite, Python/FastAPI para ejecutar el backend y `ffmpeg` para generar MP3 desde el WAV de mezcla. Los datos se guardan en el volumen Docker `song_ai_data`.
 
+Volumenes Docker persistentes:
+- `song_ai_data`: proyectos, SQLite, sets, samples, canciones y exports.
+- `song_ai_models`: modelos locales descargados (`llm/`, `music/`, `voice/`, `stems/`, `huggingface/`).
+- `song_ai_providers`: repositorios/adaptadores locales clonados para providers gratuitos.
+- `song_ai_provider_cache`: cache pip y paquetes Python instalados en runtime para audio local.
+
+El contenedor puede preparar dependencias/modelos al arrancar si se activa el bootstrap:
+
+```text
+SONG_AI_BOOTSTRAP_ON_START=true
+SONG_AI_INSTALL_LOCAL_AUDIO_DEPS=true
+SONG_AI_INSTALL_ACE_STEP=true
+SONG_AI_DOWNLOAD_MUSICGEN=true
+SONG_AI_MUSICGEN_MODEL_ID=facebook/musicgen-small
+```
+
+Tambien puede descargar modelos por URL o clonar providers:
+
+```text
+SONG_AI_GEMMA_GGUF_URL=https://...
+SONG_AI_QWEN_GGUF_URL=https://...
+SONG_AI_VOICE_MODEL_URL=https://...
+SONG_AI_PROVIDER_REPOS=acestep=https://github.com/.../ACE-Step.git;rvc=https://github.com/.../RVC.git
+```
+
+El bootstrap es idempotente: crea carpetas y solo descarga/clona cuando falta contenido. Si los procesos son largos, se puede levantar el Docker y dejar que el contenedor termine de instalar en ejecucion. Los modelos y librerias quedan en volumenes Docker, no en carpetas temporales del contenedor.
+
+La ruta final local por defecto en Docker usa ACE-Step como generador completo de cancion:
+
+```text
+SONG_AI_FULL_SONG_COMMAND=python tools/acestep_generate.py --prompt {prompt_path} --lyrics {lyrics_path} --output {output_path} --checkpoint-path /app/models/music/ace-step --duration 60 --cpu-offload true --overlapped-decode true
+```
+
+ACE-Step se instala en `/app/provider-cache/python` cuando `SONG_AI_INSTALL_ACE_STEP=true`. Sus checkpoints se guardan en `/app/models/music/ace-step`, dentro del volumen `song_ai_models`. El primer arranque puede tardar bastante porque instala librerias y descarga pesos; los siguientes arranques reutilizan el volumen.
+
 SQLite guarda el indice de rutas de configuraciones JSON en `data/song_ai.sqlite`.
 
 No se usa Nginx en esta etapa porque FastAPI sirve la API y el frontend compilado por Vite desde el mismo contenedor. Si mas adelante se separan frontend/backend o se requiere reverse proxy/cache TLS, se agregara una carpeta `nginx/` con su configuracion Docker.
@@ -204,7 +243,68 @@ No se usa Nginx en esta etapa porque FastAPI sirve la API y el frontend compilad
 17. Usa `Qwen tecnico` para ajustes de codigo/pipeline, errores, workers, ffmpeg, SQLite y arquitectura.
 18. En `Biblioteca`, revisa providers activos, estado del estudio IA, tasks, model runs, historico del proyecto y rutas JSON indexadas.
 
-El flujo actual crea artefactos mock, pero respeta el contrato final: cancion completa con letra original, estructura musical, soundtrack, voz cantada, mezcla y exportacion de audio. No apunta a Shorts ni a TTS hablado.
+El flujo tiene dos salidas diferenciadas:
+- **Maqueta tecnica**: valida archivos, stems, manifest y descarga, pero no es la cancion final.
+- **Cancion local final**: exige herramientas locales configuradas para generar instrumental real, voz cantada real y mezcla final. Si falta una herramienta, la app no crea un falso final.
+
+El modo pro queda fuera de esta etapa. Solo se retomara cuando el modo local genere una cancion decente sin errores.
+
+Para conectar herramientas locales reales, configura comandos por variables de entorno. La app reemplaza estos placeholders:
+- `{prompt_path}`: archivo con prompt musical e intents.
+- `{lyrics_path}`: letra final exportada.
+- `{instrumental_path}`: instrumental WAV generado.
+- `{output_path}`: salida esperada del comando.
+- `{work_dir}`: carpeta de trabajo del pipeline.
+
+Ejemplo de contrato:
+
+```text
+SONG_AI_SOUNDTRACK_COMMAND=python tools/musicgen_generate.py --prompt {prompt_path} --output {output_path}
+SONG_AI_SINGING_VOICE_COMMAND=python tools/singing_voice_generate.py --lyrics {lyrics_path} --prompt {prompt_path} --instrumental {instrumental_path} --output {output_path}
+```
+
+Scripts locales incluidos:
+- `tools/check_local_audio_stack.py`: revisa ffmpeg, comandos configurados y dependencias Python.
+- `tools/acestep_generate.py`: genera una cancion completa local con ACE-Step usando prompt y letra; es la ruta final recomendada en Docker.
+- `tools/musicgen_generate.py`: genera instrumental con MusicGen via `transformers` cuando `torch`, `transformers` y `scipy` estan instalados y el modelo esta disponible/cacheado.
+- `tools/singing_voice_generate.py`: adaptador para un backend local real de voz cantada. No simula voz por si mismo; exige un comando backend que produzca `vocals.wav`.
+- `tools/use_audio_file.py`: usa un archivo local ya generado y lo copia/convierte a WAV para que Song AI lo mezcle. Es util para integrar herramientas locales externas mientras se completa el worker automatico.
+
+Ejemplo mas completo:
+
+```text
+SONG_AI_FULL_SONG_COMMAND=python tools/acestep_generate.py --prompt {prompt_path} --lyrics {lyrics_path} --output {output_path} --checkpoint-path /app/models/music/ace-step --duration 60
+SONG_AI_SOUNDTRACK_COMMAND=python tools/musicgen_generate.py --prompt {prompt_path} --output {output_path} --model facebook/musicgen-small --seconds 45
+SONG_AI_SINGING_VOICE_COMMAND=python tools/singing_voice_generate.py --lyrics {lyrics_path} --prompt {prompt_path} --instrumental {instrumental_path} --output {output_path} --backend-command "python tools/mi_backend_voz_cantada.py --lyrics {lyrics_path} --prompt {prompt_path} --instrumental {instrumental_path} --output {output_path}"
+```
+
+Ejemplo usando archivos locales ya generados:
+
+```text
+SONG_AI_SOUNDTRACK_COMMAND=python tools/use_audio_file.py --input C:\audio\instrumental.wav --output {output_path}
+SONG_AI_SINGING_VOICE_COMMAND=python tools/use_audio_file.py --input C:\audio\voz_cantada.wav --output {output_path}
+```
+
+Antes de generar final local:
+
+```text
+python tools/check_local_audio_stack.py
+```
+
+El endpoint de estado local es:
+
+```text
+GET /api/local-pipeline/status
+GET /api/system/status
+GET /api/projects/phases
+```
+
+La generacion final local se ejecuta con:
+
+```text
+POST /api/local-final-song
+POST /api/system/bootstrap/restart
+```
 
 ### Proyectos Activos
 
@@ -379,7 +479,13 @@ Formatos comunes planeados para `stems/`:
 - `music.wav`
 - versiones `.flac` cuando se quiera compresion lossless.
 
-En la fase actual mock se puede generar `exports/final_mix.wav` como audio valido de prueba para verificar el flujo de exportacion. En Docker tambien se genera `exports/final_mix.mp3` con `ffmpeg`; si se ejecuta fuera de Docker y `ffmpeg` no esta disponible, queda `exports/final_mix.mp3.pending.txt`. El archivo `exports/final_mix.mock.txt` sigue marcando donde se reemplazara el contenido por la mezcla real cuando se conecten providers de audio.
+En la fase actual mock se genera una maqueta audible de cancion en `exports/final_mix.wav`: instrumental sintetico suave, guia melodica y una guia vocal sintetica de vocales, ademas de una copia de la letra real del set en `exports/lyrics.md`. Esta guia vocal ayuda a validar melodia, estructura y mezcla, pero no pronuncia la letra ni reemplaza una voz cantada real. Tambien se crean stems mock separados en `stems/instrumental.wav`, `stems/melody_guide.wav` y `stems/vocals.wav` para conservar instrumental, melodia y voz por separado. En Docker tambien se genera `exports/final_mix.mp3` con `ffmpeg`; si se ejecuta fuera de Docker y `ffmpeg` no esta disponible, queda `exports/final_mix.mp3.pending.txt`. El archivo `exports/final_mix.mock.txt` sigue marcando donde se reemplazara el contenido por la mezcla real cuando se conecten providers de audio.
+
+La UI incluye la accion **Guardar MP3 en mi equipo**, que descarga el ultimo `final_mix.mp3` desde Docker hacia una ruta elegida por el usuario en el navegador. La API equivalente es:
+
+```text
+GET /api/audio-exports/latest/download?format=mp3
+```
 
 La cancion final real debe pasar por:
 - letra completa y prompt musical con Gemma,
@@ -407,6 +513,8 @@ SQLite tambien guarda orquestacion multi-modelo:
 - `project_events`: historico de pasos por proyecto/cancion.
 
 En esta fase los handoffs son mock y sirven para validar contratos, progreso, persistencia y UI antes de cargar modelos reales.
+
+Al iniciar, la app sincroniza de forma conservadora sets antiguos desde `data/sets/<set_id>/set.json` hacia SQLite cuando todavia no existen en la tabla activa. Esto corrige proyectos creados antes del indice SQLite sin convertir los JSON en fuente de verdad permanente.
 
 La API expone este indice en:
 

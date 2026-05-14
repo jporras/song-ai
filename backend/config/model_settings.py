@@ -18,6 +18,9 @@ class LocalModelSettings:
     singing_voice_engine: str
     stems_model: str
     mixer_engine: str
+    full_song_command: str
+    soundtrack_command: str
+    singing_voice_command: str
     max_loaded_models: int
 
     @classmethod
@@ -36,6 +39,9 @@ class LocalModelSettings:
             singing_voice_engine=os.getenv("SONG_AI_SINGING_VOICE_ENGINE", "RVC / ACE-Step"),
             stems_model=os.getenv("SONG_AI_STEMS_MODEL", "Demucs"),
             mixer_engine=os.getenv("SONG_AI_MIXER_ENGINE", "ffmpeg"),
+            full_song_command=os.getenv("SONG_AI_FULL_SONG_COMMAND", ""),
+            soundtrack_command=os.getenv("SONG_AI_SOUNDTRACK_COMMAND", ""),
+            singing_voice_command=os.getenv("SONG_AI_SINGING_VOICE_COMMAND", ""),
             max_loaded_models=int(os.getenv("SONG_AI_MAX_LOADED_MODELS", "1")),
         )
 
@@ -54,6 +60,9 @@ class LocalModelSettings:
             "singing_voice_engine": self.singing_voice_engine,
             "stems_model": self.stems_model,
             "mixer_engine": self.mixer_engine,
+            "full_song_command_configured": bool(self.full_song_command.strip()),
+            "soundtrack_command_configured": bool(self.soundtrack_command.strip()),
+            "singing_voice_command_configured": bool(self.singing_voice_command.strip()),
             "max_loaded_models": self.max_loaded_models,
         }
 

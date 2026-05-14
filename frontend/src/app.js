@@ -81,6 +81,9 @@ createApp({
       },
       providers: {},
       studioStatus: {},
+      localPipeline: {},
+      systemStatus: { components: [], bootstrap: {} },
+      projectPhases: { phases: [] },
       modelStatus: {},
       orchestrationStatus: {},
       tasks: [],
@@ -93,6 +96,7 @@ createApp({
         lyrics: {},
       },
       messages: [],
+      downloadStatus: "",
     };
   },
   computed: {
@@ -109,7 +113,7 @@ createApp({
         { label: "3. Crear cancion", hint: "Prepara pipeline completo: letra, estructura, soundtrack, voz cantada, stems, mezcla y exports.", url: "/api/songs" },
         { label: "4. Preparar mezcla", hint: "Prepara mezcla de voz cantada + instrumental y verifica ffmpeg.", url: "/api/mix" },
         { label: "5. Preparar exports", hint: "Crea manifest y rutas de formatos finales.", url: "/api/exports" },
-        { label: "6. Generar WAV/MP3", hint: "Crea final_mix.wav y final_mix.mp3 si ffmpeg esta disponible; en modo mock deja trazabilidad del export.", url: "/api/audio-exports" },
+        { label: "6. Generar maqueta WAV/MP3", hint: "Solo valida el flujo con guia vocal sintetica. No es la cancion final.", url: "/api/audio-exports" },
         { label: "7. Exportar sets JSON", hint: "Regenera los set.json desde SQLite y sobrescribe archivos previos con el mismo nombre.", url: "/api/sets/export" },
         { label: "8. Guardar plantilla", hint: "Guarda el set como plantilla reutilizable.", url: "/api/templates" },
       ];
@@ -197,17 +201,26 @@ createApp({
       this.options = payload.data;
     },
     async loadProviders() {
-      const [providersResponse, studioResponse, modelResponse] = await Promise.all([
+      const [providersResponse, studioResponse, modelResponse, localPipelineResponse, systemResponse, phasesResponse] = await Promise.all([
         fetch(apiUrl("/api/providers")),
         fetch(apiUrl("/api/studio/status")),
         fetch(apiUrl("/api/models/status")),
+        fetch(apiUrl("/api/local-pipeline/status")),
+        fetch(apiUrl("/api/system/status")),
+        fetch(apiUrl(`/api/projects/phases${this.activeProjectId ? `?set_id=${this.activeProjectId}` : ""}`)),
       ]);
       const payload = await providersResponse.json();
       const studioPayload = await studioResponse.json();
       const modelPayload = await modelResponse.json();
+      const localPipelinePayload = await localPipelineResponse.json();
+      const systemPayload = await systemResponse.json();
+      const phasesPayload = await phasesResponse.json();
       this.providers = payload.data;
       this.studioStatus = studioPayload.data;
       this.modelStatus = modelPayload.data;
+      this.localPipeline = localPipelinePayload.data;
+      this.systemStatus = systemPayload.data;
+      this.projectPhases = phasesPayload.data;
     },
     async loadOrchestration() {
       const [statusResponse, tasksResponse, runsResponse] = await Promise.all([
@@ -266,6 +279,7 @@ createApp({
       };
       this.projectEvents = payload.data.events;
       this.messages.unshift(`Proyecto cargado: ${payload.data.project.project_name}`);
+      await this.loadProviders();
     },
     async loadJsonConfigs() {
       const response = await fetch(apiUrl("/api/json-configs"));
@@ -348,8 +362,85 @@ createApp({
       await this.loadSets();
       await this.loadOrchestration();
       await this.loadJsonConfigs();
+      await this.loadProviders();
       const mp3Detail = payload.data.mp3 || "MP3 pendiente";
       this.messages.unshift(`${payload.data.summary} ${mp3Detail}`);
+    },
+    async refreshSystemStatus() {
+      await this.loadProviders();
+      this.messages.unshift("Estado de componentes actualizado.");
+    },
+    async restartBootstrap() {
+      const response = await fetch(apiUrl("/api/system/bootstrap/restart"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const payload = await response.json();
+      if (!payload.ok) {
+        this.messages.unshift(payload.detail || "No se pudo iniciar el bootstrap.");
+        return;
+      }
+      await this.loadProviders();
+      this.messages.unshift(payload.data.message || "Bootstrap iniciado. Consulta el estado en unos minutos.");
+    },
+    async generateLocalFinalSong() {
+      const response = await fetch(apiUrl("/api/local-final-song"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const payload = await response.json();
+      if (!payload.ok) {
+        this.messages.unshift(payload.detail || "No se pudo generar la cancion final local.");
+        await this.loadProviders();
+        return;
+      }
+      await this.loadProviders();
+      await this.loadJsonConfigs();
+      this.messages.unshift(`${payload.data.summary} ${payload.data.mp3 || ""}`);
+    },
+    async saveLatestMp3() {
+      this.downloadStatus = "Preparando descarga...";
+      const downloadUrl = apiUrl("/api/audio-exports/latest/download?format=mp3");
+      const response = await fetch(downloadUrl);
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        const message = payload.detail || "No se pudo descargar el MP3. Genera WAV/MP3 primero.";
+        this.downloadStatus = message;
+        this.messages.unshift(message);
+        return;
+      }
+
+      const blob = await response.blob();
+      const filename = this.filenameFromDisposition(response.headers.get("content-disposition")) || "song-ai-final-mix.mp3";
+      if ("showSaveFilePicker" in window) {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: filename,
+          types: [{ description: "MP3", accept: { "audio/mpeg": [".mp3"] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        this.downloadStatus = `MP3 guardado: ${filename}`;
+        this.messages.unshift(this.downloadStatus);
+        return;
+      }
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      this.downloadStatus = "Descarga iniciada. El navegador decide la carpeta o pregunta donde guardarlo segun su configuracion.";
+      this.messages.unshift(this.downloadStatus);
+    },
+    filenameFromDisposition(disposition) {
+      const match = disposition?.match(/filename="?([^"]+)"?/i);
+      return match ? match[1] : "";
     },
     async askGemmaAssistant() {
       this.gemmaAssistant.loading = true;
@@ -424,6 +515,7 @@ createApp({
       await this.loadJsonConfigs();
       await this.loadSets();
       await this.loadOrchestration();
+      await this.loadProviders();
     },
     help(label) {
       return this.options.help_texts?.[label] || "";
