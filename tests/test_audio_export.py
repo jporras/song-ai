@@ -178,6 +178,8 @@ class AudioExportTest(unittest.TestCase):
 
             self.assertTrue(installed)
             self.assertIn("--upgrade", run.call_args.args[0])
+            self.assertIn("huggingface_hub>=0.34.0,<1.0", run.call_args.args[0])
+            self.assertNotIn("-r", run.call_args.args[0])
 
     def test_docker_bootstrap_upgrade_ignores_existing_markers(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:

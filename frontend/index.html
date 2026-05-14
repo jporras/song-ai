@@ -337,10 +337,11 @@
             <div>
               <strong>Cancion local final</strong>
               <span>Genera instrumental, voz cantada y mezcla usando herramientas locales configuradas. El modo pro esta en pausa.</span>
-              <small v-if="localPipeline.ready">Pipeline local listo para generar final.</small>
-              <small v-else>Falta configurar: {{ localPipeline.missing?.join(', ') || 'requisitos locales' }}.</small>
+              <small>{{ localFinalStatusMessage }}</small>
             </div>
-            <button class="primary" @click="generateLocalFinalSong">Generar cancion local final</button>
+            <button class="primary" :disabled="!canGenerateLocalFinalSong" @click="generateLocalFinalSong">
+              {{ bootstrapRunning ? 'Preparando...' : 'Generar cancion local final' }}
+            </button>
           </div>
           <div class="quick-export muted-export">
             <div>

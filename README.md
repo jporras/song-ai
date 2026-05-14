@@ -48,6 +48,8 @@ Ultimo ajuste:
 - Produccion incluye `Fases del proyecto/set`: muestra si ya estan completos instrumental, melodia, letra, set, sample, cancion, mezcla, exports y final local MP3.
 - La API de fases usa una ruta estatica prioritaria (`/api/projects/phases`) y la UI tolera respuestas fallidas para no dejar la pantalla en blanco.
 - El bootstrap de Docker arranca en segundo plano junto con FastAPI para que reparaciones largas de modelos/dependencias no dejen la UI sin responder.
+- FastAPI no usa `provider-cache/python` como `PYTHONPATH` global; ese cache se inyecta solo en comandos/probes de audio para evitar que una reparacion pip afecte el servidor vivo.
+- Las pruebas de import de ACE-Step se ejecutan en subprocess aislado para que un fallo nativo de Torch/diffusers no tumbe FastAPI.
 - Produccion incluye `Gemma transversal`, asistente de proyecto activo via llama.cpp cuando `SONG_AI_LLAMA_CPP_ENABLED=true`; si llama.cpp no responde, conserva guia local y deja la app ejecutable.
 - Produccion incluye `Qwen tecnico`, rol separado para ajustes tecnicos, debugging, arquitectura, workers, SQLite, ffmpeg y pipeline. Qwen no reemplaza a Gemma en creatividad musical.
 
@@ -200,7 +202,7 @@ Politica de actualizacion:
 - Docker no actualiza Python ni paquetes base a ciegas; eso cambia solo cuando se reconstruye la imagen con cambios del proyecto.
 - El bootstrap no reinstala dependencias pesadas si ya existen marcadores compatibles en el volumen y los modulos Python requeridos son importables.
 - Si el volumen ya tiene paquetes Python instalados de una version anterior pero no tiene marcador, el bootstrap detecta modulos importables, crea el marcador y evita repetir `pip install`.
-- Si ACE-Step existe pero sus dependencias internas fallan, por ejemplo `diffusers` requiere una version mas nueva de `huggingface_hub`, el bootstrap considera el volumen incompleto y repara dependencias con `--upgrade`.
+- Si ACE-Step existe pero sus dependencias internas fallan, por ejemplo `diffusers` requiere una version mas nueva de `huggingface_hub`, el bootstrap repara solo esa dependencia compatible en vez de reinstalar paquetes pesados como PyTorch.
 - Si cambian `requirements-local-audio.txt`, `SONG_AI_ACE_STEP_PACKAGE`, URLs de modelos o repos configurados, el bootstrap descarga/instala lo necesario.
 - No hay cron automatico porque actualizar modelos/librerias sin control puede romper compatibilidad con Python 3.11 o con los pesos descargados. La actualizacion interna existe como tarea de UI/API bajo demanda.
 

@@ -31,7 +31,7 @@ ENV SONG_AI_MODEL_ROOT=/app/models
 ENV SONG_AI_PROVIDER_ROOT=/app/providers
 ENV SONG_AI_PROVIDER_CACHE=/app/provider-cache
 ENV HF_HOME=/app/models/huggingface
-ENV PYTHONPATH=/app/provider-cache/python:/app/backend
+ENV PYTHONPATH=/app/backend
 
 EXPOSE 8000
 

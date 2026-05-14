@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import importlib
+from contextlib import contextmanager
 from pathlib import Path
 import importlib.util
 import os
@@ -77,7 +77,11 @@ def install_local_audio_deps(upgrade: bool = False) -> bool:
         write_marker(LOCAL_AUDIO_MARKER, marker_content)
         return False
     needs_repair = modules_available(required_modules) and not ready
-    command = pip_install_command(upgrade or needs_repair) + ["-r", str(requirements)]
+    command = (
+        pip_install_command(upgrade=True) + ["huggingface_hub>=0.34.0,<1.0"]
+        if needs_repair and not upgrade
+        else pip_install_command(upgrade) + ["-r", str(requirements)]
+    )
     subprocess.run(command, check=True)
     write_marker(LOCAL_AUDIO_MARKER, marker_content)
     return True
@@ -207,22 +211,46 @@ def write_marker(path: Path, content: str) -> None:
 
 
 def modules_available(module_names: list[str]) -> bool:
-    return all(importlib.util.find_spec(module_name) is not None for module_name in module_names)
+    with provider_python_path():
+        return all(importlib.util.find_spec(module_name) is not None for module_name in module_names)
 
 
 def local_audio_deps_ready() -> bool:
     if not modules_available(["huggingface_hub", "transformers", "scipy", "torch"]):
         return False
-    try:
-        from huggingface_hub import DDUFEntry  # noqa: F401
-    except Exception:
-        return False
-    return True
+    return provider_python_probe("from huggingface_hub import DDUFEntry")
 
 
 def ace_step_ready() -> bool:
+    return provider_python_probe("from acestep.pipeline_ace_step import ACEStepPipeline")
+
+
+@contextmanager
+def provider_python_path():
+    target = str(PYTHON_TARGET)
+    inserted = target not in sys.path
+    if inserted:
+        sys.path.insert(0, target)
     try:
-        module = importlib.import_module("acestep.pipeline_ace_step")
-    except Exception:
-        return False
-    return hasattr(module, "ACEStepPipeline")
+        yield
+    finally:
+        if inserted:
+            try:
+                sys.path.remove(target)
+            except ValueError:
+                pass
+
+
+def provider_python_probe(statement: str) -> bool:
+    env = os.environ.copy()
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    provider_path = str(PYTHON_TARGET)
+    env["PYTHONPATH"] = provider_path + (os.pathsep + existing_pythonpath if existing_pythonpath else "")
+    result = subprocess.run(
+        [sys.executable, "-c", statement],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
+    )
+    return result.returncode == 0

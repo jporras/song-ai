@@ -185,6 +185,21 @@ createApp({
         checks: this.draftReadiness,
       };
     },
+    bootstrapRunning() {
+      return this.systemStatus.bootstrap?.status === "running";
+    },
+    canGenerateLocalFinalSong() {
+      return Boolean(this.localPipeline.ready) && !this.bootstrapRunning;
+    },
+    localFinalStatusMessage() {
+      if (this.bootstrapRunning) {
+        return "Bootstrap preparando dependencias locales. Consulta estado en unos minutos.";
+      }
+      if (this.localPipeline.ready) {
+        return "Pipeline local listo para generar final.";
+      }
+      return `Falta configurar: ${this.localPipeline.missing?.join(", ") || "requisitos locales"}.`;
+    },
   },
   async mounted() {
     await this.loadOptions();
@@ -414,6 +429,11 @@ createApp({
       this.messages.unshift(payload.data.message || "Actualizacion iniciada. Consulta el estado en unos minutos.");
     },
     async generateLocalFinalSong() {
+      if (!this.canGenerateLocalFinalSong) {
+        this.messages.unshift(this.localFinalStatusMessage);
+        await this.loadProviders();
+        return;
+      }
       const response = await fetch(apiUrl("/api/local-final-song"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },

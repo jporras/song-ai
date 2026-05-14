@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import importlib
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -168,7 +168,7 @@ class LocalSongPipeline:
 
     def _run_template(self, template: str, values: dict[str, Path]) -> None:
         command = template.format(**{key: str(value) for key, value in values.items()})
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        result = subprocess.run(command, shell=True, capture_output=True, text=True, env=self._command_env())
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or command).strip()
             raise ValueError(f"El comando local fallo: {detail}")
@@ -178,11 +178,14 @@ class LocalSongPipeline:
         if not command:
             return False
         if "acestep_generate.py" in command:
-            try:
-                module = importlib.import_module("acestep.pipeline_ace_step")
-            except Exception:
-                return False
-            return hasattr(module, "ACEStepPipeline")
+            result = subprocess.run(
+                ["python", "-c", "from acestep.pipeline_ace_step import ACEStepPipeline"],
+                capture_output=True,
+                text=True,
+                env=self._command_env(),
+                timeout=30,
+            )
+            return result.returncode == 0
         return True
 
     def _full_song_detail(self, configured: bool, available: bool) -> str:
@@ -191,6 +194,17 @@ class LocalSongPipeline:
         if not available:
             return "ACE-Step esta configurado pero no instalado/importable. Ejecuta Preparar/reiniciar bootstrap o activa SONG_AI_INSTALL_ACE_STEP=true."
         return "Comando local completo disponible para generar final_mix.wav."
+
+    def _command_env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        provider_path = self._provider_python_path()
+        existing_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = provider_path + (os.pathsep + existing_pythonpath if existing_pythonpath else "")
+        return env
+
+    def _provider_python_path(self) -> str:
+        provider_cache = os.getenv("SONG_AI_PROVIDER_CACHE", "/app/provider-cache")
+        return str(Path(provider_cache) / "python")
 
     def _assert_file(self, path: Path, message: str) -> None:
         if not path.exists() or path.stat().st_size == 0:
