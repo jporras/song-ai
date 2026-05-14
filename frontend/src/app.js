@@ -287,7 +287,15 @@ createApp({
       this.jsonConfigs = payload.data;
     },
     async readApiPayload(response, fallbackData = {}) {
-      const payload = await response.json().catch(() => ({ ok: false, data: fallbackData }));
+      const raw = await response.text().catch(() => "");
+      let payload = { ok: false, data: fallbackData, detail: raw || "API no disponible" };
+      if (raw) {
+        try {
+          payload = JSON.parse(raw);
+        } catch (_) {
+          payload.detail = raw;
+        }
+      }
       if (!response.ok || payload.ok === false) {
         return { ok: false, data: fallbackData, detail: payload.detail || "API no disponible" };
       }
@@ -383,7 +391,7 @@ createApp({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      const payload = await response.json();
+      const payload = await this.readApiPayload(response, {});
       if (!payload.ok) {
         this.messages.unshift(payload.detail || "No se pudo iniciar el bootstrap.");
         return;
@@ -397,7 +405,7 @@ createApp({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      const payload = await response.json();
+      const payload = await this.readApiPayload(response, {});
       if (!payload.ok) {
         this.messages.unshift(payload.detail || "No se pudo actualizar el bootstrap.");
         return;
@@ -411,7 +419,7 @@ createApp({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      const payload = await response.json();
+      const payload = await this.readApiPayload(response, {});
       if (!payload.ok) {
         this.messages.unshift(payload.detail || "No se pudo generar la cancion final local.");
         await this.loadProviders();
@@ -526,7 +534,7 @@ createApp({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const payload = await response.json();
+      const payload = await this.readApiPayload(response, {});
       if (!payload.ok) {
         this.messages.unshift(payload.detail || payload.error || "Error");
         return;

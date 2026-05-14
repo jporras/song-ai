@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import importlib.util
 from pathlib import Path
 import shutil
 import subprocess
@@ -21,12 +22,14 @@ class LocalSongPipeline:
         self.settings = settings
 
     def status(self) -> LocalPipelineStatus:
+        full_song_configured = bool(self.settings.full_song_command.strip())
+        full_song_available = self._full_song_command_available()
         requirements = [
             {
                 "role": "full_song",
                 "engine": "ACE-Step or compatible local command",
-                "configured": bool(self.settings.full_song_command.strip()),
-                "detail": "Configura SONG_AI_FULL_SONG_COMMAND para generar final_mix.wav completo localmente.",
+                "configured": full_song_configured and full_song_available,
+                "detail": self._full_song_detail(full_song_configured, full_song_available),
                 "path": "preferred",
             },
             {
@@ -82,7 +85,7 @@ class LocalSongPipeline:
         prompt_path.write_text(self._build_music_prompt(context), encoding="utf-8")
         lyrics_path.write_text(context.lyrics_markdown.rstrip() + "\n", encoding="utf-8")
 
-        if self.settings.full_song_command.strip():
+        if self.settings.full_song_command.strip() and self._full_song_command_available():
             self._run_template(
                 self.settings.full_song_command,
                 {
@@ -165,7 +168,25 @@ class LocalSongPipeline:
 
     def _run_template(self, template: str, values: dict[str, Path]) -> None:
         command = template.format(**{key: str(value) for key, value in values.items()})
-        subprocess.run(command, shell=True, check=True)
+        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or command).strip()
+            raise ValueError(f"El comando local fallo: {detail}")
+
+    def _full_song_command_available(self) -> bool:
+        command = self.settings.full_song_command.strip()
+        if not command:
+            return False
+        if "acestep_generate.py" in command:
+            return importlib.util.find_spec("acestep.pipeline_ace_step") is not None
+        return True
+
+    def _full_song_detail(self, configured: bool, available: bool) -> str:
+        if not configured:
+            return "Configura SONG_AI_FULL_SONG_COMMAND para generar final_mix.wav completo localmente."
+        if not available:
+            return "ACE-Step esta configurado pero no instalado/importable. Ejecuta Preparar/reiniciar bootstrap o activa SONG_AI_INSTALL_ACE_STEP=true."
+        return "Comando local completo disponible para generar final_mix.wav."
 
     def _assert_file(self, path: Path, message: str) -> None:
         if not path.exists() or path.stat().st_size == 0:

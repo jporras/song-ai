@@ -16,6 +16,7 @@ BACKEND_DIR = PROJECT_ROOT / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
 from application.song_service import SongService
+from audio.local_song_pipeline import LocalSongPipeline
 from config.settings import Settings
 from config.model_settings import LocalModelSettings
 from core.storage import StorageManager
@@ -187,6 +188,24 @@ class AudioExportTest(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_local_pipeline_does_not_report_ace_step_ready_when_module_is_missing(self) -> None:
+        base_settings = Settings.load()
+        local_settings = replace(
+            base_settings.local_models,
+            full_song_command="python tools/acestep_generate.py --output {output_path}",
+            soundtrack_command="",
+            singing_voice_command="",
+        )
+        pipeline = LocalSongPipeline(local_settings)
+
+        with patch.object(pipeline, "_full_song_command_available", return_value=False):
+            status = pipeline.status()
+
+        full_song = next(item for item in status.requirements if item["role"] == "full_song")
+        self.assertFalse(status.ready)
+        self.assertFalse(full_song["configured"])
+        self.assertIn("ACE-Step", str(full_song["detail"]))
 
     def test_legacy_set_json_is_synced_to_sqlite(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:

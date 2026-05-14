@@ -42,6 +42,7 @@ Ultimo ajuste:
 - Produccion ahora muestra explicitamente el paso `Generar WAV/MP3`; en modo mock crea `exports/final_mix.wav` como audio valido de prueba y genera `final_mix.mp3` si `ffmpeg` esta disponible.
 - Produccion incluye `Crear MP3 predefinido`, que arma la cancion de cuna para Isabella con los defaults actuales, crea set/sample/cancion/mezcla y exporta WAV/MP3 en un solo flujo.
 - Produccion incluye `Cancion local final`, que solo genera final si existen comandos locales reales para soundtrack, voz cantada y ffmpeg. Si falta algo, no entrega un MP3 final falso.
+- El pipeline local valida disponibilidad real de ACE-Step antes de marcarlo como listo; si el comando falla, la API devuelve error JSON legible en vez de tumbar la UI.
 - El modo pro queda en pausa: no se registran providers pagos/remotos en el pipeline activo.
 - Produccion incluye `Estado local del sistema`: lista componentes, servicios/volumenes, comandos locales y bootstrap con indicador visual, boton para consultar estado y boton para preparar/reiniciar bootstrap en segundo plano.
 - Produccion incluye `Fases del proyecto/set`: muestra si ya estan completos instrumental, melodia, letra, set, sample, cancion, mezcla, exports y final local MP3.
