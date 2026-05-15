@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from application.creative_agent_service import CreativeAgentService
+from application.instrumental_generation_service import InstrumentalGenerationService
 from application.lyrics_review_service import LyricsReviewService
 from application.lyrics_service import LyricsService
 from application.midi_generation_service import MidiGenerationService
@@ -14,7 +15,13 @@ from models.song_workflow import PHASE_LABELS, PHASE_SEQUENCE, SongPhase, SongPh
 
 
 class ProfessionalSongService:
-    def __init__(self, storage: StorageManager, model_manager: ModelManagerService | None = None) -> None:
+    def __init__(
+        self,
+        storage: StorageManager,
+        model_manager: ModelManagerService | None = None,
+        soundtrack_command: str = "",
+        local_command_timeout_seconds: int = 3600,
+    ) -> None:
         self.storage = storage
         self.creative_agent = CreativeAgentService()
         self.technical_director = TechnicalDirectorService(self.creative_agent)
@@ -23,6 +30,11 @@ class ProfessionalSongService:
         self.lyrics_review_service = LyricsReviewService(storage)
         self.music_plan_service = MusicPlanService(storage)
         self.midi_generation_service = MidiGenerationService(storage)
+        self.instrumental_generation_service = InstrumentalGenerationService(
+            storage,
+            command_template=soundtrack_command,
+            timeout_seconds=local_command_timeout_seconds,
+        )
 
     def phases(self) -> list[dict[str, object]]:
         total = len(PHASE_SEQUENCE)
@@ -196,6 +208,36 @@ class ProfessionalSongService:
         if self.storage.get_song_project(song_id) is None:
             raise ValueError("Proyecto profesional no encontrado.")
         return self.midi_generation_service.get(song_id)
+
+    def generate_instrumental(self, song_id: str) -> dict[str, object]:
+        project = self.storage.get_song_project(song_id)
+        if project is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        music_plan = self.music_plan_service.get(song_id)["music_plan"]
+        midi = self.midi_generation_service.get(song_id)
+        active_model = "musicgen" if self.instrumental_generation_service.command_template else "local-procedural"
+        self.model_manager.run_model(active_model, {"song_id": song_id, "phase": SongPhase.INSTRUMENTAL_GENERATION.value})
+        self.storage.create_song_event(
+            song_id=song_id,
+            phase=SongPhase.INSTRUMENTAL_GENERATION.value,
+            status=SongPhaseStatus.RUNNING.value,
+            progress=45,
+            message="Generando instrumental desde music_plan.json y song_base.mid.",
+            active_model=active_model,
+            payload={
+                "music_plan": str(self.storage.data_dir / "projects" / song_id / "music_plan.json"),
+                "midi": str(midi["midi"]),
+            },
+        )
+        result = self.instrumental_generation_service.generate(song_id, dict(music_plan), str(midi["midi"]))
+        self.model_manager.unload_model(active_model)
+        result["progress"] = self.progress_for(result["project"])
+        return result
+
+    def get_instrumental(self, song_id: str) -> dict[str, object]:
+        if self.storage.get_song_project(song_id) is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        return self.instrumental_generation_service.get(song_id)
 
     def collect_spec(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
         project = self.storage.get_song_project(song_id)

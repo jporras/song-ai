@@ -67,7 +67,12 @@ class SongService:
         self.model_orchestrator = ModelOrchestrator(storage, self.provider_registry)
         max_loaded_models = settings.local_models.max_loaded_models if settings else 1
         self.model_manager = ModelManagerService(max_loaded_models=max_loaded_models)
-        self.professional_songs = ProfessionalSongService(storage, self.model_manager)
+        self.professional_songs = ProfessionalSongService(
+            storage,
+            self.model_manager,
+            soundtrack_command=settings.local_models.soundtrack_command if settings else "",
+            local_command_timeout_seconds=settings.local_models.local_command_timeout_seconds if settings else 3600,
+        )
 
     def bootstrap(self) -> None:
         self.storage.ensure_project_layout()
@@ -130,6 +135,12 @@ class SongService:
 
     def get_professional_midi(self, song_id: str) -> dict[str, object]:
         return self.professional_songs.get_midi(song_id)
+
+    def generate_professional_instrumental(self, song_id: str) -> dict[str, object]:
+        return self.professional_songs.generate_instrumental(song_id)
+
+    def get_professional_instrumental(self, song_id: str) -> dict[str, object]:
+        return self.professional_songs.get_instrumental(song_id)
 
     def create_instrumental(self, payload: dict[str, object]) -> dict[str, str]:
         path = self.explorers.instrumentals.create_from_intent(

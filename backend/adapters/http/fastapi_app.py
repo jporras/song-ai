@@ -235,6 +235,16 @@ def get_professional_midi(song_id: str) -> dict[str, Any]:
     return run_action(lambda: service.get_professional_midi(song_id))
 
 
+@app.post("/api/pro/projects/{song_id}/instrumental")
+def generate_professional_instrumental(song_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.generate_professional_instrumental(song_id))
+
+
+@app.get("/api/pro/projects/{song_id}/instrumental")
+def get_professional_instrumental(song_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.get_professional_instrumental(song_id))
+
+
 @app.get("/api/projects/{set_id}")
 def get_project(set_id: str) -> dict[str, Any]:
     return run_action(lambda: service.get_project(set_id))
