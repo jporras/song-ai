@@ -7,6 +7,7 @@ from application.instrumental_generation_service import InstrumentalGenerationSe
 from application.lyrics_review_service import LyricsReviewService
 from application.lyrics_service import LyricsService
 from application.midi_generation_service import MidiGenerationService
+from application.mixing_service import MixingService
 from application.model_manager_service import ModelManagerService
 from application.music_plan_service import MusicPlanService
 from application.technical_director_service import TechnicalDirectorService
@@ -49,6 +50,7 @@ class ProfessionalSongService:
             command_template=voice_conversion_command,
             timeout_seconds=local_command_timeout_seconds,
         )
+        self.mixing_service = MixingService(storage)
 
     def phases(self) -> list[dict[str, object]]:
         total = len(PHASE_SEQUENCE)
@@ -322,6 +324,34 @@ class ProfessionalSongService:
         if self.storage.get_song_project(song_id) is None:
             raise ValueError("Proyecto profesional no encontrado.")
         return self.voice_conversion_service.get(song_id)
+
+    def mix_song(self, song_id: str) -> dict[str, object]:
+        if self.storage.get_song_project(song_id) is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        self.instrumental_generation_service.get(song_id)
+        try:
+            self.voice_conversion_service.get(song_id)
+        except ValueError:
+            self.vocal_synthesis_service.get(song_id)
+        self.model_manager.run_model("local-mixer", {"song_id": song_id, "phase": SongPhase.MIXING.value})
+        self.storage.create_song_event(
+            song_id=song_id,
+            phase=SongPhase.MIXING.value,
+            status=SongPhaseStatus.RUNNING.value,
+            progress=45,
+            message="Mezclando instrumental y voz con ganancia, reverb suave y normalizacion.",
+            active_model="local-mixer",
+            payload={},
+        )
+        result = self.mixing_service.mix(song_id)
+        self.model_manager.unload_model("local-mixer")
+        result["progress"] = self.progress_for(result["project"])
+        return result
+
+    def get_mix(self, song_id: str) -> dict[str, object]:
+        if self.storage.get_song_project(song_id) is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        return self.mixing_service.get(song_id)
 
     def collect_spec(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
         project = self.storage.get_song_project(song_id)

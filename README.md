@@ -32,6 +32,8 @@ Ultimo ajuste:
 - Se agregaron `POST/GET /api/pro/projects/{song_id}/vocals`; al completar la voz el proyecto avanza a `VOICE_CONVERSION`.
 - Fase 9/12 en marcha: `VoiceConversionService` aplica conversion opcional con `SONG_AI_VOICE_CONVERSION_COMMAND`; si no hay provider configurado, omite la fase y deja `vocals_converted.wav` como passthrough de `vocals.wav`.
 - Se agregaron `POST/GET /api/pro/projects/{song_id}/voice-conversion`; al completar u omitir la conversion el proyecto avanza a `MIXING`.
+- Fase 10/12 en marcha: `MixingService` combina `instrumental.wav` con `vocals_converted.wav` o `vocals.wav`, aplica ganancia, reverb suave y normalizacion, y genera `mix.wav`.
+- Se agregaron `POST/GET /api/pro/projects/{song_id}/mix`; al completar la mezcla el proyecto avanza a `MASTERING`.
 - Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
 - La referencia visual o de YouTube queda solo como inspiracion de sensibilidad/ternura; el video es opcional y no define el formato.
 - La prioridad del sistema queda fija: buena letra, buena intencion emocional, buena estructura musical, soundtrack coherente, voz cantada y mezcla final.

@@ -156,6 +156,12 @@ class SongService:
     def get_professional_converted_voice(self, song_id: str) -> dict[str, object]:
         return self.professional_songs.get_converted_voice(song_id)
 
+    def mix_professional_song(self, song_id: str) -> dict[str, object]:
+        return self.professional_songs.mix_song(song_id)
+
+    def get_professional_mix(self, song_id: str) -> dict[str, object]:
+        return self.professional_songs.get_mix(song_id)
+
     def create_instrumental(self, payload: dict[str, object]) -> dict[str, str]:
         path = self.explorers.instrumentals.create_from_intent(
             mood=str(payload.get("mood", "warm")),
