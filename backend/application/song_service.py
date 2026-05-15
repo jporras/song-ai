@@ -7,6 +7,7 @@ from typing import Any
 from audio.mixer import AudioMixer
 from audio.local_song_pipeline import LocalSongPipeline
 from application.model_orchestrator import ModelOrchestrator
+from application.model_manager_service import ModelManagerService
 from application.professional_song_service import ProfessionalSongService
 from builders.export_builder import ExportBuilder
 from builders.full_song_builder import FullSongBuilder
@@ -64,7 +65,9 @@ class SongService:
             settings.local_models if settings else None,
         )
         self.model_orchestrator = ModelOrchestrator(storage, self.provider_registry)
-        self.professional_songs = ProfessionalSongService(storage)
+        max_loaded_models = settings.local_models.max_loaded_models if settings else 1
+        self.model_manager = ModelManagerService(max_loaded_models=max_loaded_models)
+        self.professional_songs = ProfessionalSongService(storage, self.model_manager)
 
     def bootstrap(self) -> None:
         self.storage.ensure_project_layout()
@@ -100,6 +103,9 @@ class SongService:
 
     def list_professional_project_events(self, song_id: str) -> dict[str, object]:
         return self.professional_songs.list_events(song_id)
+
+    def collect_professional_spec(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
+        return self.professional_songs.collect_spec(song_id, payload)
 
     def create_instrumental(self, payload: dict[str, object]) -> dict[str, str]:
         path = self.explorers.instrumentals.create_from_intent(

@@ -443,3 +443,55 @@ class StorageManager:
     def list_song_project_events(self, song_id: str) -> list[dict[str, object]]:
         return self.song_workflow_repository.list_events(song_id)
 
+    def update_song_project_phase(self, song_id: str, phase: str, status: str) -> dict[str, object]:
+        return self.song_workflow_repository.update_project_phase(song_id, phase, status)
+
+    def upsert_song_spec(
+        self,
+        song_id: str,
+        json_spec: dict[str, object],
+        approved_by_qwen: bool,
+        missing_fields: list[str],
+    ) -> dict[str, object]:
+        return self.song_workflow_repository.upsert_spec(song_id, json_spec, approved_by_qwen, missing_fields)
+
+    def create_song_event(
+        self,
+        song_id: str,
+        phase: str,
+        status: str,
+        progress: int,
+        message: str,
+        active_model: str,
+        payload: dict[str, object] | None = None,
+        artifact_id: str = "",
+    ) -> dict[str, object]:
+        return self.song_workflow_repository.create_event(
+            song_id=song_id,
+            phase=phase,
+            status=status,
+            progress=progress,
+            message=message,
+            active_model=active_model,
+            payload=payload,
+            artifact_id=artifact_id,
+        )
+
+    def create_song_artifact(
+        self,
+        artifact_id: str,
+        song_id: str,
+        phase: str,
+        artifact_type: str,
+        file_path: str,
+        metadata: dict[str, object],
+    ) -> dict[str, object]:
+        return self.song_workflow_repository.create_artifact(
+            artifact_id=artifact_id,
+            song_id=song_id,
+            phase=phase,
+            artifact_type=artifact_type,
+            file_path=file_path,
+            metadata=metadata,
+        )
+

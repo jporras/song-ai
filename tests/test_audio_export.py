@@ -66,6 +66,39 @@ class AudioExportTest(unittest.TestCase):
             self.assertEqual(len(project["events"]), 1)
             self.assertIn("Gemma", project["events"][0]["message"])
 
+    def test_professional_spec_collection_routes_gemma_to_qwen(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            service = SongService(storage)
+            service.bootstrap()
+            created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
+            song_id = str(created["project"]["id"])
+
+            first = service.collect_professional_spec(
+                song_id,
+                {"message": "Quiero una cancion de cuna dulce para Isabella."},
+            )
+
+            self.assertEqual(first["qwen"]["status"], "missing_information")
+            self.assertIn("duration_seconds", first["qwen"]["missing_fields"])
+            self.assertIn("voice_style", first["qwen"]["missing_fields"])
+            self.assertIn("Gemma", first["project"]["events"][0]["message"])
+
+            second = service.collect_professional_spec(
+                song_id,
+                {
+                    "message": (
+                        "Que dure 120 segundos, voz femenina suave, piano, cuerdas y pad, "
+                        "muy lenta a 70 bpm en C major, estructura intro verso coro puente outro y salida mp3."
+                    )
+                },
+            )
+
+            self.assertEqual(second["qwen"]["status"], "ready_for_generation")
+            self.assertEqual(second["progress"]["current"], 2)
+            self.assertEqual(second["spec"]["json_spec"]["duration_seconds"], 120)
+            self.assertTrue((Path(temp_dir) / "projects" / song_id / "song_spec.json").exists())
+
     def test_docker_bootstrap_creates_named_volume_directories_without_downloads(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)

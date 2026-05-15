@@ -161,6 +161,47 @@ class SongWorkflowRepository:
             )
         return self.get_project(song_id) or {}
 
+    def create_artifact(
+        self,
+        artifact_id: str,
+        song_id: str,
+        phase: str,
+        artifact_type: str,
+        file_path: str,
+        metadata: dict[str, object],
+    ) -> dict[str, object]:
+        created_at = utc_now()
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO song_artifacts (
+                    artifact_id, song_id, phase, type, file_path, metadata_json, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(artifact_id) DO UPDATE SET
+                    file_path = excluded.file_path,
+                    metadata_json = excluded.metadata_json
+                """,
+                (
+                    artifact_id,
+                    song_id,
+                    phase,
+                    artifact_type,
+                    file_path,
+                    json.dumps(metadata, ensure_ascii=False),
+                    created_at,
+                ),
+            )
+        return {
+            "artifact_id": artifact_id,
+            "song_id": song_id,
+            "phase": phase,
+            "type": artifact_type,
+            "file_path": file_path,
+            "metadata": metadata,
+            "created_at": created_at,
+        }
+
     def upsert_spec(
         self,
         song_id: str,

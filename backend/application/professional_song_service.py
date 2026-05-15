@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from application.creative_agent_service import CreativeAgentService
+from application.model_manager_service import ModelManagerService
+from application.technical_director_service import TechnicalDirectorService
 from core.storage import StorageManager
-from models.song_workflow import PHASE_LABELS, PHASE_SEQUENCE
+from models.song_workflow import PHASE_LABELS, PHASE_SEQUENCE, SongPhase, SongPhaseStatus
 
 
 class ProfessionalSongService:
-    def __init__(self, storage: StorageManager) -> None:
+    def __init__(self, storage: StorageManager, model_manager: ModelManagerService | None = None) -> None:
         self.storage = storage
+        self.creative_agent = CreativeAgentService()
+        self.technical_director = TechnicalDirectorService(self.creative_agent)
+        self.model_manager = model_manager or ModelManagerService()
 
     def phases(self) -> list[dict[str, object]]:
         total = len(PHASE_SEQUENCE)
@@ -56,6 +64,79 @@ class ProfessionalSongService:
             "events": self.storage.list_song_project_events(song_id),
         }
 
+    def collect_spec(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
+        project = self.storage.get_song_project(song_id)
+        if project is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        user_message = str(payload.get("message", "")).strip()
+        if not user_message:
+            raise ValueError("El mensaje para Gemma no puede estar vacio.")
+
+        existing_spec = None
+        if project.get("spec"):
+            existing_spec = dict(dict(project["spec"]).get("json_spec", {}))
+        self.model_manager.run_model("gemma", {"song_id": song_id, "message": user_message})
+        self.storage.create_song_event(
+            song_id=song_id,
+            phase=SongPhase.SONG_SPEC_COLLECTION.value,
+            status=SongPhaseStatus.RUNNING.value,
+            progress=20,
+            message="Gemma recibio la intencion creativa del usuario y la tradujo a especificacion inicial.",
+            active_model="gemma",
+            payload={"user_message": user_message},
+        )
+
+        candidate_spec = self.creative_agent.build_initial_spec(user_message, existing_spec)
+        self.model_manager.unload_model("gemma")
+        self.model_manager.run_model("qwen", {"song_id": song_id, "candidate_spec": candidate_spec})
+        qwen_result = self.technical_director.validate_song_spec(candidate_spec)
+        self.model_manager.unload_model("qwen")
+
+        approved = bool(qwen_result["approved_by_qwen"])
+        missing_fields = [str(item) for item in qwen_result["missing_fields"]]
+        spec = self.storage.upsert_song_spec(
+            song_id=song_id,
+            json_spec=dict(qwen_result["song_spec"]),
+            approved_by_qwen=approved,
+            missing_fields=missing_fields,
+        )
+        artifact = self._write_song_spec_snapshot(song_id, dict(qwen_result["song_spec"]), approved, missing_fields)
+        if approved:
+            status = SongPhaseStatus.READY.value
+            progress = 100
+            project_status = SongPhaseStatus.READY.value
+            current_phase = SongPhase.LYRICS_GENERATION.value
+            message = "Qwen aprobo la especificacion. El proyecto puede avanzar a generacion de letra cantable."
+        else:
+            status = SongPhaseStatus.WAITING_USER_INPUT.value
+            progress = 55
+            project_status = SongPhaseStatus.WAITING_USER_INPUT.value
+            current_phase = SongPhase.SONG_SPEC_COLLECTION.value
+            message = "Qwen detecto informacion faltante. Gemma debe preguntarla al usuario en lenguaje natural."
+        self.storage.create_song_event(
+            song_id=song_id,
+            phase=SongPhase.SONG_SPEC_COLLECTION.value,
+            status=status,
+            progress=progress,
+            message=message,
+            active_model="qwen",
+            payload=qwen_result,
+            artifact_id=str(artifact["artifact_id"]),
+        )
+        project = self.storage.update_song_project_phase(song_id, current_phase, project_status)
+        gemma_message = self.creative_agent.compose_user_response(qwen_result)
+        return {
+            "project": project,
+            "spec": spec,
+            "qwen": qwen_result,
+            "gemma": {
+                "message": gemma_message,
+                "questions_for_user": qwen_result["questions_for_user"],
+            },
+            "artifact": artifact,
+            "progress": self.progress_for(project),
+        }
+
     def progress_for(self, project: dict[str, object]) -> dict[str, object]:
         current_phase = str(project.get("current_phase", PHASE_SEQUENCE[0].value))
         total = len(PHASE_SEQUENCE)
@@ -67,3 +148,30 @@ class ProfessionalSongService:
             "label": PHASE_LABELS.get(PHASE_SEQUENCE[current_number - 1], "Fase desconocida"),
             "status": str(project.get("status", "pending")),
         }
+
+    def _write_song_spec_snapshot(
+        self,
+        song_id: str,
+        spec: dict[str, object],
+        approved: bool,
+        missing_fields: list[str],
+    ) -> dict[str, object]:
+        project_dir = self.storage.data_dir / "projects" / song_id
+        path = project_dir / "song_spec.json"
+        self.storage.write_json(
+            path,
+            {
+                "song_id": song_id,
+                "approved_by_qwen": approved,
+                "missing_fields": missing_fields,
+                "song_spec": spec,
+            },
+        )
+        return self.storage.create_song_artifact(
+            artifact_id=f"{song_id}_song_spec",
+            song_id=song_id,
+            phase=SongPhase.SONG_SPEC_COLLECTION.value,
+            artifact_type="song_spec",
+            file_path=str(Path(path)),
+            metadata={"approved_by_qwen": approved, "missing_fields": missing_fields},
+        )

@@ -16,6 +16,8 @@ Ultimo ajuste:
 - Refactorizacion profesional iniciada en fase 1/12: se agregaron entidades SQLite nuevas para `SongProject`, `SongSpec`, `SongArtifact`, `SongEvent` y `ModelExecution`, con endpoints `/api/pro/projects` y `/api/pro/phases`.
 - El nuevo flujo profesional arranca en `SONG_SPEC_COLLECTION`: Gemma queda como interfaz creativa del usuario y Qwen queda reservado como director tecnico interno para validar la especificacion antes de generar.
 - El progreso operativo se reporta como fase de refactorizacion `1/12`; el pipeline musical interno conserva sus fases principales y marca `MIDI_GENERATION` como etapa obligatoria.
+- Fase 2/12 en marcha: `CreativeAgentService` convierte lenguaje del usuario a `song_spec`, `TechnicalDirectorService` valida campos faltantes como Qwen y `ModelManagerService` aplica la politica de un modelo pesado cargado a la vez.
+- Se agrego `POST /api/pro/projects/{song_id}/spec/messages` para el flujo Usuario -> Gemma -> Qwen -> Gemma -> Usuario; si Qwen aprueba, el proyecto avanza a `LYRICS_GENERATION` y se guarda `projects/{song_id}/song_spec.json`.
 - Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
 - La referencia visual o de YouTube queda solo como inspiracion de sensibilidad/ternura; el video es opcional y no define el formato.
 - La prioridad del sistema queda fija: buena letra, buena intencion emocional, buena estructura musical, soundtrack coherente, voz cantada y mezcla final.

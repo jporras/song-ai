@@ -190,6 +190,11 @@ def get_professional_project_events(song_id: str) -> dict[str, Any]:
     return run_action(lambda: service.list_professional_project_events(song_id))
 
 
+@app.post("/api/pro/projects/{song_id}/spec/messages")
+def collect_professional_spec(song_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.collect_professional_spec(song_id, payload))
+
+
 @app.get("/api/projects/{set_id}")
 def get_project(set_id: str) -> dict[str, Any]:
     return run_action(lambda: service.get_project(set_id))
