@@ -107,6 +107,15 @@ class SongService:
     def collect_professional_spec(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
         return self.professional_songs.collect_spec(song_id, payload)
 
+    def generate_professional_lyrics(self, song_id: str) -> dict[str, object]:
+        return self.professional_songs.generate_lyrics(song_id)
+
+    def get_professional_lyrics(self, song_id: str) -> dict[str, object]:
+        return self.professional_songs.get_lyrics(song_id)
+
+    def update_professional_lyrics(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
+        return self.professional_songs.update_lyrics(song_id, payload)
+
     def create_instrumental(self, payload: dict[str, object]) -> dict[str, str]:
         path = self.explorers.instrumentals.create_from_intent(
             mood=str(payload.get("mood", "warm")),

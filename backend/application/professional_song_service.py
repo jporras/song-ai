@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from application.creative_agent_service import CreativeAgentService
+from application.lyrics_service import LyricsService
 from application.model_manager_service import ModelManagerService
 from application.technical_director_service import TechnicalDirectorService
 from core.storage import StorageManager
@@ -15,6 +16,7 @@ class ProfessionalSongService:
         self.creative_agent = CreativeAgentService()
         self.technical_director = TechnicalDirectorService(self.creative_agent)
         self.model_manager = model_manager or ModelManagerService()
+        self.lyrics_service = LyricsService(storage)
 
     def phases(self) -> list[dict[str, object]]:
         total = len(PHASE_SEQUENCE)
@@ -63,6 +65,41 @@ class ProfessionalSongService:
             "song_id": song_id,
             "events": self.storage.list_song_project_events(song_id),
         }
+
+    def generate_lyrics(self, song_id: str) -> dict[str, object]:
+        project = self.storage.get_song_project(song_id)
+        if project is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        spec_record = project.get("spec")
+        if not spec_record or not bool(dict(spec_record).get("approved_by_qwen")):
+            raise ValueError("La especificacion debe estar aprobada por Qwen antes de generar letra.")
+        self.model_manager.run_model("gemma", {"song_id": song_id, "phase": SongPhase.LYRICS_GENERATION.value})
+        self.storage.create_song_event(
+            song_id=song_id,
+            phase=SongPhase.LYRICS_GENERATION.value,
+            status=SongPhaseStatus.RUNNING.value,
+            progress=35,
+            message="Gemma esta generando una letra cantable segun la especificacion aprobada.",
+            active_model="gemma",
+            payload={"source": "song_spec"},
+        )
+        result = self.lyrics_service.generate(song_id, dict(dict(spec_record).get("json_spec", {})))
+        self.model_manager.unload_model("gemma")
+        result["progress"] = self.progress_for(result["project"])
+        return result
+
+    def get_lyrics(self, song_id: str) -> dict[str, object]:
+        if self.storage.get_song_project(song_id) is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        return self.lyrics_service.get(song_id)
+
+    def update_lyrics(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
+        if self.storage.get_song_project(song_id) is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        content = str(payload.get("content", ""))
+        result = self.lyrics_service.update_markdown(song_id, content)
+        result["progress"] = self.progress_for(result["project"])
+        return result
 
     def collect_spec(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
         project = self.storage.get_song_project(song_id)

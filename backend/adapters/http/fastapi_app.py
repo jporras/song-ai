@@ -195,6 +195,21 @@ def collect_professional_spec(song_id: str, payload: dict[str, Any]) -> dict[str
     return run_action(lambda: service.collect_professional_spec(song_id, payload))
 
 
+@app.post("/api/pro/projects/{song_id}/lyrics")
+def generate_professional_lyrics(song_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.generate_professional_lyrics(song_id))
+
+
+@app.get("/api/pro/projects/{song_id}/lyrics")
+def get_professional_lyrics(song_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.get_professional_lyrics(song_id))
+
+
+@app.put("/api/pro/projects/{song_id}/lyrics")
+def update_professional_lyrics(song_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.update_professional_lyrics(song_id, payload))
+
+
 @app.get("/api/projects/{set_id}")
 def get_project(set_id: str) -> dict[str, Any]:
     return run_action(lambda: service.get_project(set_id))
