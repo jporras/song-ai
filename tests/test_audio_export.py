@@ -277,6 +277,40 @@ class AudioExportTest(unittest.TestCase):
                 self.assertGreater(wav_file.getnframes(), 0)
             self.assertTrue((Path(temp_dir) / "projects" / song_id / "instrumental_generation.log").exists())
 
+    def test_professional_vocal_synthesis_creates_vocals_wav(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            service = SongService(storage)
+            service.bootstrap()
+            created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
+            song_id = str(created["project"]["id"])
+            service.collect_professional_spec(
+                song_id,
+                {
+                    "message": (
+                        "Cancion de cuna para Isabella, 20 segundos, voz femenina suave, piano, "
+                        "cuerdas y pad, muy lenta a 70 bpm en C major, estructura intro verse chorus verse bridge outro y salida mp3."
+                    )
+                },
+            )
+            service.generate_professional_lyrics(song_id)
+            service.review_professional_lyrics(song_id)
+            service.generate_professional_music_plan(song_id)
+            service.generate_professional_midi(song_id)
+            service.generate_professional_instrumental(song_id)
+
+            generated = service.generate_professional_vocals(song_id)
+            vocals = service.get_professional_vocals(song_id)
+            vocals_path = Path(str(vocals["vocals"]))
+
+            self.assertEqual(generated["progress"]["current"], 8)
+            self.assertEqual(generated["project"]["current_phase"], "VOICE_CONVERSION")
+            self.assertTrue(vocals_path.exists())
+            with wave.open(str(vocals_path), "rb") as wav_file:
+                self.assertEqual(wav_file.getframerate(), 44100)
+                self.assertGreater(wav_file.getnframes(), 0)
+            self.assertTrue((Path(temp_dir) / "projects" / song_id / "vocal_synthesis.log").exists())
+
     def test_docker_bootstrap_creates_named_volume_directories_without_downloads(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)

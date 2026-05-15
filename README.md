@@ -28,6 +28,8 @@ Ultimo ajuste:
 - Se agregaron `POST/GET /api/pro/projects/{song_id}/midi`; al completar el MIDI el proyecto avanza a `INSTRUMENTAL_GENERATION`.
 - Fase 7/12 en marcha: `InstrumentalGenerationService` genera `instrumental.wav` desde `music_plan.json` y `song_base.mid`; usa `SONG_AI_SOUNDTRACK_COMMAND` si esta configurado y si no usa un renderer local procedural para mantener el pipeline ejecutable.
 - Se agregaron `POST/GET /api/pro/projects/{song_id}/instrumental`; al completar el instrumental el proyecto avanza a `VOCAL_SYNTHESIS`.
+- Fase 8/12 en marcha: `VocalSynthesisService` genera `vocals.wav` desde `lyrics_approved.json`, `midi_metadata.json` y `voice_style`; usa `SONG_AI_SINGING_VOICE_COMMAND` si esta configurado y si no crea una guia vocal cantada procedural.
+- Se agregaron `POST/GET /api/pro/projects/{song_id}/vocals`; al completar la voz el proyecto avanza a `VOICE_CONVERSION`.
 - Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
 - La referencia visual o de YouTube queda solo como inspiracion de sensibilidad/ternura; el video es opcional y no define el formato.
 - La prioridad del sistema queda fija: buena letra, buena intencion emocional, buena estructura musical, soundtrack coherente, voz cantada y mezcla final.

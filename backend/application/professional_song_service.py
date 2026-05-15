@@ -10,6 +10,7 @@ from application.midi_generation_service import MidiGenerationService
 from application.model_manager_service import ModelManagerService
 from application.music_plan_service import MusicPlanService
 from application.technical_director_service import TechnicalDirectorService
+from application.vocal_synthesis_service import VocalSynthesisService
 from core.storage import StorageManager
 from models.song_workflow import PHASE_LABELS, PHASE_SEQUENCE, SongPhase, SongPhaseStatus
 
@@ -20,6 +21,7 @@ class ProfessionalSongService:
         storage: StorageManager,
         model_manager: ModelManagerService | None = None,
         soundtrack_command: str = "",
+        singing_voice_command: str = "",
         local_command_timeout_seconds: int = 3600,
     ) -> None:
         self.storage = storage
@@ -33,6 +35,11 @@ class ProfessionalSongService:
         self.instrumental_generation_service = InstrumentalGenerationService(
             storage,
             command_template=soundtrack_command,
+            timeout_seconds=local_command_timeout_seconds,
+        )
+        self.vocal_synthesis_service = VocalSynthesisService(
+            storage,
+            command_template=singing_voice_command,
             timeout_seconds=local_command_timeout_seconds,
         )
 
@@ -238,6 +245,46 @@ class ProfessionalSongService:
         if self.storage.get_song_project(song_id) is None:
             raise ValueError("Proyecto profesional no encontrado.")
         return self.instrumental_generation_service.get(song_id)
+
+    def generate_vocals(self, song_id: str) -> dict[str, object]:
+        project = self.storage.get_song_project(song_id)
+        if project is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        spec_record = project.get("spec")
+        if not spec_record:
+            raise ValueError("La especificacion debe existir antes de generar voz.")
+        lyrics_approved_path = self.storage.data_dir / "projects" / song_id / "lyrics_approved.json"
+        if not lyrics_approved_path.exists():
+            raise ValueError("La letra aprobada debe existir antes de generar voz.")
+        lyrics_approved = self.storage.read_json(lyrics_approved_path)
+        midi = self.midi_generation_service.get(song_id)
+        self.instrumental_generation_service.get(song_id)
+        active_model = "singing-voice-provider" if self.vocal_synthesis_service.command_template else "local-vocal-guide"
+        self.model_manager.run_model(active_model, {"song_id": song_id, "phase": SongPhase.VOCAL_SYNTHESIS.value})
+        self.storage.create_song_event(
+            song_id=song_id,
+            phase=SongPhase.VOCAL_SYNTHESIS.value,
+            status=SongPhaseStatus.RUNNING.value,
+            progress=45,
+            message="Generando voz cantada/guia desde lyrics_approved.json y melodia vocal MIDI.",
+            active_model=active_model,
+            payload={"lyrics_approved": str(lyrics_approved_path), "midi_metadata": str(self.storage.data_dir / "projects" / song_id / "midi_metadata.json")},
+        )
+        spec = dict(dict(spec_record).get("json_spec", {}))
+        result = self.vocal_synthesis_service.generate(
+            song_id,
+            lyrics_approved,
+            dict(midi["metadata"]),
+            str(spec.get("voice_style", "soft vocal")),
+        )
+        self.model_manager.unload_model(active_model)
+        result["progress"] = self.progress_for(result["project"])
+        return result
+
+    def get_vocals(self, song_id: str) -> dict[str, object]:
+        if self.storage.get_song_project(song_id) is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        return self.vocal_synthesis_service.get(song_id)
 
     def collect_spec(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
         project = self.storage.get_song_project(song_id)
