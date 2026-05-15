@@ -6,6 +6,7 @@ from application.creative_agent_service import CreativeAgentService
 from application.instrumental_generation_service import InstrumentalGenerationService
 from application.lyrics_review_service import LyricsReviewService
 from application.lyrics_service import LyricsService
+from application.mastering_service import MasteringService
 from application.midi_generation_service import MidiGenerationService
 from application.mixing_service import MixingService
 from application.model_manager_service import ModelManagerService
@@ -51,6 +52,7 @@ class ProfessionalSongService:
             timeout_seconds=local_command_timeout_seconds,
         )
         self.mixing_service = MixingService(storage)
+        self.mastering_service = MasteringService(storage)
 
     def phases(self) -> list[dict[str, object]]:
         total = len(PHASE_SEQUENCE)
@@ -352,6 +354,30 @@ class ProfessionalSongService:
         if self.storage.get_song_project(song_id) is None:
             raise ValueError("Proyecto profesional no encontrado.")
         return self.mixing_service.get(song_id)
+
+    def master_song(self, song_id: str) -> dict[str, object]:
+        if self.storage.get_song_project(song_id) is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        self.mixing_service.get(song_id)
+        self.model_manager.run_model("local-mastering", {"song_id": song_id, "phase": SongPhase.MASTERING.value})
+        self.storage.create_song_event(
+            song_id=song_id,
+            phase=SongPhase.MASTERING.value,
+            status=SongPhaseStatus.RUNNING.value,
+            progress=45,
+            message="Masterizando mix.wav y preparando final_song.wav/final_song.mp3.",
+            active_model="local-mastering",
+            payload={},
+        )
+        result = self.mastering_service.master(song_id)
+        self.model_manager.unload_model("local-mastering")
+        result["progress"] = self.progress_for(result["project"])
+        return result
+
+    def get_master(self, song_id: str) -> dict[str, object]:
+        if self.storage.get_song_project(song_id) is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        return self.mastering_service.get(song_id)
 
     def collect_spec(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
         project = self.storage.get_song_project(song_id)

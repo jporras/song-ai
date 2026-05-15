@@ -384,6 +384,47 @@ class AudioExportTest(unittest.TestCase):
                 self.assertGreater(wav_file.getnframes(), 0)
             self.assertTrue((Path(temp_dir) / "projects" / song_id / "mixing.log").exists())
 
+    @unittest.skipIf(not shutil.which("ffmpeg"), "ffmpeg no esta disponible para exportar MP3")
+    def test_professional_mastering_creates_final_wav_and_mp3(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            service = SongService(storage)
+            service.bootstrap()
+            created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
+            song_id = str(created["project"]["id"])
+            service.collect_professional_spec(
+                song_id,
+                {
+                    "message": (
+                        "Cancion de cuna para Isabella, 20 segundos, voz femenina suave, piano, "
+                        "cuerdas y pad, muy lenta a 70 bpm en C major, estructura intro verse chorus verse bridge outro y salida mp3."
+                    )
+                },
+            )
+            service.generate_professional_lyrics(song_id)
+            service.review_professional_lyrics(song_id)
+            service.generate_professional_music_plan(song_id)
+            service.generate_professional_midi(song_id)
+            service.generate_professional_instrumental(song_id)
+            service.generate_professional_vocals(song_id)
+            service.convert_professional_voice(song_id)
+            service.mix_professional_song(song_id)
+
+            mastered = service.master_professional_song(song_id)
+            read = service.get_professional_master(song_id)
+            final_wav_path = Path(str(read["final_wav"]))
+            final_mp3_path = Path(str(read["final_mp3"]))
+
+            self.assertEqual(mastered["progress"]["current"], 11)
+            self.assertEqual(mastered["project"]["current_phase"], "EXPORT")
+            self.assertTrue(final_wav_path.exists())
+            self.assertTrue(final_mp3_path.exists())
+            self.assertGreater(final_mp3_path.stat().st_size, 0)
+            with wave.open(str(final_wav_path), "rb") as wav_file:
+                self.assertEqual(wav_file.getframerate(), 44100)
+                self.assertGreater(wav_file.getnframes(), 0)
+            self.assertTrue((Path(temp_dir) / "projects" / song_id / "mastering.log").exists())
+
     def test_docker_bootstrap_creates_named_volume_directories_without_downloads(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
