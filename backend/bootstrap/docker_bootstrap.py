@@ -96,8 +96,27 @@ def install_ace_step(upgrade: bool = False) -> bool:
         write_marker(ACE_STEP_MARKER, requirement)
         return False
     needs_repair = modules_available(["acestep"]) and not ready
+    if needs_repair or upgrade:
+        clean_provider_packages(
+            [
+                "torch",
+                "torchvision",
+                "torchaudio",
+                "transformers",
+                "diffusers",
+                "accelerate",
+                "peft",
+            ]
+        )
     command = pip_install_command(upgrade or needs_repair) + [requirement]
     subprocess.run(command, check=True)
+    if modules_available(["acestep"]) and not ace_step_ready():
+        clean_provider_packages(["torchvision"])
+        if modules_available(["acestep"]) and not ace_step_ready():
+            raise RuntimeError(
+                "ACE-Step se instalo, pero no pudo importarse. Revisa compatibilidad Torch/Torchvision "
+                "en /app/provider-cache/python."
+            )
     write_marker(ACE_STEP_MARKER, requirement)
     return True
 
@@ -187,6 +206,16 @@ def pip_install_command(upgrade: bool = False) -> list[str]:
     if upgrade or enabled("SONG_AI_BOOTSTRAP_UPGRADE"):
         command.extend(["--upgrade", "--upgrade-strategy", "eager"])
     return command
+
+
+def clean_provider_packages(package_names: list[str]) -> None:
+    for package_name in package_names:
+        normalized = package_name.replace("-", "_").lower()
+        for path in PYTHON_TARGET.glob(f"{normalized}*"):
+            if path.is_dir():
+                shutil.rmtree(path)
+            elif path.exists():
+                path.unlink()
 
 
 def marker_current(path: Path, content: str, upgrade: bool = False) -> bool:

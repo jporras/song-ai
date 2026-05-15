@@ -21,6 +21,7 @@ class LocalSongPipeline:
     def __init__(self, settings: LocalModelSettings) -> None:
         self.settings = settings
         self._full_song_available_cache: bool | None = None
+        self._full_song_unavailable_reason = ""
 
     def status(self) -> LocalPipelineStatus:
         full_song_configured = bool(self.settings.full_song_command.strip())
@@ -85,6 +86,7 @@ class LocalSongPipeline:
         stems_dir.mkdir(parents=True, exist_ok=True)
 
         prompt_path = work_dir / "music_prompt.txt"
+        command_log_path = work_dir / "local_command.log"
         lyrics_path = exports_dir / "lyrics.md"
         instrumental_path = stems_dir / "instrumental.wav"
         vocals_path = stems_dir / "vocals.wav"
@@ -102,6 +104,7 @@ class LocalSongPipeline:
                     "lyrics_path": lyrics_path,
                     "output_path": final_wav_path,
                     "work_dir": work_dir,
+                    "log_path": command_log_path,
                 },
             )
             self._assert_file(final_wav_path, "El comando local de cancion completa no genero final_mix.wav.")
@@ -112,6 +115,7 @@ class LocalSongPipeline:
                 "mp3": str(final_mp3_path),
                 "stems": {},
                 "prompt": str(prompt_path),
+                "command_log": str(command_log_path),
                 "note": "Cancion final generada con un comando local completo; no usa modo pro.",
             }
 
@@ -122,6 +126,7 @@ class LocalSongPipeline:
                 "lyrics_path": lyrics_path,
                 "output_path": instrumental_path,
                 "work_dir": work_dir,
+                "log_path": command_log_path,
             },
         )
         self._assert_file(instrumental_path, "El comando local de soundtrack no genero instrumental.wav.")
@@ -134,6 +139,7 @@ class LocalSongPipeline:
                 "instrumental_path": instrumental_path,
                 "output_path": vocals_path,
                 "work_dir": work_dir,
+                "log_path": command_log_path,
             },
         )
         self._assert_file(vocals_path, "El comando local de voz cantada no genero vocals.wav.")
@@ -172,22 +178,51 @@ class LocalSongPipeline:
                 "vocals": str(vocals_path),
             },
             "prompt": str(prompt_path),
+            "command_log": str(command_log_path),
             "note": "Cancion final generada con herramientas locales configuradas; no usa modo pro.",
         }
 
     def _run_template(self, template: str, values: dict[str, Path]) -> None:
         command = template.format(**{key: str(value) for key, value in values.items()})
-        result = subprocess.run(command, shell=True, capture_output=True, text=True, env=self._command_env())
+        log_path = values.get("log_path")
+        if log_path is not None:
+            Path(log_path).write_text(f"$ {command}\n", encoding="utf-8")
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                env=self._command_env(),
+                timeout=self.settings.local_command_timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as error:
+            if log_path is not None:
+                Path(log_path).write_text(
+                    f"$ {command}\nTIMEOUT despues de {self.settings.local_command_timeout_seconds} segundos.\n"
+                    f"{error.stdout or ''}\n{error.stderr or ''}",
+                    encoding="utf-8",
+                )
+            raise ValueError(
+                "El comando local tardo demasiado y fue detenido. "
+                f"Timeout: {self.settings.local_command_timeout_seconds} segundos."
+            ) from error
+        if log_path is not None:
+            Path(log_path).write_text(
+                f"$ {command}\n\nSTDOUT:\n{result.stdout or ''}\n\nSTDERR:\n{result.stderr or ''}",
+                encoding="utf-8",
+            )
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or command).strip()
             raise ValueError(f"El comando local fallo: {detail}")
 
     def _full_song_command_available(self) -> bool:
         command = self.settings.full_song_command.strip()
+        self._full_song_unavailable_reason = ""
         if not command:
             return False
         if "acestep_generate.py" in command:
-            if self._full_song_available_cache is not None:
+            if self._full_song_available_cache is True:
                 return self._full_song_available_cache
             try:
                 result = subprocess.run(
@@ -195,20 +230,44 @@ class LocalSongPipeline:
                     capture_output=True,
                     text=True,
                     env=self._command_env(),
-                    timeout=8,
+                    timeout=45,
                 )
-                self._full_song_available_cache = result.returncode == 0
+                if result.returncode != 0:
+                    self._full_song_unavailable_reason = (result.stderr or result.stdout or "").strip()
+                    self._full_song_available_cache = False
+                    return False
+                if not self.settings.allow_cpu_full_song and not self._cuda_available():
+                    self._full_song_unavailable_reason = (
+                        "ACE-Step importa correctamente, pero Docker no tiene GPU CUDA disponible. "
+                        "Activa GPU para Docker o define SONG_AI_ALLOW_CPU_FULL_SONG=true si aceptas una generacion muy lenta por CPU."
+                    )
+                    self._full_song_available_cache = False
+                    return False
+                self._full_song_available_cache = True
             except subprocess.TimeoutExpired:
-                self._full_song_available_cache = False
-            return self._full_song_available_cache
+                self._full_song_unavailable_reason = "El probe de ACE-Step excedio el tiempo permitido."
+                return False
+            return bool(self._full_song_available_cache)
         return True
 
     def _full_song_detail(self, configured: bool, available: bool) -> str:
         if not configured:
             return "Configura SONG_AI_FULL_SONG_COMMAND para generar final_mix.wav completo localmente."
         if not available:
+            if self._full_song_unavailable_reason:
+                return self._full_song_unavailable_reason
             return "ACE-Step esta configurado pero no instalado/importable. Ejecuta Preparar/reiniciar bootstrap o activa SONG_AI_INSTALL_ACE_STEP=true."
         return "Comando local completo disponible para generar final_mix.wav."
+
+    def _cuda_available(self) -> bool:
+        result = subprocess.run(
+            ["python", "-c", "import torch; raise SystemExit(0 if torch.cuda.is_available() else 1)"],
+            capture_output=True,
+            text=True,
+            env=self._command_env(),
+            timeout=15,
+        )
+        return result.returncode == 0
 
     def _command_env(self) -> dict[str, str]:
         env = os.environ.copy()

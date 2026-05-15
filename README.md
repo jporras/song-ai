@@ -52,6 +52,8 @@ Ultimo ajuste:
 - La actividad local muestra hora con minutos y segundos en cada evento visible.
 - Biblioteca es el punto de entrada del flujo: lista sets anteriores por nombre/fecha, permite crear un nuevo set y carga el proyecto activo antes de pasar a Produccion.
 - Pendiente: completar la cadena local real de voz cantada/calidad con ACE-Step como provider principal. Actualmente el estado local sigue bloqueando el MP3 final si `full_song` o `soundtrack/singing_voice` no estan listos.
+- El bootstrap repara instalaciones parciales de ACE-Step limpiando paquetes Torch/Torchvision conflictivos del volumen `provider-cache` y reinstalando el provider; la generacion local guarda log en `local_pipeline/local_command.log` y respeta `SONG_AI_LOCAL_COMMAND_TIMEOUT_SECONDS`.
+- El estado local exige GPU CUDA para habilitar ACE-Step por defecto. Si Docker no expone GPU, `Full Song` queda bloqueado con mensaje claro; `SONG_AI_ALLOW_CPU_FULL_SONG=true` permite intentarlo por CPU, pero puede tardar horas.
 - La API de fases usa una ruta estatica prioritaria (`/api/projects/phases`) y la UI tolera respuestas fallidas para no dejar la pantalla en blanco.
 - El bootstrap de Docker arranca en segundo plano junto con FastAPI para que reparaciones largas de modelos/dependencias no dejen la UI sin responder.
 - FastAPI no usa `provider-cache/python` como `PYTHONPATH` global; ese cache se inyecta solo en comandos/probes de audio para evitar que una reparacion pip afecte el servidor vivo.
