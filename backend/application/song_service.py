@@ -7,6 +7,7 @@ from typing import Any
 from audio.mixer import AudioMixer
 from audio.local_song_pipeline import LocalSongPipeline
 from application.model_orchestrator import ModelOrchestrator
+from application.professional_song_service import ProfessionalSongService
 from builders.export_builder import ExportBuilder
 from builders.full_song_builder import FullSongBuilder
 from builders.sample_builder import SampleBuilder
@@ -63,6 +64,7 @@ class SongService:
             settings.local_models if settings else None,
         )
         self.model_orchestrator = ModelOrchestrator(storage, self.provider_registry)
+        self.professional_songs = ProfessionalSongService(storage)
 
     def bootstrap(self) -> None:
         self.storage.ensure_project_layout()
@@ -83,6 +85,21 @@ class SongService:
             "placeholder_presets": options.PLACEHOLDER_PRESETS,
             "help_texts": options.HELP_TEXTS,
         }
+
+    def professional_phases(self) -> list[dict[str, object]]:
+        return self.professional_songs.phases()
+
+    def create_professional_project(self, payload: dict[str, object]) -> dict[str, object]:
+        return self.professional_songs.create_project(payload)
+
+    def list_professional_projects(self) -> dict[str, object]:
+        return self.professional_songs.list_projects()
+
+    def get_professional_project(self, song_id: str) -> dict[str, object]:
+        return self.professional_songs.get_project(song_id)
+
+    def list_professional_project_events(self, song_id: str) -> dict[str, object]:
+        return self.professional_songs.list_events(song_id)
 
     def create_instrumental(self, payload: dict[str, object]) -> dict[str, str]:
         path = self.explorers.instrumentals.create_from_intent(

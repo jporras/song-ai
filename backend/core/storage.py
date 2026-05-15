@@ -5,6 +5,7 @@ import json
 from adapters.sqlite.json_config_repository import JsonConfigRepository
 from adapters.sqlite.orchestration_repository import OrchestrationRepository
 from adapters.sqlite.set_repository import SetRepository
+from adapters.sqlite.song_workflow_repository import SongWorkflowRepository
 from models.assets import AssetDraft, AssetType
 from models.song_set import SongSet
 
@@ -17,6 +18,7 @@ class StorageManager:
         "sets",
         "samples",
         "songs",
+        "projects",
         "templates",
     )
 
@@ -26,6 +28,7 @@ class StorageManager:
         self.json_config_repository = JsonConfigRepository(self.db_path)
         self.set_repository = SetRepository(self.db_path)
         self.orchestration_repository = OrchestrationRepository(self.db_path)
+        self.song_workflow_repository = SongWorkflowRepository(self.db_path)
 
     def ensure_project_layout(self) -> list[Path]:
         created_or_existing: list[Path] = []
@@ -425,4 +428,18 @@ class StorageManager:
 
     def list_project_events(self, project_id: str | None = None) -> list[dict[str, object]]:
         return self.orchestration_repository.list_project_events(project_id)
+
+    def create_song_project(self, title: str, user_id: str = "local-user") -> dict[str, object]:
+        from models.song_workflow import SongProject
+
+        return self.song_workflow_repository.create_project(SongProject.create(title=title, user_id=user_id))
+
+    def list_song_projects(self) -> list[dict[str, object]]:
+        return self.song_workflow_repository.list_projects()
+
+    def get_song_project(self, song_id: str) -> dict[str, object] | None:
+        return self.song_workflow_repository.get_project(song_id)
+
+    def list_song_project_events(self, song_id: str) -> list[dict[str, object]]:
+        return self.song_workflow_repository.list_events(song_id)
 

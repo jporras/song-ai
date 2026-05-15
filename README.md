@@ -13,6 +13,9 @@ La aplicacion se enfoca ahora en generar una cancion terminada con herramientas 
 Sprint actual: Sprint 15 en ejecucion: cierre del modo local real y pausa explicita del modo pro.
 
 Ultimo ajuste:
+- Refactorizacion profesional iniciada en fase 1/12: se agregaron entidades SQLite nuevas para `SongProject`, `SongSpec`, `SongArtifact`, `SongEvent` y `ModelExecution`, con endpoints `/api/pro/projects` y `/api/pro/phases`.
+- El nuevo flujo profesional arranca en `SONG_SPEC_COLLECTION`: Gemma queda como interfaz creativa del usuario y Qwen queda reservado como director tecnico interno para validar la especificacion antes de generar.
+- El progreso operativo se reporta como fase de refactorizacion `1/12`; el pipeline musical interno conserva sus fases principales y marca `MIDI_GENERATION` como etapa obligatoria.
 - Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
 - La referencia visual o de YouTube queda solo como inspiracion de sensibilidad/ternura; el video es opcional y no define el formato.
 - La prioridad del sistema queda fija: buena letra, buena intencion emocional, buena estructura musical, soundtrack coherente, voz cantada y mezcla final.

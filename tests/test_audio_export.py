@@ -50,6 +50,22 @@ class AudioExportTest(unittest.TestCase):
         self.assertIn("local-singing-voice-command", names)
         self.assertEqual(registry.studio_status()["mode"], "local_only")
 
+    def test_professional_song_project_starts_in_spec_collection(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            service = SongService(storage)
+            service.bootstrap()
+
+            created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
+            project = created["project"]
+
+            self.assertEqual(created["progress"]["current"], 1)
+            self.assertEqual(created["progress"]["total"], 11)
+            self.assertEqual(project["current_phase"], "SONG_SPEC_COLLECTION")
+            self.assertEqual(project["status"], "waiting_user_input")
+            self.assertEqual(len(project["events"]), 1)
+            self.assertIn("Gemma", project["events"][0]["message"])
+
     def test_docker_bootstrap_creates_named_volume_directories_without_downloads(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)

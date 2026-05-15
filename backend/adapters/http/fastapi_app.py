@@ -165,6 +165,31 @@ def get_project_phases(set_id: str | None = None) -> dict[str, Any]:
     return ok(service.project_phase_status(set_id))
 
 
+@app.get("/api/pro/phases")
+def get_professional_phases() -> dict[str, Any]:
+    return ok(service.professional_phases())
+
+
+@app.get("/api/pro/projects")
+def get_professional_projects() -> dict[str, Any]:
+    return ok(service.list_professional_projects())
+
+
+@app.post("/api/pro/projects")
+def create_professional_project(payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.create_professional_project(payload))
+
+
+@app.get("/api/pro/projects/{song_id}")
+def get_professional_project(song_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.get_professional_project(song_id))
+
+
+@app.get("/api/pro/projects/{song_id}/events")
+def get_professional_project_events(song_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.list_professional_project_events(song_id))
+
+
 @app.get("/api/projects/{set_id}")
 def get_project(set_id: str) -> dict[str, Any]:
     return run_action(lambda: service.get_project(set_id))
