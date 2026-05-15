@@ -72,6 +72,7 @@ class SongService:
             self.model_manager,
             soundtrack_command=settings.local_models.soundtrack_command if settings else "",
             singing_voice_command=settings.local_models.singing_voice_command if settings else "",
+            voice_conversion_command=settings.local_models.voice_conversion_command if settings else "",
             local_command_timeout_seconds=settings.local_models.local_command_timeout_seconds if settings else 3600,
         )
 
@@ -148,6 +149,12 @@ class SongService:
 
     def get_professional_vocals(self, song_id: str) -> dict[str, object]:
         return self.professional_songs.get_vocals(song_id)
+
+    def convert_professional_voice(self, song_id: str) -> dict[str, object]:
+        return self.professional_songs.convert_voice(song_id)
+
+    def get_professional_converted_voice(self, song_id: str) -> dict[str, object]:
+        return self.professional_songs.get_converted_voice(song_id)
 
     def create_instrumental(self, payload: dict[str, object]) -> dict[str, str]:
         path = self.explorers.instrumentals.create_from_intent(

@@ -21,6 +21,7 @@ class LocalModelSettings:
     full_song_command: str
     soundtrack_command: str
     singing_voice_command: str
+    voice_conversion_command: str
     local_command_timeout_seconds: int
     allow_cpu_full_song: bool
     max_loaded_models: int
@@ -44,6 +45,7 @@ class LocalModelSettings:
             full_song_command=os.getenv("SONG_AI_FULL_SONG_COMMAND", ""),
             soundtrack_command=os.getenv("SONG_AI_SOUNDTRACK_COMMAND", ""),
             singing_voice_command=os.getenv("SONG_AI_SINGING_VOICE_COMMAND", ""),
+            voice_conversion_command=os.getenv("SONG_AI_VOICE_CONVERSION_COMMAND", ""),
             local_command_timeout_seconds=int(os.getenv("SONG_AI_LOCAL_COMMAND_TIMEOUT_SECONDS", "3600")),
             allow_cpu_full_song=os.getenv("SONG_AI_ALLOW_CPU_FULL_SONG", "false").lower() == "true",
             max_loaded_models=int(os.getenv("SONG_AI_MAX_LOADED_MODELS", "1")),
@@ -67,6 +69,7 @@ class LocalModelSettings:
             "full_song_command_configured": bool(self.full_song_command.strip()),
             "soundtrack_command_configured": bool(self.soundtrack_command.strip()),
             "singing_voice_command_configured": bool(self.singing_voice_command.strip()),
+            "voice_conversion_command_configured": bool(self.voice_conversion_command.strip()),
             "local_command_timeout_seconds": self.local_command_timeout_seconds,
             "allow_cpu_full_song": self.allow_cpu_full_song,
             "max_loaded_models": self.max_loaded_models,

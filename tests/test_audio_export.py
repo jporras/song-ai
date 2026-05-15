@@ -311,6 +311,43 @@ class AudioExportTest(unittest.TestCase):
                 self.assertGreater(wav_file.getnframes(), 0)
             self.assertTrue((Path(temp_dir) / "projects" / song_id / "vocal_synthesis.log").exists())
 
+    def test_professional_voice_conversion_skips_without_provider_and_advances_to_mixing(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            service = SongService(storage)
+            service.bootstrap()
+            created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
+            song_id = str(created["project"]["id"])
+            service.collect_professional_spec(
+                song_id,
+                {
+                    "message": (
+                        "Cancion de cuna para Isabella, 20 segundos, voz femenina suave, piano, "
+                        "cuerdas y pad, muy lenta a 70 bpm en C major, estructura intro verse chorus verse bridge outro y salida mp3."
+                    )
+                },
+            )
+            service.generate_professional_lyrics(song_id)
+            service.review_professional_lyrics(song_id)
+            service.generate_professional_music_plan(song_id)
+            service.generate_professional_midi(song_id)
+            service.generate_professional_instrumental(song_id)
+            service.generate_professional_vocals(song_id)
+
+            converted = service.convert_professional_voice(song_id)
+            read = service.get_professional_converted_voice(song_id)
+            converted_path = Path(str(read["vocals_converted"]))
+
+            self.assertEqual(converted["progress"]["current"], 9)
+            self.assertEqual(converted["project"]["current_phase"], "MIXING")
+            self.assertEqual(converted["mode"], "skipped_passthrough")
+            self.assertTrue(converted_path.exists())
+            self.assertEqual(
+                converted_path.read_bytes(),
+                (Path(temp_dir) / "projects" / song_id / "vocals.wav").read_bytes(),
+            )
+            self.assertTrue((Path(temp_dir) / "projects" / song_id / "voice_conversion.log").exists())
+
     def test_docker_bootstrap_creates_named_volume_directories_without_downloads(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)

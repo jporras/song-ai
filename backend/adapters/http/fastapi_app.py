@@ -255,6 +255,16 @@ def get_professional_vocals(song_id: str) -> dict[str, Any]:
     return run_action(lambda: service.get_professional_vocals(song_id))
 
 
+@app.post("/api/pro/projects/{song_id}/voice-conversion")
+def convert_professional_voice(song_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.convert_professional_voice(song_id))
+
+
+@app.get("/api/pro/projects/{song_id}/voice-conversion")
+def get_professional_converted_voice(song_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.get_professional_converted_voice(song_id))
+
+
 @app.get("/api/projects/{set_id}")
 def get_project(set_id: str) -> dict[str, Any]:
     return run_action(lambda: service.get_project(set_id))

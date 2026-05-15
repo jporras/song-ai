@@ -11,6 +11,7 @@ from application.model_manager_service import ModelManagerService
 from application.music_plan_service import MusicPlanService
 from application.technical_director_service import TechnicalDirectorService
 from application.vocal_synthesis_service import VocalSynthesisService
+from application.voice_conversion_service import VoiceConversionService
 from core.storage import StorageManager
 from models.song_workflow import PHASE_LABELS, PHASE_SEQUENCE, SongPhase, SongPhaseStatus
 
@@ -22,6 +23,7 @@ class ProfessionalSongService:
         model_manager: ModelManagerService | None = None,
         soundtrack_command: str = "",
         singing_voice_command: str = "",
+        voice_conversion_command: str = "",
         local_command_timeout_seconds: int = 3600,
     ) -> None:
         self.storage = storage
@@ -40,6 +42,11 @@ class ProfessionalSongService:
         self.vocal_synthesis_service = VocalSynthesisService(
             storage,
             command_template=singing_voice_command,
+            timeout_seconds=local_command_timeout_seconds,
+        )
+        self.voice_conversion_service = VoiceConversionService(
+            storage,
+            command_template=voice_conversion_command,
             timeout_seconds=local_command_timeout_seconds,
         )
 
@@ -285,6 +292,36 @@ class ProfessionalSongService:
         if self.storage.get_song_project(song_id) is None:
             raise ValueError("Proyecto profesional no encontrado.")
         return self.vocal_synthesis_service.get(song_id)
+
+    def convert_voice(self, song_id: str) -> dict[str, object]:
+        project = self.storage.get_song_project(song_id)
+        if project is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        spec_record = project.get("spec")
+        if not spec_record:
+            raise ValueError("La especificacion debe existir antes de convertir voz.")
+        self.vocal_synthesis_service.get(song_id)
+        spec = dict(dict(spec_record).get("json_spec", {}))
+        active_model = "rvc-or-compatible" if self.voice_conversion_service.command_template else "none"
+        self.model_manager.run_model(active_model, {"song_id": song_id, "phase": SongPhase.VOICE_CONVERSION.value})
+        self.storage.create_song_event(
+            song_id=song_id,
+            phase=SongPhase.VOICE_CONVERSION.value,
+            status=SongPhaseStatus.RUNNING.value if self.voice_conversion_service.command_template else SongPhaseStatus.SKIPPED.value,
+            progress=50,
+            message="Evaluando conversion de voz opcional.",
+            active_model=active_model,
+            payload={"voice_style": str(spec.get("voice_style", ""))},
+        )
+        result = self.voice_conversion_service.run(song_id, str(spec.get("voice_style", "soft vocal")))
+        self.model_manager.unload_model(active_model)
+        result["progress"] = self.progress_for(result["project"])
+        return result
+
+    def get_converted_voice(self, song_id: str) -> dict[str, object]:
+        if self.storage.get_song_project(song_id) is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        return self.voice_conversion_service.get(song_id)
 
     def collect_spec(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
         project = self.storage.get_song_project(song_id)
