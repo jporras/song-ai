@@ -20,6 +20,8 @@ Ultimo ajuste:
 - Se agrego `POST /api/pro/projects/{song_id}/spec/messages` para el flujo Usuario -> Gemma -> Qwen -> Gemma -> Usuario; si Qwen aprueba, el proyecto avanza a `LYRICS_GENERATION` y se guarda `projects/{song_id}/song_spec.json`.
 - Fase 3/12 en marcha: `LyricsService` genera letra cantable desde `song_spec`, guarda `projects/{song_id}/lyrics.json` y `lyrics.md`, y conserva edicion via `GET/PUT /api/pro/projects/{song_id}/lyrics`.
 - La generacion de letra profesional avanza el proyecto a `LYRICS_TECHNICAL_REVIEW`, donde Qwen revisara estructura, repeticion, duracion y compatibilidad musical en la siguiente fase.
+- Fase 4/12 en marcha: `LyricsReviewService` permite a Qwen revisar estructura, repeticion, longitud y compatibilidad con duracion/BPM/estilo mediante `POST /api/pro/projects/{song_id}/lyrics/review`.
+- Si Qwen aprueba la letra, se guarda `projects/{song_id}/lyrics_approved.json` y el proyecto avanza a `MUSIC_PLAN_GENERATION`; si falla, vuelve a edicion de letra con recomendaciones para Gemma.
 - Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
 - La referencia visual o de YouTube queda solo como inspiracion de sensibilidad/ternura; el video es opcional y no define el formato.
 - La prioridad del sistema queda fija: buena letra, buena intencion emocional, buena estructura musical, soundtrack coherente, voz cantada y mezcla final.

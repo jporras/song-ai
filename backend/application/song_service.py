@@ -116,6 +116,9 @@ class SongService:
     def update_professional_lyrics(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
         return self.professional_songs.update_lyrics(song_id, payload)
 
+    def review_professional_lyrics(self, song_id: str) -> dict[str, object]:
+        return self.professional_songs.review_lyrics(song_id)
+
     def create_instrumental(self, payload: dict[str, object]) -> dict[str, str]:
         path = self.explorers.instrumentals.create_from_intent(
             mood=str(payload.get("mood", "warm")),

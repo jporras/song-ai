@@ -133,6 +133,55 @@ class AudioExportTest(unittest.TestCase):
             self.assertEqual(edited["lyrics"]["title"], "Cancion editada")
             self.assertIn("duerme con calma", service.get_professional_lyrics(song_id)["markdown"])
 
+    def test_professional_lyrics_review_approves_complete_lyrics(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            service = SongService(storage)
+            service.bootstrap()
+            created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
+            song_id = str(created["project"]["id"])
+            service.collect_professional_spec(
+                song_id,
+                {
+                    "message": (
+                        "Cancion de cuna para Isabella, 120 segundos, voz femenina suave, piano, "
+                        "cuerdas y pad, muy lenta a 70 bpm en C major, estructura intro verse chorus verse bridge outro y salida mp3."
+                    )
+                },
+            )
+            service.generate_professional_lyrics(song_id)
+
+            reviewed = service.review_professional_lyrics(song_id)
+
+            self.assertEqual(reviewed["review"]["status"], "approved")
+            self.assertEqual(reviewed["progress"]["current"], 4)
+            self.assertTrue((Path(temp_dir) / "projects" / song_id / "lyrics_approved.json").exists())
+
+    def test_professional_lyrics_review_returns_to_editing_when_too_short(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            service = SongService(storage)
+            service.bootstrap()
+            created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
+            song_id = str(created["project"]["id"])
+            service.collect_professional_spec(
+                song_id,
+                {
+                    "message": (
+                        "Cancion de cuna para Isabella, 120 segundos, voz femenina suave, piano, "
+                        "cuerdas y pad, muy lenta a 70 bpm en C major, estructura intro verse chorus bridge outro y salida mp3."
+                    )
+                },
+            )
+            service.generate_professional_lyrics(song_id)
+            service.update_professional_lyrics(song_id, {"content": "# Borrador\n\n## Verse 1\nUna linea sola\n"})
+
+            reviewed = service.review_professional_lyrics(song_id)
+
+            self.assertEqual(reviewed["review"]["status"], "needs_revision")
+            self.assertEqual(reviewed["progress"]["current"], 2)
+            self.assertIn("too_few_sections", [issue["code"] for issue in reviewed["review"]["issues"]])
+
     def test_docker_bootstrap_creates_named_volume_directories_without_downloads(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)

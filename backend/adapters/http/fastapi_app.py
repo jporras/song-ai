@@ -210,6 +210,11 @@ def update_professional_lyrics(song_id: str, payload: dict[str, Any]) -> dict[st
     return run_action(lambda: service.update_professional_lyrics(song_id, payload))
 
 
+@app.post("/api/pro/projects/{song_id}/lyrics/review")
+def review_professional_lyrics(song_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.review_professional_lyrics(song_id))
+
+
 @app.get("/api/projects/{set_id}")
 def get_project(set_id: str) -> dict[str, Any]:
     return run_action(lambda: service.get_project(set_id))
