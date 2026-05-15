@@ -470,9 +470,7 @@ textarea {
 
 .production-view {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   gap: 16px;
-  align-items: start;
 }
 
 .production-main {
@@ -480,16 +478,8 @@ textarea {
   gap: 14px;
 }
 
-.production-view .project-form,
-.production-view .step-list {
-  grid-column: 1;
-}
-
 .production-chat {
-  position: sticky;
-  top: 16px;
-  grid-column: 2;
-  grid-row: 1 / span 3;
+  margin-bottom: 0;
 }
 
 .gemma-card,
@@ -599,6 +589,27 @@ textarea {
 .step-list {
   display: grid;
   gap: 10px;
+}
+
+.library-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.library-hero h2 {
+  margin: 0 0 6px;
+}
+
+.library-hero p {
+  margin: 0;
+  color: #475569;
+}
+
+.project-list {
+  margin-bottom: 16px;
 }
 
 .step {
@@ -814,19 +825,8 @@ pre {
     grid-template-columns: 1fr;
   }
 
-  .production-view {
+  .library-hero {
     grid-template-columns: 1fr;
-  }
-
-  .production-view .project-form,
-  .production-view .step-list,
-  .production-chat {
-    grid-column: 1;
-  }
-
-  .production-chat {
-    position: static;
-    grid-row: auto;
   }
 
   .gemma-card header,

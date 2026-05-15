@@ -10,13 +10,13 @@ function apiUrl(path) {
 createApp({
   data() {
     return {
-      activeTab: "instrumental",
+      activeTab: "library",
       tabs: [
+        { id: "library", label: "Biblioteca", hint: "Carga un proyecto existente o crea un nuevo set." },
         { id: "instrumental", label: "Instrumental", hint: "Define base, BPM, tonalidad e instrumentos." },
         { id: "melody", label: "Melodia", hint: "Define voz guia, rango y estructura." },
         { id: "lyrics", label: "Letra", hint: "Define idioma, tema y placeholders." },
-        { id: "production", label: "Produccion", hint: "Crea set, sample, cancion, mezcla y exports." },
-        { id: "library", label: "Biblioteca", hint: "Revisa drafts, favoritos y providers." },
+        { id: "production", label: "Produccion", hint: "Genera sample, cancion, mezcla y exports del set activo." },
       ],
       options: {
         genres: [],
@@ -108,14 +108,11 @@ createApp({
     },
     productionSteps() {
       return [
-        { label: "1. Crear set", hint: "Combina un instrumental, una melodia y una letra. La IA de asistencia valida que los puntos 1, 2 y 3 esten completos.", url: "/api/sets" },
-        { label: "2. Crear sample", hint: "Crea un checkpoint de calidad antes de producir la cancion completa.", url: "/api/samples" },
-        { label: "3. Crear cancion", hint: "Prepara pipeline completo: letra, estructura, soundtrack, voz cantada, stems, mezcla y exports.", url: "/api/songs" },
-        { label: "4. Preparar mezcla", hint: "Prepara mezcla de voz cantada + instrumental y verifica ffmpeg.", url: "/api/mix" },
-        { label: "5. Preparar exports", hint: "Crea manifest y rutas de formatos finales.", url: "/api/exports" },
-        { label: "6. Generar maqueta WAV/MP3", hint: "Solo valida el flujo con guia vocal sintetica. No es la cancion final.", url: "/api/audio-exports" },
-        { label: "7. Exportar sets JSON", hint: "Regenera los set.json desde SQLite y sobrescribe archivos previos con el mismo nombre.", url: "/api/sets/export" },
-        { label: "8. Guardar plantilla", hint: "Guarda el set como plantilla reutilizable.", url: "/api/templates" },
+        { label: "1. Crear sample", hint: "Crea un checkpoint de calidad desde el set activo antes de producir la cancion completa.", url: "/api/samples" },
+        { label: "2. Crear cancion", hint: "Prepara pipeline completo: letra, estructura, soundtrack, voz cantada, stems, mezcla y exports.", url: "/api/songs" },
+        { label: "3. Preparar mezcla", hint: "Prepara mezcla de voz cantada + instrumental y verifica ffmpeg.", url: "/api/mix" },
+        { label: "4. Preparar exports", hint: "Crea manifest y rutas de formatos finales.", url: "/api/exports" },
+        { label: "5. Generar maqueta WAV/MP3", hint: "Solo valida el flujo con guia vocal sintetica. No es la cancion final.", url: "/api/audio-exports" },
       ];
     },
     draftReadiness() {
@@ -387,7 +384,20 @@ createApp({
       this.addMessage(`Letra actualizada: ${payload.data.asset_id}`);
     },
     async createSet() {
-      await this.postAction("/api/sets", this.projectSet, "Proyecto/set guardado");
+      const response = await fetch(apiUrl("/api/sets"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(this.projectSet),
+      });
+      const payload = await this.readApiPayload(response, {});
+      if (!payload.ok) {
+        this.addMessage(payload.detail || "No se pudo crear el proyecto/set.");
+        return;
+      }
+      await this.loadSets();
+      await this.loadProject(payload.data.id);
+      await this.loadJsonConfigs();
+      this.addMessage(`Proyecto/set creado y cargado: ${payload.data.id}`);
     },
     async createPresetMp3() {
       const response = await fetch(apiUrl("/api/presets/lullaby/mp3"), {
