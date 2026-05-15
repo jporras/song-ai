@@ -6,6 +6,7 @@ from application.creative_agent_service import CreativeAgentService
 from application.lyrics_review_service import LyricsReviewService
 from application.lyrics_service import LyricsService
 from application.model_manager_service import ModelManagerService
+from application.music_plan_service import MusicPlanService
 from application.technical_director_service import TechnicalDirectorService
 from core.storage import StorageManager
 from models.song_workflow import PHASE_LABELS, PHASE_SEQUENCE, SongPhase, SongPhaseStatus
@@ -19,6 +20,7 @@ class ProfessionalSongService:
         self.model_manager = model_manager or ModelManagerService()
         self.lyrics_service = LyricsService(storage)
         self.lyrics_review_service = LyricsReviewService(storage)
+        self.music_plan_service = MusicPlanService(storage)
 
     def phases(self) -> list[dict[str, object]]:
         total = len(PHASE_SEQUENCE)
@@ -129,6 +131,44 @@ class ProfessionalSongService:
         self.model_manager.unload_model("qwen")
         result["progress"] = self.progress_for(result["project"])
         return result
+
+    def generate_music_plan(self, song_id: str) -> dict[str, object]:
+        project = self.storage.get_song_project(song_id)
+        if project is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        spec_record = project.get("spec")
+        if not spec_record or not bool(dict(spec_record).get("approved_by_qwen")):
+            raise ValueError("La especificacion debe estar aprobada antes de generar el plan musical.")
+        lyrics_approved_path = self.storage.data_dir / "projects" / song_id / "lyrics_approved.json"
+        if not lyrics_approved_path.exists():
+            raise ValueError("La letra debe estar aprobada por Qwen antes de generar el plan musical.")
+        lyrics_approved = self.storage.read_json(lyrics_approved_path)
+        if not bool(lyrics_approved.get("approved_by_qwen")):
+            raise ValueError("La letra aprobada no esta disponible; revisa la fase LYRICS_TECHNICAL_REVIEW.")
+
+        self.model_manager.run_model("qwen", {"song_id": song_id, "phase": SongPhase.MUSIC_PLAN_GENERATION.value})
+        self.storage.create_song_event(
+            song_id=song_id,
+            phase=SongPhase.MUSIC_PLAN_GENERATION.value,
+            status=SongPhaseStatus.RUNNING.value,
+            progress=40,
+            message="Qwen esta creando el plan musical tecnico para MIDI e instrumental.",
+            active_model="qwen",
+            payload={"lyrics_approved": str(lyrics_approved_path)},
+        )
+        result = self.music_plan_service.generate(
+            song_id,
+            dict(dict(spec_record).get("json_spec", {})),
+            lyrics_approved,
+        )
+        self.model_manager.unload_model("qwen")
+        result["progress"] = self.progress_for(result["project"])
+        return result
+
+    def get_music_plan(self, song_id: str) -> dict[str, object]:
+        if self.storage.get_song_project(song_id) is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        return self.music_plan_service.get(song_id)
 
     def collect_spec(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
         project = self.storage.get_song_project(song_id)

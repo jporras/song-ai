@@ -182,6 +182,36 @@ class AudioExportTest(unittest.TestCase):
             self.assertEqual(reviewed["progress"]["current"], 2)
             self.assertIn("too_few_sections", [issue["code"] for issue in reviewed["review"]["issues"]])
 
+    def test_professional_music_plan_generation_prepares_midi_requirements(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            service = SongService(storage)
+            service.bootstrap()
+            created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
+            song_id = str(created["project"]["id"])
+            service.collect_professional_spec(
+                song_id,
+                {
+                    "message": (
+                        "Cancion de cuna para Isabella, 120 segundos, voz femenina suave, piano, "
+                        "cuerdas y pad, muy lenta a 70 bpm en C major, estructura intro verse chorus verse bridge outro y salida mp3."
+                    )
+                },
+            )
+            service.generate_professional_lyrics(song_id)
+            service.review_professional_lyrics(song_id)
+
+            generated = service.generate_professional_music_plan(song_id)
+            plan = service.get_professional_music_plan(song_id)
+
+            self.assertEqual(generated["progress"]["current"], 5)
+            self.assertEqual(generated["project"]["current_phase"], "MIDI_GENERATION")
+            self.assertEqual(plan["music_plan"]["bpm"], 70)
+            self.assertEqual(plan["music_plan"]["key"], "C major")
+            self.assertTrue(plan["music_plan"]["midi_requirements"]["must_include_vocal_melody"])
+            self.assertGreaterEqual(len(plan["music_plan"]["structure_timeline"]), 5)
+            self.assertTrue((Path(temp_dir) / "projects" / song_id / "music_plan.json").exists())
+
     def test_docker_bootstrap_creates_named_volume_directories_without_downloads(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
