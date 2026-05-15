@@ -247,11 +247,11 @@ def modules_available(module_names: list[str]) -> bool:
 def local_audio_deps_ready() -> bool:
     if not modules_available(["huggingface_hub", "transformers", "scipy", "torch"]):
         return False
-    return provider_python_probe("from huggingface_hub import DDUFEntry")
+    return provider_python_probe("from huggingface_hub import DDUFEntry", timeout=30)
 
 
 def ace_step_ready() -> bool:
-    return provider_python_probe("from acestep.pipeline_ace_step import ACEStepPipeline")
+    return provider_python_probe("from acestep.pipeline_ace_step import ACEStepPipeline", timeout=180)
 
 
 @contextmanager
@@ -270,7 +270,7 @@ def provider_python_path():
                 pass
 
 
-def provider_python_probe(statement: str) -> bool:
+def provider_python_probe(statement: str, timeout: int = 30) -> bool:
     env = os.environ.copy()
     existing_pythonpath = env.get("PYTHONPATH", "")
     provider_path = str(PYTHON_TARGET)
@@ -280,6 +280,6 @@ def provider_python_probe(statement: str) -> bool:
         capture_output=True,
         text=True,
         env=env,
-        timeout=30,
+        timeout=timeout,
     )
     return result.returncode == 0

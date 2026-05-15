@@ -58,13 +58,14 @@ class LocalSongPipeline:
         ffmpeg_ready = bool(requirements[-1]["configured"])
         full_song_ready = bool(requirements[0]["configured"]) and ffmpeg_ready
         stems_ready = bool(requirements[1]["configured"]) and bool(requirements[2]["configured"]) and ffmpeg_ready
-        if full_song_ready:
+        if full_song_configured:
             for requirement in requirements:
                 if requirement["role"] in {"soundtrack", "singing_voice"}:
                     requirement["required_for_real_output"] = False
                     requirement["detail"] = (
                         f"{requirement['engine']} es ruta alternativa por stems; no es requerido "
-                        "porque Full Song ya genera la cancion completa."
+                        "si Full Song por ACE-Step queda listo. Configuralo solo si quieres usar "
+                        "instrumental y voz cantada como proveedores separados."
                     )
         missing = self._missing(requirements, full_song_ready, stems_ready)
         return LocalPipelineStatus(ready=full_song_ready or stems_ready, missing=missing, requirements=requirements)
@@ -230,7 +231,7 @@ class LocalSongPipeline:
                     capture_output=True,
                     text=True,
                     env=self._command_env(),
-                    timeout=45,
+                    timeout=180,
                 )
                 if result.returncode != 0:
                     self._full_song_unavailable_reason = (result.stderr or result.stdout or "").strip()
@@ -315,7 +316,10 @@ class LocalSongPipeline:
             missing.append("mix_and_export")
         if not requirements[0]["configured"]:
             missing.append("full_song")
-        if not requirements[1]["configured"] or not requirements[2]["configured"]:
+        stems_are_optional = bool(requirements[1].get("required_for_real_output") is False) and bool(
+            requirements[2].get("required_for_real_output") is False
+        )
+        if not stems_are_optional and (not requirements[1]["configured"] or not requirements[2]["configured"]):
             missing.append("soundtrack/singing_voice")
         return missing
 
