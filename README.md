@@ -24,6 +24,8 @@ Ultimo ajuste:
 - Si Qwen aprueba la letra, se guarda `projects/{song_id}/lyrics_approved.json` y el proyecto avanza a `MUSIC_PLAN_GENERATION`; si falla, vuelve a edicion de letra con recomendaciones para Gemma.
 - Fase 5/12 en marcha: `MusicPlanService` genera `projects/{song_id}/music_plan.json` con BPM, key, compas, progresion de acordes, estructura por segundos, intensidad por seccion y requisitos para MIDI.
 - Se agregaron `POST/GET /api/pro/projects/{song_id}/music-plan`; al completar el plan musical el proyecto avanza a `MIDI_GENERATION`, fase obligatoria antes del audio.
+- Fase 6/12 en marcha: `MidiGenerationService` crea un `song_base.mid` real y `midi_metadata.json` desde `music_plan.json`, con tracks para marcadores de seccion, acordes y melodia vocal guia.
+- Se agregaron `POST/GET /api/pro/projects/{song_id}/midi`; al completar el MIDI el proyecto avanza a `INSTRUMENTAL_GENERATION`.
 - Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
 - La referencia visual o de YouTube queda solo como inspiracion de sensibilidad/ternura; el video es opcional y no define el formato.
 - La prioridad del sistema queda fija: buena letra, buena intencion emocional, buena estructura musical, soundtrack coherente, voz cantada y mezcla final.

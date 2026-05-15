@@ -212,6 +212,38 @@ class AudioExportTest(unittest.TestCase):
             self.assertGreaterEqual(len(plan["music_plan"]["structure_timeline"]), 5)
             self.assertTrue((Path(temp_dir) / "projects" / song_id / "music_plan.json").exists())
 
+    def test_professional_midi_generation_creates_valid_mid_file(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            service = SongService(storage)
+            service.bootstrap()
+            created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
+            song_id = str(created["project"]["id"])
+            service.collect_professional_spec(
+                song_id,
+                {
+                    "message": (
+                        "Cancion de cuna para Isabella, 120 segundos, voz femenina suave, piano, "
+                        "cuerdas y pad, muy lenta a 70 bpm en C major, estructura intro verse chorus verse bridge outro y salida mp3."
+                    )
+                },
+            )
+            service.generate_professional_lyrics(song_id)
+            service.review_professional_lyrics(song_id)
+            service.generate_professional_music_plan(song_id)
+
+            generated = service.generate_professional_midi(song_id)
+            midi = service.get_professional_midi(song_id)
+            midi_path = Path(str(midi["midi"]))
+
+            self.assertEqual(generated["progress"]["current"], 6)
+            self.assertEqual(generated["project"]["current_phase"], "INSTRUMENTAL_GENERATION")
+            self.assertTrue(midi_path.exists())
+            self.assertEqual(midi_path.read_bytes()[:4], b"MThd")
+            self.assertTrue((Path(temp_dir) / "projects" / song_id / "midi_metadata.json").exists())
+            self.assertIn("vocal_melody", midi["metadata"]["tracks"])
+            self.assertGreater(len(midi["metadata"]["vocal_melody"]), 0)
+
     def test_docker_bootstrap_creates_named_volume_directories_without_downloads(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
