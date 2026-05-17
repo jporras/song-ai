@@ -60,6 +60,8 @@ Ultimo ajuste:
 - MIDI permite activar/desactivar tracks, agregar/eliminar notas de preview y lanzar la generacion real de `song_base.mid` desde el pipeline profesional.
 - Sprint Instrumental completado: `/instrumental` agrega brief de escultura sonora, controles de textura, ambiente, profundidad, brillo, movimiento, ancho stereo, stems/capas con mute/solo y waveform minimalista de preview.
 - Instrumental puede lanzar la generacion real del proveedor profesional y tambien crear un draft instrumental reutilizable para sets.
+- Sprint Voice completado: `/voice` agrega direccion de interpretacion vocal con voz principal, emocion, performance, pronunciacion, respiraciones, humanizacion, vibrato, blend de capas y opciones de armonias/conversion.
+- Voice permite definir capas vocales y distribucion por seccion: quien canta, cuantas voces entran, modo de interpretacion, armonias, call & response y preview vocal antes de Production.
 - Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
 - La referencia visual o de YouTube queda solo como inspiracion de sensibilidad/ternura; el video es opcional y no define el formato.
 - La prioridad del sistema queda fija: buena letra, buena intencion emocional, buena estructura musical, soundtrack coherente, voz cantada y mezcla final.

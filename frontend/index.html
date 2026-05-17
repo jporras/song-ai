@@ -552,14 +552,108 @@
         </section>
 
         <section v-if="activeTab === 'voice'" class="view">
+          <section class="panel intent-brief">
+            <div>
+              <span class="eyebrow">Voice</span>
+              <h2>Direccion de interpretacion vocal</h2>
+              <p>{{ voiceSummary }}</p>
+            </div>
+            <button class="primary" @click="runProductionStep(productionPipelineSteps.find((step) => step.phase === 'VOCAL_SYNTHESIS'))">Generar voz real</button>
+          </section>
+
           <section class="panel">
-            <h2>Direccion de interpretacion vocal</h2>
+            <div class="section-head">
+              <div>
+                <h2>Interpretacion</h2>
+                <p>Define como se canta la letra aprobada. La sintesis vocal recibe MIDI, lyrics y esta direccion.</p>
+              </div>
+            </div>
             <div class="grid two">
-              <label>Voz principal <input v-model="voice.mainVoice" @input="markDirty('voice')" /></label>
-              <label>Emocion <input v-model="voice.emotion" @input="markDirty('voice')" /></label>
-              <label>Respiraciones <input type="range" min="0" max="100" v-model.number="voice.breaths" @input="markDirty('voice')" /></label>
+              <label>Voz principal
+                <input v-model="voice.mainVoice" @input="markDirty('voice')" />
+              </label>
+              <label>Emocion
+                <input v-model="voice.emotion" @input="markDirty('voice')" />
+              </label>
+              <label>Interpretacion
+                <input v-model="voice.performance" @input="markDirty('voice')" />
+              </label>
+              <label>Pronunciacion
+                <input v-model="voice.pronunciation" @input="markDirty('voice')" />
+              </label>
+              <label>Respiraciones <span>{{ voice.breaths }}</span>
+                <input type="range" min="0" max="100" v-model.number="voice.breaths" @input="markDirty('voice')" />
+              </label>
+              <label>Humanizacion <span>{{ voice.humanization }}</span>
+                <input type="range" min="0" max="100" v-model.number="voice.humanization" @input="markDirty('voice')" />
+              </label>
+              <label>Vibrato <span>{{ voice.vibrato }}</span>
+                <input type="range" min="0" max="100" v-model.number="voice.vibrato" @input="markDirty('voice')" />
+              </label>
+              <label>Blend de capas <span>{{ voice.layerBlend }}</span>
+                <input type="range" min="0" max="100" v-model.number="voice.layerBlend" @input="markDirty('voice')" />
+              </label>
+            </div>
+            <div class="toggle-row">
               <label><input type="checkbox" v-model="voice.harmonies" @change="markDirty('voice')" /> Harmonias</label>
+              <label><input type="checkbox" v-model="voice.callResponse" @change="markDirty('voice')" /> Call & response</label>
               <label><input type="checkbox" v-model="voice.conversion" @change="markDirty('voice')" /> Conversion de voz</label>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+              <div>
+                <h2>Capas vocales</h2>
+                <p>Activa lead, armonias y coro sin mezclar todavia. Production decide el balance final.</p>
+              </div>
+              <button @click="addVoiceLayer">Agregar capa</button>
+            </div>
+            <div class="voice-layer-grid">
+              <article v-for="layer in voice.layers" :key="layer.id" class="voice-layer-card" :class="{ muted: !layer.enabled }">
+                <header>
+                  <button :class="{ selected: layer.enabled }" @click="toggleVoiceLayer(layer.id)">{{ layer.enabled ? 'Activa' : 'Mute' }}</button>
+                  <button @click="removeVoiceLayer(layer.id)">Eliminar</button>
+                </header>
+                <label>Nombre <input v-model="layer.name" @input="markDirty('voice')" /></label>
+                <label>Rol <input v-model="layer.role" @input="markDirty('voice')" /></label>
+                <label>Nivel <span>{{ layer.level }}</span><input type="range" min="0" max="100" v-model.number="layer.level" @input="markDirty('voice')" /></label>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+              <div>
+                <h2>Distribucion por seccion</h2>
+                <p>Define quien canta, cuantas voces entran y donde aparecen armonias o coro.</p>
+              </div>
+              <button @click="addVoiceSectionDirection">Agregar seccion</button>
+            </div>
+            <div class="voice-section-grid">
+              <article v-for="(section, index) in voice.sectionDirection" :key="section.id" class="voice-section-card">
+                <header>
+                  <strong>{{ section.section }}</strong>
+                  <button @click="removeVoiceSectionDirection(index)">Eliminar</button>
+                </header>
+                <label>Seccion <input v-model="section.section" @input="markDirty('voice')" /></label>
+                <label>Quien canta <input v-model="section.singer" @input="markDirty('voice')" /></label>
+                <label>Voces <input type="number" min="1" max="8" v-model.number="section.voices" @input="markDirty('voice')" /></label>
+                <label>Modo <input v-model="section.mode" @input="markDirty('voice')" /></label>
+                <label class="inline-check"><input type="checkbox" v-model="section.harmony" @change="markDirty('voice')" /> Harmonia</label>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Preview vocal</h2>
+            <div class="waveform voice-waveform">
+              <span v-for="(bar, index) in waveformBars" :key="index" :style="{ height: `${Math.max(12, bar - 8)}px` }"></span>
+            </div>
+            <div class="preview-strip">
+              <span>Previews parciales de voz y conversion</span>
+              <button @click="runProductionStep(productionPipelineSteps.find((step) => step.phase === 'VOCAL_SYNTHESIS'))">Generar voz</button>
+              <button class="primary" @click="runProductionStep(productionPipelineSteps.find((step) => step.phase === 'VOICE_CONVERSION'))">Resolver conversion</button>
             </div>
           </section>
         </section>

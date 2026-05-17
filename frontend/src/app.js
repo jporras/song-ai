@@ -202,9 +202,27 @@ createApp({
       voice: {
         mainVoice: "femenina suave",
         emotion: "tierna",
+        performance: "susurrada y cantada con ternura",
+        pronunciation: "clara, suave, vocales redondas",
         breaths: 28,
+        humanization: 46,
+        vibrato: 18,
+        layerBlend: 40,
         harmonies: false,
         conversion: false,
+        callResponse: false,
+        layers: [
+          { id: "lead", name: "Lead", role: "voz principal", level: 80, enabled: true },
+          { id: "harmony-high", name: "Harmony high", role: "harmonia", level: 38, enabled: false },
+          { id: "soft-choir", name: "Soft choir", role: "coro", level: 26, enabled: false },
+        ],
+        sectionDirection: [
+          { id: "intro", section: "Intro", singer: "lead", voices: 1, mode: "solo", harmony: false },
+          { id: "verse-1", section: "Verse 1", singer: "lead", voices: 1, mode: "solo", harmony: false },
+          { id: "chorus", section: "Chorus", singer: "lead + harmony", voices: 2, mode: "coro suave", harmony: true },
+          { id: "bridge", section: "Bridge", singer: "lead", voices: 1, mode: "call & response", harmony: false },
+          { id: "outro", section: "Outro", singer: "soft choir", voices: 3, mode: "coro", harmony: true },
+        ],
         sections: {},
       },
       projectSet: {
@@ -379,6 +397,11 @@ createApp({
     },
     instrumentalSummary() {
       return `${this.instrumental.stems.filter((stem) => !stem.muted).length} stems activos / ${this.instrumental.texture} / ${this.instrumental.ambience}`;
+    },
+    voiceSummary() {
+      const activeLayers = this.voice.layers.filter((layer) => layer.enabled).length;
+      const harmonySections = this.voice.sectionDirection.filter((section) => section.harmony).length;
+      return `${this.voice.mainVoice} / ${this.voice.emotion} / ${activeLayers} capa(s) / ${harmonySections} seccion(es) con armonia`;
     },
     waveformBars() {
       return Array.from({ length: 48 }, (_, index) => {
@@ -893,6 +916,41 @@ createApp({
       });
       this.instrumental.layers = [...this.instrumental.layers, name];
       this.markDirty("instrumental");
+    },
+    toggleVoiceLayer(layerId) {
+      const layer = this.voice.layers.find((item) => item.id === layerId);
+      if (!layer) return;
+      layer.enabled = !layer.enabled;
+      this.markDirty("voice");
+    },
+    addVoiceLayer() {
+      this.voice.layers.push({
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        name: `Layer ${this.voice.layers.length + 1}`,
+        role: "textura vocal",
+        level: 32,
+        enabled: true,
+      });
+      this.markDirty("voice");
+    },
+    removeVoiceLayer(layerId) {
+      this.voice.layers = this.voice.layers.filter((layer) => layer.id !== layerId);
+      this.markDirty("voice");
+    },
+    addVoiceSectionDirection() {
+      this.voice.sectionDirection.push({
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        section: `Seccion ${this.voice.sectionDirection.length + 1}`,
+        singer: "lead",
+        voices: 1,
+        mode: "solo",
+        harmony: false,
+      });
+      this.markDirty("voice");
+    },
+    removeVoiceSectionDirection(index) {
+      this.voice.sectionDirection.splice(index, 1);
+      this.markDirty("voice");
     },
     loadLyricTemplate(templateId) {
       const template = this.lyricTemplates.find((item) => item.id === templateId);
