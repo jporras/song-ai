@@ -285,6 +285,25 @@ def get_professional_master(song_id: str) -> dict[str, Any]:
     return run_action(lambda: service.get_professional_master(song_id))
 
 
+@app.post("/api/pro/projects/{song_id}/export")
+def export_professional_song(song_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.export_professional_song(song_id))
+
+
+@app.get("/api/pro/projects/{song_id}/export")
+def get_professional_export(song_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.get_professional_export(song_id))
+
+
+@app.get("/api/pro/projects/{song_id}/artifacts/{artifact_type}/download")
+def download_professional_artifact(song_id: str, artifact_type: str) -> FileResponse:
+    try:
+        path, filename, media_type = service.professional_artifact_download_file(song_id, artifact_type)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return FileResponse(path, media_type=media_type, filename=filename)
+
+
 @app.get("/api/projects/{set_id}")
 def get_project(set_id: str) -> dict[str, Any]:
     return run_action(lambda: service.get_project(set_id))

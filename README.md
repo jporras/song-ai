@@ -36,6 +36,8 @@ Ultimo ajuste:
 - Se agregaron `POST/GET /api/pro/projects/{song_id}/mix`; al completar la mezcla el proyecto avanza a `MASTERING`.
 - Fase 11/12 en marcha: `MasteringService` procesa `mix.wav`, aplica limpieza DC, normalizacion, limitador suave y exporta `final_song.wav` + `final_song.mp3`.
 - Se agregaron `POST/GET /api/pro/projects/{song_id}/master`; al completar el mastering el proyecto avanza a `EXPORT`.
+- Fase 12/12 en marcha: `ProfessionalExportService` crea `export_manifest.json`, lista artefactos desde SQLite y expone descargas por tipo de artefacto.
+- Se agregaron `POST/GET /api/pro/projects/{song_id}/export` y `GET /api/pro/projects/{song_id}/artifacts/{artifact_type}/download`; al exportar, el proyecto queda `completed`.
 - Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
 - La referencia visual o de YouTube queda solo como inspiracion de sensibilidad/ternura; el video es opcional y no define el formato.
 - La prioridad del sistema queda fija: buena letra, buena intencion emocional, buena estructura musical, soundtrack coherente, voz cantada y mezcla final.

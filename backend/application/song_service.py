@@ -168,6 +168,15 @@ class SongService:
     def get_professional_master(self, song_id: str) -> dict[str, object]:
         return self.professional_songs.get_master(song_id)
 
+    def export_professional_song(self, song_id: str) -> dict[str, object]:
+        return self.professional_songs.export_song(song_id)
+
+    def get_professional_export(self, song_id: str) -> dict[str, object]:
+        return self.professional_songs.get_export(song_id)
+
+    def professional_artifact_download_file(self, song_id: str, artifact_type: str) -> tuple[Path, str, str]:
+        return self.professional_songs.artifact_download_file(song_id, artifact_type)
+
     def create_instrumental(self, payload: dict[str, object]) -> dict[str, str]:
         path = self.explorers.instrumentals.create_from_intent(
             mood=str(payload.get("mood", "warm")),

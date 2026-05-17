@@ -425,6 +425,46 @@ class AudioExportTest(unittest.TestCase):
                 self.assertGreater(wav_file.getnframes(), 0)
             self.assertTrue((Path(temp_dir) / "projects" / song_id / "mastering.log").exists())
 
+    @unittest.skipIf(not shutil.which("ffmpeg"), "ffmpeg no esta disponible para exportar MP3")
+    def test_professional_export_lists_and_downloads_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            service = SongService(storage)
+            service.bootstrap()
+            created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
+            song_id = str(created["project"]["id"])
+            service.collect_professional_spec(
+                song_id,
+                {
+                    "message": (
+                        "Cancion de cuna para Isabella, 20 segundos, voz femenina suave, piano, "
+                        "cuerdas y pad, muy lenta a 70 bpm en C major, estructura intro verse chorus verse bridge outro y salida mp3."
+                    )
+                },
+            )
+            service.generate_professional_lyrics(song_id)
+            service.review_professional_lyrics(song_id)
+            service.generate_professional_music_plan(song_id)
+            service.generate_professional_midi(song_id)
+            service.generate_professional_instrumental(song_id)
+            service.generate_professional_vocals(song_id)
+            service.convert_professional_voice(song_id)
+            service.mix_professional_song(song_id)
+            service.master_professional_song(song_id)
+
+            exported = service.export_professional_song(song_id)
+            read = service.get_professional_export(song_id)
+            download_path, filename, media_type = service.professional_artifact_download_file(song_id, "final_song_mp3")
+
+            self.assertEqual(exported["project"]["status"], "completed")
+            self.assertTrue((Path(temp_dir) / "projects" / song_id / "export_manifest.json").exists())
+            artifact_types = {str(artifact["type"]) for artifact in read["artifacts"]}
+            self.assertIn("final_song_mp3", artifact_types)
+            self.assertIn("song_spec", artifact_types)
+            self.assertTrue(str(filename).endswith("-final_song_mp3.mp3"))
+            self.assertEqual(media_type, "audio/mpeg")
+            self.assertEqual(download_path, Path(temp_dir) / "projects" / song_id / "final_song.mp3")
+
     def test_docker_bootstrap_creates_named_volume_directories_without_downloads(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)

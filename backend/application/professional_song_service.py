@@ -11,6 +11,7 @@ from application.midi_generation_service import MidiGenerationService
 from application.mixing_service import MixingService
 from application.model_manager_service import ModelManagerService
 from application.music_plan_service import MusicPlanService
+from application.professional_export_service import ProfessionalExportService
 from application.technical_director_service import TechnicalDirectorService
 from application.vocal_synthesis_service import VocalSynthesisService
 from application.voice_conversion_service import VoiceConversionService
@@ -53,6 +54,7 @@ class ProfessionalSongService:
         )
         self.mixing_service = MixingService(storage)
         self.mastering_service = MasteringService(storage)
+        self.export_service = ProfessionalExportService(storage)
 
     def phases(self) -> list[dict[str, object]]:
         total = len(PHASE_SEQUENCE)
@@ -378,6 +380,29 @@ class ProfessionalSongService:
         if self.storage.get_song_project(song_id) is None:
             raise ValueError("Proyecto profesional no encontrado.")
         return self.mastering_service.get(song_id)
+
+    def export_song(self, song_id: str) -> dict[str, object]:
+        if self.storage.get_song_project(song_id) is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        self.mastering_service.get(song_id)
+        self.storage.create_song_event(
+            song_id=song_id,
+            phase=SongPhase.EXPORT.value,
+            status=SongPhaseStatus.RUNNING.value,
+            progress=45,
+            message="Preparando manifest de export y enlaces de descarga.",
+            active_model="export-service",
+            payload={},
+        )
+        return self.export_service.export(song_id)
+
+    def get_export(self, song_id: str) -> dict[str, object]:
+        if self.storage.get_song_project(song_id) is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        return self.export_service.get(song_id)
+
+    def artifact_download_file(self, song_id: str, artifact_type: str) -> tuple[Path, str, str]:
+        return self.export_service.download_file(song_id, artifact_type)
 
     def collect_spec(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
         project = self.storage.get_song_project(song_id)
