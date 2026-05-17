@@ -38,6 +38,17 @@ const DEPENDENCIES = {
   voice: ["production"],
 };
 
+const INSPIRATION_CATALOG = [
+  { tag: "lullaby suave", detail: "Tonos suaves, pulso lento y ambiente relajante." },
+  { tag: "piano calido", detail: "Piano cercano, redondo, con ataque delicado." },
+  { tag: "cinematografico intimo", detail: "Profundidad emocional sin volverse grandilocuente." },
+  { tag: "ambient pad", detail: "Colchon armonico sutil para sostener la voz." },
+  { tag: "cuento nocturno", detail: "Imagenes narrativas tiernas y sensacion de proteccion." },
+  { tag: "minimal pop", detail: "Arreglo limpio, repeticion controlada y foco en melodia." },
+  { tag: "strings suaves", detail: "Cuerdas largas, calidas, sin dramatismo excesivo." },
+  { tag: "dream folk", detail: "Textura organica, respirada y humana." },
+];
+
 function nowLabel() {
   return new Date().toLocaleString("es-CO", {
     hour12: false,
@@ -107,6 +118,7 @@ createApp({
         vocalType: "femenina",
         instruments: ["piano", "music box", "soft pad", "strings"],
         inspirations: ["lullaby suave", "piano calido", "noche tranquila"],
+        inspirationInput: "",
       },
       lyrics: {
         language: "Spanish",
@@ -227,6 +239,20 @@ createApp({
         .split(",")
         .map((tag) => tag.trim())
         .filter(Boolean);
+    },
+    inspirationCatalog() {
+      return INSPIRATION_CATALOG;
+    },
+    intentPreview() {
+      return [
+        `${this.intent.songType} para ${this.intent.recipient}`,
+        `${this.intent.language}, ${this.intent.bpm} BPM, ${this.intent.key}`,
+        `Voz ${this.intent.vocalType}`,
+        `Emocion: calidez ${this.intent.warmth}, energia ${this.intent.energy}, nostalgia ${this.intent.nostalgia}, cine ${this.intent.cinematic}`,
+      ].join(" / ");
+    },
+    selectedInstrumentCount() {
+      return this.intent.instruments.length;
     },
     allTags() {
       const tags = new Set(["suave", "warm", "epico", "piano", "cinematografico", "tierno", "ambiental"]);
@@ -928,6 +954,26 @@ createApp({
     clearInstruments() {
       this.intent.instruments = [];
       this.markDirty("intent");
+    },
+    toggleInspiration(tag) {
+      this.intent.inspirations = this.intent.inspirations.includes(tag)
+        ? this.intent.inspirations.filter((item) => item !== tag)
+        : [...this.intent.inspirations, tag];
+      this.markDirty("intent");
+    },
+    addCustomInspiration() {
+      const value = this.intent.inspirationInput.trim();
+      if (!value) return;
+      if (!this.intent.inspirations.includes(value)) {
+        this.intent.inspirations = [...this.intent.inspirations, value];
+      }
+      this.intent.inspirationInput = "";
+      this.markDirty("intent");
+    },
+    async saveIntentAsDrafts() {
+      await this.createInstrumental();
+      await this.createMelody();
+      this.addMessage("Intent convertido en instrumental y melodia guia.");
     },
     exportLabel(type) {
       return {

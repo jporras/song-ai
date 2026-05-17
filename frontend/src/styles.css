@@ -303,7 +303,8 @@ h3 {
 }
 
 .hero-strip,
-.creation-panel {
+.creation-panel,
+.intent-brief {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 16px;
@@ -539,6 +540,48 @@ summary span {
 .slider-grid {
   display: grid;
   gap: 14px;
+}
+
+.slider-grid label {
+  grid-template-columns: minmax(0, 1fr) 54px;
+  align-items: center;
+}
+
+.slider-grid input {
+  grid-column: 1 / span 2;
+}
+
+.slider-grid span {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.inline-add {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 8px;
+  min-width: min(380px, 100%);
+}
+
+.inspiration-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.inspiration-card {
+  display: grid;
+  gap: 6px;
+  min-height: 104px;
+  text-align: left;
+  border-radius: var(--radius);
+}
+
+.inspiration-card.selected {
+  border-color: rgba(124, 140, 255, 0.72);
+  background: rgba(124, 140, 255, 0.16);
 }
 
 .editor-shell {

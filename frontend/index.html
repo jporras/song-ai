@@ -165,6 +165,15 @@
         </section>
 
         <section v-if="activeTab === 'intent'" class="view">
+          <section class="intent-brief">
+            <div>
+              <span class="eyebrow">Brief creativo</span>
+              <h2>{{ intentPreview }}</h2>
+              <p>Esta pagina define identidad emocional y musical. La complejidad vocal vive en Voice y los detalles de audio en Instrumental.</p>
+            </div>
+            <button class="primary" @click="saveIntentAsDrafts">Crear drafts base</button>
+          </section>
+
           <section class="panel">
             <h2>Identidad emocional y musical</h2>
             <div class="grid two">
@@ -203,14 +212,20 @@
           <section class="panel">
             <h2>Sliders emocionales</h2>
             <div class="slider-grid">
-              <label>Calidez <input type="range" min="0" max="100" v-model.number="intent.warmth" @input="markDirty('intent')" /></label>
-              <label>Energia <input type="range" min="0" max="100" v-model.number="intent.energy" @input="markDirty('intent')" /></label>
-              <label>Nostalgia <input type="range" min="0" max="100" v-model.number="intent.nostalgia" @input="markDirty('intent')" /></label>
-              <label>Cinematico <input type="range" min="0" max="100" v-model.number="intent.cinematic" @input="markDirty('intent')" /></label>
+              <label>Calidez <span>{{ intent.warmth }}</span><input type="range" min="0" max="100" v-model.number="intent.warmth" @input="markDirty('intent')" /></label>
+              <label>Energia <span>{{ intent.energy }}</span><input type="range" min="0" max="100" v-model.number="intent.energy" @input="markDirty('intent')" /></label>
+              <label>Nostalgia <span>{{ intent.nostalgia }}</span><input type="range" min="0" max="100" v-model.number="intent.nostalgia" @input="markDirty('intent')" /></label>
+              <label>Cinematico <span>{{ intent.cinematic }}</span><input type="range" min="0" max="100" v-model.number="intent.cinematic" @input="markDirty('intent')" /></label>
             </div>
           </section>
           <section class="panel">
-            <h2>Instrumentos</h2>
+            <div class="section-head">
+              <div>
+                <h2>Instrumentos</h2>
+                <p>Agrupados por familia. Seleccionados: {{ selectedInstrumentCount }}</p>
+              </div>
+              <button @click="clearInstruments">Limpiar</button>
+            </div>
             <div class="accordion-grid">
               <details v-for="(family, familyName) in options.instrument_families" :key="familyName">
                 <summary>{{ familyName }} <span>{{ family.filter((instrument) => intent.instruments.includes(instrument)).length }}</span></summary>
@@ -220,6 +235,33 @@
                   </button>
                 </div>
               </details>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="section-head">
+              <div>
+                <h2>Inspiraciones</h2>
+                <p>Tags enriquecidos para guiar sensibilidad, ambiente y descubrimiento. No son referencias tecnicas.</p>
+              </div>
+              <div class="inline-add">
+                <input v-model="intent.inspirationInput" placeholder="Agregar inspiracion" @keyup.enter="addCustomInspiration" />
+                <button @click="addCustomInspiration">Agregar</button>
+              </div>
+            </div>
+            <div class="inspiration-grid">
+              <button
+                v-for="item in inspirationCatalog"
+                :key="item.tag"
+                :class="['inspiration-card', { selected: intent.inspirations.includes(item.tag) }]"
+                :title="item.detail"
+                @click="toggleInspiration(item.tag)"
+              >
+                <strong>{{ item.tag }}</strong>
+                <small>{{ item.detail }}</small>
+              </button>
+            </div>
+            <div class="tag-rail">
+              <button v-for="tag in intent.inspirations" :key="tag" class="tag" @click="toggleInspiration(tag)">{{ tag }}</button>
             </div>
           </section>
         </section>
