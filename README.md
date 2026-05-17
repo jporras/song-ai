@@ -52,6 +52,8 @@ Ultimo ajuste:
 - Production puede enviar la intencion consolidada al flujo profesional, ejecutar fases paso a paso y refrescar `export_manifest.json` sin abrir carpetas del sistema.
 - Sprint Intent completado: `/intent` funciona como brief creativo con descripcion, destinatario, tipo de cancion, idioma, BPM, tonalidad, direccion vocal general, sliders emocionales, instrumentos por acordeon e inspiraciones enriquecidas.
 - Intent puede convertir la identidad musical en drafts base de instrumental y melodia guia sin entrar todavia en detalles tecnicos de Voice o Instrumental.
+- Sprint Lyrics completado: `/lyrics` agrega metricas de composicion, renumeracion automatica por tipo de seccion, presets de seccion, preview markdown y plantillas locales guardables/cargables.
+- El editor de Lyrics conserva acciones por seccion como mejorar, recrear, expandir, acortar, variantes, duplicar, mover y eliminar, manteniendo variables `{variable}` editables.
 - Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
 - La referencia visual o de YouTube queda solo como inspiracion de sensibilidad/ternura; el video es opcional y no define el formato.
 - La prioridad del sistema queda fija: buena letra, buena intencion emocional, buena estructura musical, soundtrack coherente, voz cantada y mezcla final.

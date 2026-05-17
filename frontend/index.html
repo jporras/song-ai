@@ -267,6 +267,13 @@
         </section>
 
         <section v-if="activeTab === 'lyrics'" class="view">
+          <section class="lyrics-stats">
+            <article><strong>{{ lyricStats.sections }}</strong><span>Secciones</span></article>
+            <article><strong>{{ lyricStats.words }}</strong><span>Palabras</span></article>
+            <article><strong>{{ lyricStats.variables }}</strong><span>Variables</span></article>
+            <article><strong>{{ dirty && dirtyPhase === 'lyrics' ? '●' : '✔' }}</strong><span>{{ dirty && dirtyPhase === 'lyrics' ? 'Sin guardar' : 'Guardado' }}</span></article>
+          </section>
+
           <section class="panel editor-shell">
             <div class="section-head">
               <div>
@@ -279,13 +286,8 @@
                   <option v-for="draft in lyricsDrafts" :key="draft.asset_id" :value="draft.asset_id">{{ draft.asset_id }}</option>
                 </select>
                 <button @click="createLyrics">Crear lyrics base</button>
-                <button @click="addLyricSection('VERSO')">Agregar seccion</button>
-                <button class="primary" :disabled="!dirty" @click="saveLyricsDraft">Guardar</button>
-              </div>
-            </div>
-            <article v-for="(section, index) in lyricSections" :key="section.id" class="lyric-card">
-              <header>
-                <select v-model="section.type" @change="markDirty('lyrics')">
+                <select @change="addLyricSection($event.target.value); $event.target.value = ''">
+                  <option value="">Agregar seccion</option>
                   <option>INTRO</option>
                   <option>VERSO</option>
                   <option>PRE-CORO</option>
@@ -297,6 +299,26 @@
                   <option>SOLO</option>
                   <option>OUTRO</option>
                 </select>
+                <button class="primary" :disabled="!dirty" @click="saveLyricsDraft">Guardar</button>
+              </div>
+            </div>
+            <article v-for="(section, index) in lyricSections" :key="section.id" class="lyric-card">
+              <header>
+                <div class="section-label">
+                  <strong>{{ sectionDisplayName(section, index) }}</strong>
+                  <select v-model="section.type" @change="markDirty('lyrics')">
+                    <option>INTRO</option>
+                    <option>VERSO</option>
+                    <option>PRE-CORO</option>
+                    <option>CORO</option>
+                    <option>POST-CORO</option>
+                    <option>PUENTE</option>
+                    <option>BREAKDOWN</option>
+                    <option>INTERLUDIO</option>
+                    <option>SOLO</option>
+                    <option>OUTRO</option>
+                  </select>
+                </div>
                 <div class="mini-actions">
                   <button title="Mejorar" @click="transformSection(index, 'mejorar')">Mejorar</button>
                   <button title="Recrear" @click="transformSection(index, 'recrear')">Recrear</button>
@@ -320,10 +342,20 @@
               </label>
             </div>
             <div class="actions split">
-              <button>Guardar plantilla</button>
-              <button>Buscar plantilla</button>
-              <button class="primary">Cargar plantilla</button>
+              <button @click="saveLyricTemplate">Guardar plantilla</button>
+              <input v-model="lyrics.templateSearch" placeholder="Buscar plantilla" />
+              <select @change="loadLyricTemplate($event.target.value); $event.target.value = ''">
+                <option value="">Cargar plantilla</option>
+                <option v-for="template in filteredLyricTemplates" :key="template.id" :value="template.id">
+                  {{ template.name }}
+                </option>
+              </select>
             </div>
+          </section>
+
+          <section class="panel">
+            <h2>Preview markdown</h2>
+            <pre class="lyrics-preview">{{ sectionsToMarkdown() }}</pre>
           </section>
         </section>
 

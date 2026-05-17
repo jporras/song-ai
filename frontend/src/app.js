@@ -126,6 +126,7 @@ createApp({
         theme: "lullaby for {name}",
         structure: "intro, verse 1, chorus, verse 2, bridge, final chorus, outro",
         placeholders: { name: "Isabella", image: "estrellita", promise: "siempre cuidarte" },
+        templateSearch: "",
       },
       lyricsEditor: {
         selectedAssetId: "",
@@ -137,6 +138,7 @@ createApp({
         { id: "verso-1", type: "VERSO", text: "Cierro mis manos al cielo,\npara guardar tu jardin." },
         { id: "coro-1", type: "CORO", text: "Duerme, mi amor, sin miedo,\nyo voy a estar aqui." },
       ],
+      lyricTemplates: [],
       musicPlan: {
         bpm: 72,
         key: "C major",
@@ -319,6 +321,20 @@ createApp({
       const text = this.sectionsToMarkdown();
       return [...new Set([...text.matchAll(/\{([A-Za-z0-9_-]+)\}/g)].map((match) => match[1]))];
     },
+    lyricStats() {
+      const text = this.lyricSections.map((section) => section.text).join("\n");
+      const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+      return {
+        sections: this.lyricSections.length,
+        words,
+        variables: this.variableNames.length,
+      };
+    },
+    filteredLyricTemplates() {
+      const query = this.lyrics.templateSearch.trim().toLowerCase();
+      if (!query) return this.lyricTemplates;
+      return this.lyricTemplates.filter((template) => `${template.name} ${template.created_at}`.toLowerCase().includes(query));
+    },
     exportables() {
       const manifestArtifacts = this.exportManifest?.artifacts || [];
       if (manifestArtifacts.length > 0) {
@@ -407,10 +423,12 @@ createApp({
         ? Object.fromEntries(storedFavorites.map((id) => [id, { favorited_at: nowLabel() }]))
         : storedFavorites;
       this.archived = JSON.parse(localStorage.getItem("song-ai:archived") || "[]");
+      this.lyricTemplates = JSON.parse(localStorage.getItem("song-ai:lyric-templates") || "[]");
     },
     persistLocalUiState() {
       localStorage.setItem("song-ai:favorites", JSON.stringify(this.favoriteProjects));
       localStorage.setItem("song-ai:archived", JSON.stringify(this.archived));
+      localStorage.setItem("song-ai:lyric-templates", JSON.stringify(this.lyricTemplates));
     },
     activateFromPath(path, push = false) {
       const tab = TAB_BY_ROUTE[path] || "library";
@@ -679,7 +697,7 @@ createApp({
       return this.lyricSections.map((section) => `## ${section.type}\n${section.text.trim()}`).join("\n\n").trim() + "\n";
     },
     addLyricSection(type = "VERSO") {
-      this.lyricSections.push({ id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, type, text: "Nueva seccion cantable..." });
+      this.lyricSections.push({ id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, type, text: this.sectionStarter(type) });
       this.markDirty("lyrics");
     },
     moveSection(index, direction) {
@@ -710,6 +728,50 @@ createApp({
       }[mode];
       section.text = `${section.text.trim()}\n${suffix}`;
       this.markDirty("lyrics");
+    },
+    sectionStarter(type) {
+      return {
+        INTRO: "Respira la noche suave,\nla melodia empieza a abrir.",
+        VERSO: "Una imagen clara y cantable,\nun detalle que pueda vivir.",
+        "PRE-CORO": "Sube despacio la promesa,\nprepara el corazon para seguir.",
+        CORO: "Frase central memorable,\nemocion simple para repetir.",
+        "POST-CORO": "Eco corto, dulce y ligero,\npara dejar la idea latir.",
+        PUENTE: "Cambia la mirada un momento,\nabre una puerta antes de volver.",
+        BREAKDOWN: "Menos elementos, mas espacio,\nla voz queda cerca de la piel.",
+        INTERLUDIO: "Melodia sin palabras,\nuna pausa para respirar.",
+        SOLO: "Linea instrumental expresiva,\nresponde a la voz sin competir.",
+        OUTRO: "Cierra suave la historia,\ndejando calma al final.",
+      }[type] || "Nueva seccion cantable...";
+    },
+    sectionDisplayName(section, index) {
+      const sameTypeBefore = this.lyricSections.slice(0, index + 1).filter((item) => item.type === section.type).length;
+      return `${section.type} ${sameTypeBefore}`;
+    },
+    saveLyricTemplate() {
+      const name = `${this.activeProjectTitle}-lyrics-${this.lyricTemplates.length + 1}`;
+      this.lyricTemplates = [
+        {
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          name,
+          sections: this.lyricSections.map((section) => ({ type: section.type, text: section.text })),
+          placeholders: { ...this.lyrics.placeholders },
+          created_at: nowLabel(),
+        },
+        ...this.lyricTemplates,
+      ];
+      this.persistLocalUiState();
+      this.addMessage(`Plantilla lyrics guardada: ${name}`);
+    },
+    loadLyricTemplate(templateId) {
+      const template = this.lyricTemplates.find((item) => item.id === templateId);
+      if (!template) return;
+      this.lyricSections = template.sections.map((section) => ({
+        ...section,
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      }));
+      this.lyrics.placeholders = { ...template.placeholders };
+      this.markDirty("lyrics");
+      this.addMessage(`Plantilla cargada: ${template.name}`);
     },
     addTag(tag) {
       const tags = new Set(this.productionTags);
