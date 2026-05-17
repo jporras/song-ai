@@ -38,6 +38,12 @@ Ultimo ajuste:
 - Se agregaron `POST/GET /api/pro/projects/{song_id}/master`; al completar el mastering el proyecto avanza a `EXPORT`.
 - Fase 12/12 en marcha: `ProfessionalExportService` crea `export_manifest.json`, lista artefactos desde SQLite y expone descargas por tipo de artefacto.
 - Se agregaron `POST/GET /api/pro/projects/{song_id}/export` y `GET /api/pro/projects/{song_id}/artifacts/{artifact_type}/download`; al exportar, el proyecto queda `completed`.
+- Refactor UX iniciado: la app adopta layout de estudio musical con sidebar persistente, workspace central y footer global de Gemma como unica interfaz conversacional visible.
+- La navegacion principal queda orientada a rutas de producto: `/library`, `/intent`, `/lyrics`, `/music-plan`, `/midi`, `/instrumental`, `/voice` y `/production`.
+- La sidebar muestra proyecto activo y fases con estados visuales `EMPTY`, `PROCESSING`, `READY`, `DIRTY`, `OUTDATED` y `ERROR`; los cambios locales activan dirty state y modal de navegacion.
+- Biblioteca queda enfocada en proyectos vivos: favoritos, recientes, busqueda por ID/nombre/descripcion/tags y archivado local que oculta proyectos salvo en busqueda.
+- Lyrics cambia a editor estructural por secciones movibles/duplicables/eliminables con acciones creativas y deteccion de variables `{variable}`.
+- Production concentra metadata editable, resumen expandible, estado local y exportables descargables; no abre carpetas del sistema porque la app vive en Docker.
 - Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
 - La referencia visual o de YouTube queda solo como inspiracion de sensibilidad/ternura; el video es opcional y no define el formato.
 - La prioridad del sistema queda fija: buena letra, buena intencion emocional, buena estructura musical, soundtrack coherente, voz cantada y mezcla final.

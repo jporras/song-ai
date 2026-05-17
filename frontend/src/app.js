@@ -7,16 +7,76 @@ function apiUrl(path) {
   return `${API_BASE}${path}`;
 }
 
+const ROUTE_BY_TAB = {
+  library: "/library",
+  intent: "/intent",
+  lyrics: "/lyrics",
+  "music-plan": "/music-plan",
+  midi: "/midi",
+  instrumental: "/instrumental",
+  voice: "/voice",
+  production: "/production",
+};
+
+const TAB_BY_ROUTE = Object.fromEntries(Object.entries(ROUTE_BY_TAB).map(([tab, route]) => [route, tab]));
+
+const PHASE_STATUS = {
+  EMPTY: { icon: "○", label: "Vacio", color: "gray" },
+  PROCESSING: { icon: "⟳", label: "Procesando", color: "blue" },
+  READY: { icon: "✔", label: "Listo", color: "green" },
+  DIRTY: { icon: "●", label: "Cambios sin guardar", color: "yellow" },
+  OUTDATED: { icon: "⚠", label: "Desactualizado", color: "orange" },
+  ERROR: { icon: "✖", label: "Error", color: "red" },
+};
+
+const DEPENDENCIES = {
+  intent: ["lyrics", "music-plan", "midi", "instrumental", "voice", "production"],
+  lyrics: ["music-plan", "midi", "voice", "production"],
+  "music-plan": ["midi", "instrumental", "voice", "production"],
+  midi: ["instrumental", "voice", "production"],
+  instrumental: ["production"],
+  voice: ["production"],
+};
+
+function nowLabel() {
+  return new Date().toLocaleString("es-CO", {
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 createApp({
   data() {
     return {
       activeTab: "library",
+      pendingTab: "",
+      showUnsavedModal: false,
+      dirty: false,
+      dirtyPhase: "",
+      outdatedPhases: [],
       tabs: [
-        { id: "library", label: "Biblioteca", hint: "Carga un proyecto existente o crea un nuevo set." },
-        { id: "instrumental", label: "Instrumental", hint: "Define base, BPM, tonalidad e instrumentos." },
-        { id: "melody", label: "Melodia", hint: "Define voz guia, rango y estructura." },
-        { id: "lyrics", label: "Letra", hint: "Define idioma, tema y placeholders." },
-        { id: "production", label: "Produccion", hint: "Genera sample, cancion, mezcla y exports del set activo." },
+        { id: "library", label: "Biblioteca", path: "/library", hint: "Proyectos vivos, favoritos, busqueda y carga rapida." },
+        { id: "intent", label: "Intent", path: "/intent", hint: "Identidad emocional y musical de la cancion." },
+        { id: "lyrics", label: "Lyrics", path: "/lyrics", hint: "Composicion narrativa por secciones editables." },
+        { id: "music-plan", label: "Music Plan", path: "/music-plan", hint: "Direccion musical, estructura, dinamica y transiciones." },
+        { id: "midi", label: "MIDI", path: "/midi", hint: "Composicion editable: melodia, acordes, timing y velocity." },
+        { id: "instrumental", label: "Instrumental", path: "/instrumental", hint: "Escultura sonora, capas, texturas y previews." },
+        { id: "voice", label: "Voice", path: "/voice", hint: "Direccion de interpretacion vocal por seccion." },
+        { id: "production", label: "Production", path: "/production", hint: "Metadata, exportables y cierre del pipeline." },
+      ],
+      phaseDefinitions: [
+        { id: "intent", label: "Intent", tooltip: "Identidad emocional, idioma, destinatario, BPM e instrumentos generales." },
+        { id: "lyrics", label: "Lyrics", tooltip: "Letra cantable por secciones, variables y plantillas." },
+        { id: "music-plan", label: "Music Plan", tooltip: "Plan tecnico musical con tonalidad, compas, dinamica y transiciones." },
+        { id: "midi", label: "MIDI", tooltip: "Melodia guia, acordes, timing, velocity y humanizacion." },
+        { id: "instrumental", label: "Instrumental", tooltip: "Audio instrumental, stems, texturas, capas y previews." },
+        { id: "voice", label: "Voice", tooltip: "Interpretacion vocal, armonias, respiraciones y conversion opcional." },
+        { id: "production", label: "Production", tooltip: "Mezcla, mastering, exportables y ZIP del proyecto." },
       ],
       options: {
         genres: [],
@@ -33,20 +93,20 @@ createApp({
         placeholder_presets: {},
         help_texts: {},
       },
-      instrumental: {
-        genre: "lullaby",
-        mood: "tender",
+      intent: {
+        description: "Cancion de cuna completa, tierna y poetica con soundtrack suave y voz cantada.",
+        songType: "cancion de cuna",
+        language: "Spanish",
+        recipient: "Isabella",
+        warmth: 82,
+        energy: 22,
+        nostalgia: 36,
+        cinematic: 58,
         bpm: 72,
         key: "C major",
+        vocalType: "femenina",
         instruments: ["piano", "music box", "soft pad", "strings"],
-        energy: "low",
-      },
-      melody: {
-        vocal_style: "soft lullaby singing",
-        range_hint: "medium",
-        structure: "intro, verse 1, chorus, verse 2, final chorus, outro",
-        mood: "tender",
-        energy: "low",
+        inspirations: ["lullaby suave", "piano calido", "noche tranquila"],
       },
       lyrics: {
         language: "Spanish",
@@ -59,23 +119,68 @@ createApp({
         selectedAssetId: "",
         content: "",
         path: "",
-        dirty: false,
+      },
+      lyricSections: [
+        { id: "intro-1", type: "INTRO", text: "Duerme suave, Isabella,\nla luna canta por ti." },
+        { id: "verso-1", type: "VERSO", text: "Cierro mis manos al cielo,\npara guardar tu jardin." },
+        { id: "coro-1", type: "CORO", text: "Duerme, mi amor, sin miedo,\nyo voy a estar aqui." },
+      ],
+      musicPlan: {
+        bpm: 72,
+        key: "C major",
+        timeSignature: "4/4",
+        progression: "C - G - Am - F",
+        dynamicArc: "crece suavemente hasta el coro final",
+        transition: "crescendo",
+      },
+      midiPlan: {
+        humanization: 18,
+        velocity: 62,
+        melodyDensity: 42,
+        chordRhythm: "half notes",
+      },
+      melody: {
+        vocal_style: "soft lullaby singing",
+        range_hint: "medium",
+        structure: "intro, verse 1, chorus, verse 2, final chorus, outro",
+        mood: "tender",
+        energy: "low",
+      },
+      instrumental: {
+        texture: "suave y envolvente",
+        ambience: "noche calida",
+        layers: ["piano", "strings", "ambient pad"],
+        quality: "demo local",
+      },
+      voice: {
+        mainVoice: "femenina suave",
+        emotion: "tierna",
+        breaths: 28,
+        harmonies: false,
+        conversion: false,
+        sections: {},
       },
       projectSet: {
         project_name: "Cancion de cuna para Isabella",
         description: "Cancion de cuna completa, tierna y poetica con soundtrack suave y voz cantada.",
       },
+      productionMetadata: {
+        editingName: false,
+        tagsInput: "suave, warm, piano, cinematografico",
+      },
+      productionSummaryOpen: true,
       drafts: [],
       sets: [],
       selectedSet: null,
       activeProject: null,
+      professionalProjects: [],
+      exportManifest: { artifacts: [] },
+      favorites: [],
+      archived: [],
+      librarySearch: "",
+      tagSearch: "",
       gemmaAssistant: {
         question: "Que sigue para terminar esta cancion?",
-        response: null,
-        loading: false,
-      },
-      qwenAssistant: {
-        question: "Que ajuste tecnico necesita el pipeline para llegar al MP3 final?",
         response: null,
         loading: false,
       },
@@ -90,30 +195,64 @@ createApp({
       modelRuns: [],
       projectEvents: [],
       jsonConfigs: [],
-      custom: {
-        instrumental: {},
-        melody: {},
-        lyrics: {},
-      },
       messages: [],
       downloadStatus: "",
     };
   },
   computed: {
     currentTab() {
-      return this.tabs.find((tab) => tab.id === this.activeTab);
+      return this.tabs.find((tab) => tab.id === this.activeTab) || this.tabs[0];
     },
-    flatInstruments() {
-      return Object.values(this.options.instrument_families).flat();
+    activeProjectTitle() {
+      return this.activeProject?.project?.project_name || this.selectedSet?.project_name || this.projectSet.project_name || "Sin proyecto activo";
     },
-    productionSteps() {
-      return [
-        { label: "1. Crear sample", hint: "Crea un checkpoint de calidad desde el set activo antes de producir la cancion completa.", url: "/api/samples" },
-        { label: "2. Crear cancion", hint: "Prepara pipeline completo: letra, estructura, soundtrack, voz cantada, stems, mezcla y exports.", url: "/api/songs" },
-        { label: "3. Preparar mezcla", hint: "Prepara mezcla de voz cantada + instrumental y verifica ffmpeg.", url: "/api/mix" },
-        { label: "4. Preparar exports", hint: "Crea manifest y rutas de formatos finales.", url: "/api/exports" },
-        { label: "5. Generar maqueta WAV/MP3", hint: "Solo valida el flujo con guia vocal sintetica. No es la cancion final.", url: "/api/audio-exports" },
-      ];
+    activeProjectDescription() {
+      return this.activeProject?.project?.description || this.selectedSet?.description || this.projectSet.description || "";
+    },
+    activeProjectId() {
+      return this.activeProject?.set?.set_id || this.selectedSet?.set_id || "";
+    },
+    productionTags() {
+      return this.productionMetadata.tagsInput
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean);
+    },
+    allTags() {
+      const tags = new Set(["suave", "warm", "epico", "piano", "cinematografico", "tierno", "ambiental"]);
+      for (const songSet of this.sets) {
+        String(songSet.description || "")
+          .toLowerCase()
+          .split(/[^a-zA-Z0-9áéíóúñ]+/)
+          .filter((token) => token.length > 3)
+          .slice(0, 4)
+          .forEach((token) => tags.add(token));
+      }
+      return [...tags].sort();
+    },
+    suggestedTags() {
+      const query = this.tagSearch.trim().toLowerCase();
+      if (!query) return this.allTags.slice(0, 8);
+      return this.allTags.filter((tag) => tag.includes(query)).slice(0, 8);
+    },
+    visibleLibrarySets() {
+      const query = this.librarySearch.trim().toLowerCase();
+      return this.sets.filter((songSet) => {
+        const archived = this.archived.includes(songSet.set_id);
+        const haystack = `${songSet.set_id} ${songSet.project_name} ${songSet.description || ""} ${this.tagsForSet(songSet).join(" ")}`.toLowerCase();
+        if (query) return haystack.includes(query);
+        return !archived;
+      });
+    },
+    favoriteSets() {
+      return this.visibleLibrarySets.filter((songSet) => this.favorites.includes(songSet.set_id));
+    },
+    recentSets() {
+      return this.visibleLibrarySets
+        .filter((songSet) => !this.favorites.includes(songSet.set_id))
+        .slice()
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+        .slice(0, 5);
     },
     draftReadiness() {
       const counts = this.drafts.reduce(
@@ -124,9 +263,9 @@ createApp({
         { instrumental: 0, melody: 0, lyrics: 0 },
       );
       return [
-        { label: "1. Instrumental", type: "instrumental", count: counts.instrumental || 0 },
-        { label: "2. Melodia", type: "melody", count: counts.melody || 0 },
-        { label: "3. Letra", type: "lyrics", count: counts.lyrics || 0 },
+        { label: "Instrumental", type: "instrumental", count: counts.instrumental || 0 },
+        { label: "Melodia", type: "melody", count: counts.melody || 0 },
+        { label: "Lyrics", type: "lyrics", count: counts.lyrics || 0 },
       ];
     },
     canCreateSet() {
@@ -135,52 +274,28 @@ createApp({
     lyricsDrafts() {
       return this.drafts.filter((draft) => draft.asset_type === "lyrics");
     },
-    activeProjectId() {
-      return this.activeProject?.set?.set_id || this.selectedSet?.set_id || "";
+    variableNames() {
+      const text = this.sectionsToMarkdown();
+      return [...new Set([...text.matchAll(/\{([A-Za-z0-9_-]+)\}/g)].map((match) => match[1]))];
     },
-    assistantReminder() {
-      if (this.canCreateSet) {
-        return "Listo para crear el proyecto/set: ya existe al menos un instrumental, una melodia y una letra.";
+    exportables() {
+      const manifestArtifacts = this.exportManifest?.artifacts || [];
+      if (manifestArtifacts.length > 0) {
+        return manifestArtifacts
+          .filter((artifact) => ["final_song_mp3", "final_song_wav", "midi", "instrumental_wav", "vocals_wav", "mix_wav", "export_manifest_json"].includes(artifact.type))
+          .map((artifact) => ({
+            name: this.exportLabel(artifact.type),
+            type: artifact.type,
+            size: this.formatSize(artifact.size_bytes || 0),
+            url: artifact.download_url,
+          }));
       }
-      const missing = this.draftReadiness
-        .filter((item) => item.count === 0)
-        .map((item) => item.label)
-        .join(", ");
-      return `Antes de crear la cancion completa debes terminar estos puntos: ${missing}.`;
-    },
-    footerAssistant() {
-      const missing = this.draftReadiness.filter((item) => item.count === 0);
-      if (missing.length > 0) {
-        const nextMissing = missing[0];
-        const targetTab = {
-          instrumental: "instrumental",
-          melody: "melody",
-          lyrics: "lyrics",
-        }[nextMissing.type];
-        return {
-          title: "Siguiente paso sugerido",
-          message: `Completa ${nextMissing.label.toLowerCase()} antes de crear el proyecto/set. La cancion necesita instrumental, melodia y letra para conservar la intencion musical.`,
-          actions: [{ label: `Ir a ${nextMissing.label}`, tab: targetTab }],
-          checks: this.draftReadiness,
-        };
-      }
-      if (this.sets.length === 0) {
-        return {
-          title: "Listo para ensamblar",
-          message: "Ya estan los tres drafts base. Ahora crea el proyecto/set para agruparlos y poder generar un sample.",
-          actions: [{ label: "Ir a Produccion", tab: "production" }],
-          checks: this.draftReadiness,
-        };
-      }
-      return {
-        title: "Proyecto preparado",
-        message: "Ya existe al menos un set. El procedimiento recomendado es revisar configuracion, generar sample y luego avanzar a cancion completa.",
-        actions: [
-          { label: "Ver Biblioteca", tab: "library" },
-          { label: "Ir a Produccion", tab: "production" },
-        ],
-        checks: this.draftReadiness,
-      };
+      return [
+        { name: "MP3", type: "final_song_mp3", size: "pendiente", url: "" },
+        { name: "WAV", type: "final_song_wav", size: "pendiente", url: "" },
+        { name: "MIDI", type: "midi", size: "pendiente", url: "" },
+        { name: "ZIP proyecto completo", type: "project_zip", size: "pendiente", url: "" },
+      ];
     },
     bootstrapRunning() {
       return this.systemStatus.bootstrap?.status === "running";
@@ -189,39 +304,101 @@ createApp({
       return Boolean(this.localPipeline.ready) && !this.bootstrapRunning;
     },
     localFinalStatusMessage() {
-      if (this.bootstrapRunning) {
-        return "Bootstrap preparando dependencias locales. Consulta estado en unos minutos.";
-      }
-      if (this.localPipeline.ready) {
-        return "Pipeline local listo para generar final.";
-      }
+      if (this.bootstrapRunning) return "Bootstrap preparando dependencias locales. Consulta estado en unos minutos.";
+      if (this.localPipeline.ready) return "Pipeline local listo para generar final.";
       return `Falta configurar: ${this.localPipeline.missing?.join(", ") || "requisitos locales"}.`;
     },
   },
   async mounted() {
+    this.restoreLocalUiState();
+    this.activateFromPath(window.location.pathname);
+    window.addEventListener("popstate", () => this.activateFromPath(window.location.pathname, false));
     await this.loadOptions();
     await this.refreshDrafts();
     await this.loadSets();
+    await this.loadProfessionalProjects();
     await this.loadProviders();
     await this.loadOrchestration();
     await this.loadJsonConfigs();
   },
   methods: {
     addMessage(text) {
-      const now = new Date();
       this.messages.unshift({
-        id: `${now.getTime()}-${Math.random().toString(16).slice(2)}`,
-        time: now.toLocaleString("es-CO", {
-          hour12: false,
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        }),
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        time: nowLabel(),
         text,
       });
+    },
+    restoreLocalUiState() {
+      this.favorites = JSON.parse(localStorage.getItem("song-ai:favorites") || "[]");
+      this.archived = JSON.parse(localStorage.getItem("song-ai:archived") || "[]");
+    },
+    persistLocalUiState() {
+      localStorage.setItem("song-ai:favorites", JSON.stringify(this.favorites));
+      localStorage.setItem("song-ai:archived", JSON.stringify(this.archived));
+    },
+    activateFromPath(path, push = false) {
+      const tab = TAB_BY_ROUTE[path] || "library";
+      this.activeTab = tab;
+      if (push) window.history.pushState({}, "", ROUTE_BY_TAB[tab]);
+    },
+    requestNavigation(tab) {
+      if (tab === this.activeTab) return;
+      if (this.dirty) {
+        this.pendingTab = tab;
+        this.showUnsavedModal = true;
+        return;
+      }
+      this.activateFromPath(ROUTE_BY_TAB[tab], true);
+    },
+    discardAndContinue() {
+      this.dirty = false;
+      this.dirtyPhase = "";
+      this.showUnsavedModal = false;
+      this.activateFromPath(ROUTE_BY_TAB[this.pendingTab || "library"], true);
+      this.pendingTab = "";
+    },
+    cancelNavigation() {
+      this.pendingTab = "";
+      this.showUnsavedModal = false;
+    },
+    async saveAndContinue() {
+      await this.saveCurrentPhase();
+      this.showUnsavedModal = false;
+      this.activateFromPath(ROUTE_BY_TAB[this.pendingTab || this.activeTab], true);
+      this.pendingTab = "";
+    },
+    markDirty(phase = this.activeTab) {
+      this.dirty = true;
+      this.dirtyPhase = phase;
+      this.outdatedPhases = [...new Set([...(this.outdatedPhases || []), ...(DEPENDENCIES[phase] || [])])];
+    },
+    phaseStatus(phaseId) {
+      if (this.dirty && this.dirtyPhase === phaseId) return "DIRTY";
+      if (this.outdatedPhases.includes(phaseId)) return "OUTDATED";
+      if (phaseId === "intent") return this.activeProjectId || this.intent.description ? "READY" : "EMPTY";
+      if (phaseId === "lyrics") return this.lyricSections.length > 0 || this.lyricsEditor.selectedAssetId ? "READY" : "EMPTY";
+      if (phaseId === "production" && this.exportManifest?.artifacts?.length) return "READY";
+      const legacy = {
+        instrumental: "instrumental",
+        lyrics: "lyrics",
+      }[phaseId];
+      if (legacy && this.draftReadiness.find((item) => item.type === legacy)?.count > 0) return "READY";
+      return "EMPTY";
+    },
+    phaseUi(phaseId) {
+      return PHASE_STATUS[this.phaseStatus(phaseId)] || PHASE_STATUS.EMPTY;
+    },
+    async saveCurrentPhase() {
+      if (this.activeTab === "lyrics" && this.lyricsEditor.selectedAssetId) {
+        await this.saveLyricsDraft();
+      } else if (this.activeTab === "production") {
+        this.saveProductionMetadata();
+      } else {
+        this.dirty = false;
+        this.dirtyPhase = "";
+        this.addMessage(`${this.currentTab.label} guardado localmente.`);
+      }
     },
     async loadOptions() {
       const response = await fetch(apiUrl("/api/options"));
@@ -237,34 +414,24 @@ createApp({
         fetch(apiUrl("/api/system/status")),
         fetch(apiUrl(`/api/projects/phases${this.activeProjectId ? `?set_id=${this.activeProjectId}` : ""}`)),
       ]);
-      const payload = await this.readApiPayload(providersResponse, {});
-      const studioPayload = await this.readApiPayload(studioResponse, {});
-      const modelPayload = await this.readApiPayload(modelResponse, {});
-      const localPipelinePayload = await this.readApiPayload(localPipelineResponse, {});
-      const systemPayload = await this.readApiPayload(systemResponse, {});
-      const phasesPayload = await this.readApiPayload(phasesResponse, { phases: [] });
-      this.providers = payload.data;
-      this.studioStatus = studioPayload.data;
-      this.modelStatus = modelPayload.data;
-      this.localPipeline = localPipelinePayload.data;
-      this.systemStatus = systemPayload.data;
-      this.projectPhases = phasesPayload.data;
+      this.providers = (await this.readApiPayload(providersResponse, {})).data;
+      this.studioStatus = (await this.readApiPayload(studioResponse, {})).data;
+      this.modelStatus = (await this.readApiPayload(modelResponse, {})).data;
+      this.localPipeline = (await this.readApiPayload(localPipelineResponse, {})).data;
+      this.systemStatus = (await this.readApiPayload(systemResponse, {})).data;
+      this.projectPhases = (await this.readApiPayload(phasesResponse, { phases: [] })).data;
     },
     async loadOrchestration() {
-      const [statusResponse, tasksResponse, runsResponse] = await Promise.all([
+      const [statusResponse, tasksResponse, runsResponse, eventsResponse] = await Promise.all([
         fetch(apiUrl("/api/orchestration/status")),
         fetch(apiUrl("/api/tasks")),
         fetch(apiUrl("/api/model-runs")),
+        fetch(apiUrl("/api/project-events")),
       ]);
-      const eventsResponse = await fetch(apiUrl("/api/project-events"));
-      const statusPayload = await statusResponse.json();
-      const tasksPayload = await tasksResponse.json();
-      const runsPayload = await runsResponse.json();
-      const eventsPayload = await eventsResponse.json();
-      this.orchestrationStatus = statusPayload.data;
-      this.tasks = tasksPayload.data;
-      this.modelRuns = runsPayload.data;
-      this.projectEvents = eventsPayload.data;
+      this.orchestrationStatus = (await statusResponse.json()).data;
+      this.tasks = (await tasksResponse.json()).data;
+      this.modelRuns = (await runsResponse.json()).data;
+      this.projectEvents = (await eventsResponse.json()).data;
     },
     async refreshDrafts() {
       const response = await fetch(apiUrl("/api/drafts"));
@@ -276,38 +443,10 @@ createApp({
       const payload = await response.json();
       this.sets = payload.data;
     },
-    async showSet(setId) {
-      const response = await fetch(apiUrl(`/api/sets/${setId}`));
-      const payload = await response.json();
-      if (!payload.ok) {
-        this.addMessage(payload.detail || "No se pudo cargar el set");
-        return;
-      }
-      this.selectedSet = payload.data;
-    },
-    async loadProject(setId) {
-      const response = await fetch(apiUrl(`/api/projects/${setId}`));
-      const payload = await response.json();
-      if (!payload.ok) {
-        this.addMessage(payload.detail || "No se pudo cargar el proyecto.");
-        return;
-      }
-
-      this.activeProject = payload.data;
-      this.selectedSet = payload.data.set;
-      this.projectSet.project_name = payload.data.project.project_name;
-      this.projectSet.description = payload.data.project.description;
-
-      const lyricsAsset = payload.data.assets.lyrics;
-      this.lyricsEditor = {
-        selectedAssetId: lyricsAsset.asset_id,
-        content: lyricsAsset.content || "",
-        path: lyricsAsset.content_path || "",
-        dirty: false,
-      };
-      this.projectEvents = payload.data.events;
-      this.addMessage(`Proyecto cargado: ${payload.data.project.project_name}`);
-      await this.loadProviders();
+    async loadProfessionalProjects() {
+      const response = await fetch(apiUrl("/api/pro/projects"));
+      const payload = await this.readApiPayload(response, { projects: [] });
+      this.professionalProjects = payload.data.projects || [];
     },
     async loadJsonConfigs() {
       const response = await fetch(apiUrl("/api/json-configs"));
@@ -324,64 +463,32 @@ createApp({
           payload.detail = raw;
         }
       }
-      if (!response.ok || payload.ok === false) {
-        return { ok: false, data: fallbackData, detail: payload.detail || "API no disponible" };
-      }
+      if (!response.ok || payload.ok === false) return { ok: false, data: fallbackData, detail: payload.detail || "API no disponible" };
       return payload;
     },
-    async createInstrumental() {
-      await this.postAction("/api/instrumentals", this.instrumental, "Instrumental guardado");
-      await this.refreshDrafts();
-    },
-    async createMelody() {
-      await this.postAction("/api/melodies", this.melody, "Melodia guardada");
-      await this.refreshDrafts();
-    },
-    async createLyrics() {
-      await this.postAction("/api/lyrics", this.lyrics, "Letra guardada");
-      await this.refreshDrafts();
-      const latestLyrics = this.lyricsDrafts[this.lyricsDrafts.length - 1];
-      if (latestLyrics) {
-        await this.loadLyricsDraft(latestLyrics.asset_id);
-      }
-    },
-    async loadLyricsDraft(assetId = this.lyricsEditor.selectedAssetId) {
-      if (!assetId) {
-        this.addMessage("Selecciona una letra para editar.");
-        return;
-      }
-      const response = await fetch(apiUrl(`/api/lyrics/${assetId}`));
-      const payload = await response.json();
+    async loadProject(setId) {
+      const response = await fetch(apiUrl(`/api/projects/${setId}`));
+      const payload = await this.readApiPayload(response, {});
       if (!payload.ok) {
-        this.addMessage(payload.detail || "No se pudo cargar la letra.");
+        this.addMessage(payload.detail || "No se pudo cargar el proyecto.");
         return;
       }
+      this.activeProject = payload.data;
+      this.selectedSet = payload.data.set;
+      this.projectSet.project_name = payload.data.project.project_name;
+      this.projectSet.description = payload.data.project.description;
+      this.intent.description = payload.data.project.description;
+      const lyricsAsset = payload.data.assets.lyrics;
       this.lyricsEditor = {
-        selectedAssetId: payload.data.asset_id,
-        content: payload.data.content,
-        path: payload.data.path,
-        dirty: false,
+        selectedAssetId: lyricsAsset.asset_id,
+        content: lyricsAsset.content || "",
+        path: lyricsAsset.content_path || "",
       };
-    },
-    async saveLyricsDraft() {
-      if (!this.lyricsEditor.selectedAssetId) {
-        this.addMessage("Selecciona una letra para guardar.");
-        return;
-      }
-      const response = await fetch(apiUrl(`/api/lyrics/${this.lyricsEditor.selectedAssetId}`), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: this.lyricsEditor.content }),
-      });
-      const payload = await response.json();
-      if (!payload.ok) {
-        this.addMessage(payload.detail || "No se pudo guardar la letra.");
-        return;
-      }
-      this.lyricsEditor.content = payload.data.content;
-      this.lyricsEditor.path = payload.data.path;
-      this.lyricsEditor.dirty = false;
-      this.addMessage(`Letra actualizada: ${payload.data.asset_id}`);
+      this.parseLyricsToSections();
+      this.projectEvents = payload.data.events;
+      this.addMessage(`Proyecto cargado: ${payload.data.project.project_name}`);
+      await this.loadProviders();
+      this.requestNavigation("production");
     },
     async createSet() {
       const response = await fetch(apiUrl("/api/sets"), {
@@ -397,62 +504,180 @@ createApp({
       await this.loadSets();
       await this.loadProject(payload.data.id);
       await this.loadJsonConfigs();
-      this.addMessage(`Proyecto/set creado y cargado: ${payload.data.id}`);
     },
-    async createPresetMp3() {
-      const response = await fetch(apiUrl("/api/presets/lullaby/mp3"), {
-        method: "POST",
+    async createInstrumental() {
+      await this.postAction(
+        "/api/instrumentals",
+        {
+          genre: this.intent.songType,
+          mood: "warm",
+          bpm: this.intent.bpm,
+          key: this.intent.key,
+          instruments: this.intent.instruments,
+          energy: this.intent.energy > 55 ? "medium" : "low",
+        },
+        "Instrumental guardado",
+      );
+      await this.refreshDrafts();
+    },
+    async createMelody() {
+      await this.postAction(
+        "/api/melodies",
+        {
+          vocal_style: this.voice.mainVoice || this.melody.vocal_style,
+          range_hint: this.melody.range_hint,
+          structure: this.lyrics.structure || this.melody.structure,
+          mood: this.voice.emotion || this.melody.mood,
+          energy: this.intent.energy > 55 ? "medium" : "low",
+        },
+        "Melodia guia guardada",
+      );
+      await this.refreshDrafts();
+    },
+    async createLyrics() {
+      await this.postAction("/api/lyrics", this.lyrics, "Letra guardada");
+      await this.refreshDrafts();
+      const latestLyrics = this.lyricsDrafts[this.lyricsDrafts.length - 1];
+      if (latestLyrics) await this.loadLyricsDraft(latestLyrics.asset_id);
+    },
+    async loadLyricsDraft(assetId = this.lyricsEditor.selectedAssetId) {
+      if (!assetId) {
+        this.addMessage("Selecciona una letra para editar.");
+        return;
+      }
+      const response = await fetch(apiUrl(`/api/lyrics/${assetId}`));
+      const payload = await response.json();
+      if (!payload.ok) {
+        this.addMessage(payload.detail || "No se pudo cargar la letra.");
+        return;
+      }
+      this.lyricsEditor = { selectedAssetId: payload.data.asset_id, content: payload.data.content, path: payload.data.path };
+      this.parseLyricsToSections();
+      this.dirty = false;
+      this.dirtyPhase = "";
+    },
+    async saveLyricsDraft() {
+      if (!this.lyricsEditor.selectedAssetId) {
+        await this.createLyrics();
+        return;
+      }
+      this.lyricsEditor.content = this.sectionsToMarkdown();
+      const response = await fetch(apiUrl(`/api/lyrics/${this.lyricsEditor.selectedAssetId}`), {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ content: this.lyricsEditor.content }),
       });
       const payload = await response.json();
       if (!payload.ok) {
-        this.addMessage(payload.detail || "No se pudo crear el MP3 predefinido.");
+        this.addMessage(payload.detail || "No se pudo guardar la letra.");
         return;
       }
-      this.activeProject = payload.data.project;
-      this.selectedSet = payload.data.project.set;
-      this.projectSet.project_name = payload.data.project.project.project_name;
-      this.projectSet.description = payload.data.project.project.description;
-      await this.refreshDrafts();
-      await this.loadSets();
-      await this.loadOrchestration();
-      await this.loadJsonConfigs();
-      await this.loadProviders();
-      const mp3Detail = payload.data.mp3 || "MP3 pendiente";
-      this.addMessage(`${payload.data.summary} ${mp3Detail}`);
+      this.lyricsEditor.content = payload.data.content;
+      this.lyricsEditor.path = payload.data.path;
+      this.dirty = false;
+      this.dirtyPhase = "";
+      this.addMessage(`Lyrics guardado: ${payload.data.asset_id}`);
+    },
+    parseLyricsToSections() {
+      const lines = String(this.lyricsEditor.content || "").split(/\r?\n/);
+      const sections = [];
+      let current = null;
+      for (const line of lines) {
+        const heading = line.match(/^##\s+(.+)/);
+        if (heading) {
+          if (current) sections.push(current);
+          current = { id: `${Date.now()}-${sections.length}`, type: heading[1].toUpperCase(), text: "" };
+        } else if (current) {
+          current.text += `${line}\n`;
+        }
+      }
+      if (current) sections.push(current);
+      if (sections.length > 0) {
+        this.lyricSections = sections.map((section) => ({ ...section, text: section.text.trim() }));
+      }
+    },
+    sectionsToMarkdown() {
+      return this.lyricSections.map((section) => `## ${section.type}\n${section.text.trim()}`).join("\n\n").trim() + "\n";
+    },
+    addLyricSection(type = "VERSO") {
+      this.lyricSections.push({ id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, type, text: "Nueva seccion cantable..." });
+      this.markDirty("lyrics");
+    },
+    moveSection(index, direction) {
+      const target = index + direction;
+      if (target < 0 || target >= this.lyricSections.length) return;
+      const sections = [...this.lyricSections];
+      [sections[index], sections[target]] = [sections[target], sections[index]];
+      this.lyricSections = sections;
+      this.markDirty("lyrics");
+    },
+    duplicateSection(index) {
+      const original = this.lyricSections[index];
+      this.lyricSections.splice(index + 1, 0, { ...original, id: `${Date.now()}-${Math.random().toString(16).slice(2)}` });
+      this.markDirty("lyrics");
+    },
+    removeSection(index) {
+      this.lyricSections.splice(index, 1);
+      this.markDirty("lyrics");
+    },
+    transformSection(index, mode) {
+      const section = this.lyricSections[index];
+      const suffix = {
+        mejorar: "Mas claro, mas cantable, conservando la esencia.",
+        recrear: "Nueva mirada con la misma emocion central.",
+        expandir: "Agrega una imagen sensorial y una linea de respuesta.",
+        acortar: "Version mas directa para entrar mejor en compas.",
+        variantes: "Variante A / Variante B para elegir interpretacion.",
+      }[mode];
+      section.text = `${section.text.trim()}\n${suffix}`;
+      this.markDirty("lyrics");
+    },
+    addTag(tag) {
+      const tags = new Set(this.productionTags);
+      tags.add(tag);
+      this.productionMetadata.tagsInput = [...tags].join(", ");
+      this.markDirty("production");
+    },
+    toggleFavorite(setId) {
+      if (this.favorites.includes(setId)) this.favorites = this.favorites.filter((id) => id !== setId);
+      else this.favorites = [setId, ...this.favorites];
+      this.persistLocalUiState();
+    },
+    archiveSet(setId) {
+      this.archived = [...new Set([...this.archived, setId])];
+      this.favorites = this.favorites.filter((id) => id !== setId);
+      this.persistLocalUiState();
+      this.addMessage("Proyecto archivado. Seguira disponible en busqueda.");
+    },
+    tagsForSet(songSet) {
+      return String(songSet.description || "")
+        .toLowerCase()
+        .split(/[^a-zA-Z0-9áéíóúñ]+/)
+        .filter((token) => token.length > 3)
+        .slice(0, 4);
+    },
+    saveProductionMetadata() {
+      this.projectSet.project_name = this.activeProjectTitle;
+      this.projectSet.description = this.activeProjectDescription;
+      this.dirty = false;
+      this.dirtyPhase = "";
+      this.addMessage("Metadata de production guardada localmente.");
     },
     async refreshSystemStatus() {
       await this.loadProviders();
       this.addMessage("Estado de componentes actualizado.");
     },
     async restartBootstrap() {
-      const response = await fetch(apiUrl("/api/system/bootstrap/restart"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
+      const response = await fetch(apiUrl("/api/system/bootstrap/restart"), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       const payload = await this.readApiPayload(response, {});
-      if (!payload.ok) {
-        this.addMessage(payload.detail || "No se pudo iniciar el bootstrap.");
-        return;
-      }
       await this.loadProviders();
-      this.addMessage(payload.data.message || "Bootstrap iniciado. Consulta el estado en unos minutos.");
+      this.addMessage(payload.data?.message || payload.detail || "Bootstrap iniciado.");
     },
     async upgradeBootstrap() {
-      const response = await fetch(apiUrl("/api/system/bootstrap/upgrade"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
+      const response = await fetch(apiUrl("/api/system/bootstrap/upgrade"), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       const payload = await this.readApiPayload(response, {});
-      if (!payload.ok) {
-        this.addMessage(payload.detail || "No se pudo actualizar el bootstrap.");
-        return;
-      }
       await this.loadProviders();
-      this.addMessage(payload.data.message || "Actualizacion iniciada. Consulta el estado en unos minutos.");
+      this.addMessage(payload.data?.message || payload.detail || "Actualizacion iniciada.");
     },
     async generateLocalFinalSong() {
       if (!this.canGenerateLocalFinalSong) {
@@ -460,57 +685,60 @@ createApp({
         await this.loadProviders();
         return;
       }
-      const response = await fetch(apiUrl("/api/local-final-song"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
+      const response = await fetch(apiUrl("/api/local-final-song"), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       const payload = await this.readApiPayload(response, {});
-      if (!payload.ok) {
-        this.addMessage(payload.detail || "No se pudo generar la cancion final local.");
-        await this.loadProviders();
-        return;
-      }
       await this.loadProviders();
-      await this.loadJsonConfigs();
-      this.addMessage(`${payload.data.summary} ${payload.data.mp3 || ""}`);
+      this.addMessage(payload.data?.summary || payload.detail || "Generacion final solicitada.");
+    },
+    async loadProfessionalExport(songId) {
+      const response = await fetch(apiUrl(`/api/pro/projects/${songId}/export`));
+      const payload = await this.readApiPayload(response, { artifacts: [] });
+      this.exportManifest = payload.data;
     },
     async saveLatestMp3() {
       this.downloadStatus = "Preparando descarga...";
-      const downloadUrl = apiUrl("/api/audio-exports/latest/download?format=mp3");
-      const response = await fetch(downloadUrl);
+      const response = await fetch(apiUrl("/api/audio-exports/latest/download?format=mp3"));
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        const message = payload.detail || "No se pudo descargar el MP3. Genera WAV/MP3 primero.";
+        const message = payload.detail || "No se pudo descargar el MP3 final.";
         this.downloadStatus = message;
         this.addMessage(message);
         return;
       }
-
+      await this.saveBlob(response, "song-ai-final-mix.mp3", "MP3");
+    },
+    async downloadArtifact(exportable) {
+      if (!exportable.url) {
+        this.addMessage(`${exportable.name} aun no esta disponible.`);
+        return;
+      }
+      const response = await fetch(apiUrl(exportable.url));
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        this.addMessage(payload.detail || `No se pudo descargar ${exportable.name}.`);
+        return;
+      }
+      await this.saveBlob(response, `${exportable.name}.bin`, exportable.name);
+    },
+    async saveBlob(response, fallbackName, label) {
       const blob = await response.blob();
-      const filename = this.filenameFromDisposition(response.headers.get("content-disposition")) || "song-ai-final-mix.mp3";
+      const filename = this.filenameFromDisposition(response.headers.get("content-disposition")) || fallbackName;
       if ("showSaveFilePicker" in window) {
-        const handle = await window.showSaveFilePicker({
-          suggestedName: filename,
-          types: [{ description: "MP3", accept: { "audio/mpeg": [".mp3"] } }],
-        });
+        const handle = await window.showSaveFilePicker({ suggestedName: filename });
         const writable = await handle.createWritable();
         await writable.write(blob);
         await writable.close();
-        this.downloadStatus = `MP3 guardado: ${filename}`;
-        this.addMessage(this.downloadStatus);
-        return;
+      } else {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
       }
-
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-      this.downloadStatus = "Descarga iniciada. El navegador decide la carpeta o pregunta donde guardarlo segun su configuracion.";
+      this.downloadStatus = `${label} descargado: ${filename}`;
       this.addMessage(this.downloadStatus);
     },
     filenameFromDisposition(disposition) {
@@ -522,10 +750,7 @@ createApp({
       const response = await fetch(apiUrl("/api/assistant/gemma"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          set_id: this.activeProjectId,
-          question: this.gemmaAssistant.question,
-        }),
+        body: JSON.stringify({ set_id: this.activeProjectId, question: this.gemmaAssistant.question, active_phase: this.activeTab }),
       });
       const payload = await response.json();
       this.gemmaAssistant.loading = false;
@@ -533,46 +758,16 @@ createApp({
         this.addMessage(payload.detail || "Gemma no pudo revisar el proyecto.");
         return;
       }
-      this.gemmaAssistant.response = payload.data;
+      this.gemmaAssistant.response = {
+        ...payload.data,
+        message: this.hideTechnicalDirectorName(String(payload.data.message || "")),
+        technical_handoff_note: "Gemma coordino internamente la revision tecnica.",
+      };
       await this.loadOrchestration();
-      this.addMessage(`Gemma transversal: ${payload.data.status}`);
+      this.addMessage(`Gemma: ${this.gemmaAssistant.response.status}`);
     },
-    async askQwenAssistant() {
-      this.qwenAssistant.loading = true;
-      const response = await fetch(apiUrl("/api/assistant/qwen"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          set_id: this.activeProjectId,
-          question: this.qwenAssistant.question,
-        }),
-      });
-      const payload = await response.json();
-      this.qwenAssistant.loading = false;
-      if (!payload.ok) {
-        this.addMessage(payload.detail || "Qwen no pudo revisar el ajuste tecnico.");
-        return;
-      }
-      this.qwenAssistant.response = payload.data;
-      await this.loadOrchestration();
-      this.addMessage(`Qwen tecnico: ${payload.data.status}`);
-    },
-    async simulateHandoff(modelRole = "intent_extractor", taskType = "extract_intent") {
-      await this.postAction(
-        "/api/orchestration/handoff",
-        {
-          model_role: modelRole,
-          task_type: taskType,
-          phase: taskType,
-          project_id: this.projectSet.project_name,
-          project_name: this.projectSet.project_name,
-          description: this.projectSet.description,
-        },
-        "Handoff IA completado",
-      );
-    },
-    async favorite(assetId) {
-      await this.postAction("/api/favorites", { asset_id: assetId }, "Favorito actualizado");
+    hideTechnicalDirectorName(text) {
+      return text.replaceAll("Qwen", "el director tecnico").replaceAll("qwen", "el director tecnico");
     },
     async postAction(url, body = {}, successLabel = "Accion completada") {
       const response = await fetch(apiUrl(url), {
@@ -595,34 +790,45 @@ createApp({
     help(label) {
       return this.options.help_texts?.[label] || "";
     },
-    applyCustom(section, field) {
-      const value = this.custom[section]?.[field]?.trim();
-      if (!value) return;
-      this[section][field] = field === "bpm" ? Number(value) || this[section][field] : value;
-      this.custom[section][field] = "";
-    },
     setPlaceholderPreset(name) {
       const preset = this.options.placeholder_presets?.[name];
       if (preset) {
         this.lyrics.placeholders = { ...preset };
+        this.markDirty("lyrics");
       }
     },
     toggleInstrument(instrument) {
-      const current = this.instrumental.instruments;
-      if (current.includes(instrument)) {
-        this.instrumental.instruments = current.filter((item) => item !== instrument);
-        return;
-      }
-      this.instrumental.instruments = [...current, instrument];
+      const current = this.intent.instruments;
+      this.intent.instruments = current.includes(instrument) ? current.filter((item) => item !== instrument) : [...current, instrument];
+      this.markDirty("intent");
     },
     selectInstrumentFamily(familyName) {
       const family = this.options.instrument_families[familyName] || [];
-      const selected = new Set(this.instrumental.instruments);
+      const selected = new Set(this.intent.instruments);
       family.forEach((instrument) => selected.add(instrument));
-      this.instrumental.instruments = [...selected];
+      this.intent.instruments = [...selected];
+      this.markDirty("intent");
     },
     clearInstruments() {
-      this.instrumental.instruments = [];
+      this.intent.instruments = [];
+      this.markDirty("intent");
+    },
+    exportLabel(type) {
+      return {
+        final_song_mp3: "MP3",
+        final_song_wav: "WAV",
+        midi: "MIDI",
+        instrumental_wav: "Instrumental WAV",
+        vocals_wav: "Vocals WAV",
+        mix_wav: "Mix WAV",
+        export_manifest_json: "Metadata JSON",
+      }[type] || type;
+    },
+    formatSize(bytes) {
+      if (!bytes) return "0 B";
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     },
   },
 }).mount("#app");
