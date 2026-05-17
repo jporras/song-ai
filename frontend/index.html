@@ -493,12 +493,55 @@
         </section>
 
         <section v-if="activeTab === 'instrumental'" class="view">
+          <section class="intent-brief">
+            <div>
+              <span class="eyebrow">Escultura sonora</span>
+              <h2>{{ instrumentalSummary }}</h2>
+              <p>Convierte MIDI y plan musical en audio real: capas, ambiente, stems y previews.</p>
+            </div>
+            <button class="primary" @click="runProductionStep(productionPipelineSteps.find((step) => step.phase === 'INSTRUMENTAL_GENERATION'))">Generar instrumental real</button>
+          </section>
+
           <section class="panel">
             <h2>Escultura sonora</h2>
             <div class="grid two">
               <label>Textura <input v-model="instrumental.texture" @input="markDirty('instrumental')" /></label>
               <label>Ambiente <input v-model="instrumental.ambience" @input="markDirty('instrumental')" /></label>
               <label>Calidad instrumental <input v-model="instrumental.quality" @input="markDirty('instrumental')" /></label>
+              <label>Profundidad <span>{{ instrumental.depth }}</span><input type="range" min="0" max="100" v-model.number="instrumental.depth" @input="markDirty('instrumental')" /></label>
+              <label>Brillo <span>{{ instrumental.brightness }}</span><input type="range" min="0" max="100" v-model.number="instrumental.brightness" @input="markDirty('instrumental')" /></label>
+              <label>Movimiento <span>{{ instrumental.movement }}</span><input type="range" min="0" max="100" v-model.number="instrumental.movement" @input="markDirty('instrumental')" /></label>
+              <label>Ancho stereo <span>{{ instrumental.stereoWidth }}</span><input type="range" min="0" max="100" v-model.number="instrumental.stereoWidth" @input="markDirty('instrumental')" /></label>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+              <div>
+                <h2>Stems y capas</h2>
+                <p>Control conceptual de capas. La mezcla final se decide en Production.</p>
+              </div>
+              <button @click="addInstrumentalLayer">Agregar capa</button>
+            </div>
+            <div class="stem-grid">
+              <article v-for="stem in instrumental.stems" :key="stem.id" class="stem-card">
+                <header>
+                  <strong>{{ stem.name }}</strong>
+                  <span>{{ stem.role }}</span>
+                </header>
+                <label>Nivel <span>{{ stem.level }}</span><input type="range" min="0" max="100" v-model.number="stem.level" @input="markDirty('instrumental')" /></label>
+                <div class="actions">
+                  <button :class="{ selected: stem.muted }" @click="toggleStemMute(stem.id)">Mute</button>
+                  <button :class="{ selected: stem.solo }" @click="toggleStemSolo(stem.id)">Solo</button>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Preview</h2>
+            <div class="waveform">
+              <span v-for="(bar, index) in waveformBars" :key="index" :style="{ height: `${bar}px` }"></span>
             </div>
             <div class="preview-strip">
               <span>Preview instrumental</span>

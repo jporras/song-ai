@@ -829,6 +829,58 @@ summary span {
   display: block;
 }
 
+.stem-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.stem-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(15, 17, 21, 0.52);
+}
+
+.stem-card header {
+  display: grid;
+  gap: 4px;
+}
+
+.stem-card header span {
+  color: var(--muted);
+}
+
+.stem-card label span {
+  color: var(--accent);
+}
+
+.stem-card button.selected {
+  border-color: rgba(124, 140, 255, 0.68);
+  background: rgba(124, 140, 255, 0.16);
+}
+
+.waveform {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 124px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(15, 17, 21, 0.62);
+}
+
+.waveform span {
+  flex: 1;
+  min-width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(124, 140, 255, 0.86), rgba(124, 140, 255, 0.18));
+}
+
 .summary-toggle {
   width: 100%;
   text-align: left;

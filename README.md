@@ -58,6 +58,8 @@ Ultimo ajuste:
 - Music Plan incluye notas de instrumentacion y un resumen de uso de transiciones para preparar MIDI, Instrumental y Voice sin convertirse todavia en DAW completo.
 - Sprint MIDI completado: `/midi` incorpora tracks editables, piano roll simplificado, notas visuales, controles de velocity, humanizacion, densidad melodica, swing, timing y ritmo de acordes.
 - MIDI permite activar/desactivar tracks, agregar/eliminar notas de preview y lanzar la generacion real de `song_base.mid` desde el pipeline profesional.
+- Sprint Instrumental completado: `/instrumental` agrega brief de escultura sonora, controles de textura, ambiente, profundidad, brillo, movimiento, ancho stereo, stems/capas con mute/solo y waveform minimalista de preview.
+- Instrumental puede lanzar la generacion real del proveedor profesional y tambien crear un draft instrumental reutilizable para sets.
 - Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
 - La referencia visual o de YouTube queda solo como inspiracion de sensibilidad/ternura; el video es opcional y no define el formato.
 - La prioridad del sistema queda fija: buena letra, buena intencion emocional, buena estructura musical, soundtrack coherente, voz cantada y mezcla final.

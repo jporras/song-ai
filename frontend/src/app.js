@@ -188,6 +188,16 @@ createApp({
         ambience: "noche calida",
         layers: ["piano", "strings", "ambient pad"],
         quality: "demo local",
+        depth: 62,
+        brightness: 38,
+        movement: 44,
+        stereoWidth: 58,
+        stems: [
+          { id: "piano", name: "Piano", role: "armonia", level: 78, muted: false, solo: false },
+          { id: "strings", name: "Strings", role: "sosten", level: 54, muted: false, solo: false },
+          { id: "pad", name: "Ambient pad", role: "ambiente", level: 46, muted: false, solo: false },
+          { id: "music-box", name: "Music box", role: "detalle", level: 34, muted: false, solo: false },
+        ],
       },
       voice: {
         mainVoice: "femenina suave",
@@ -366,6 +376,15 @@ createApp({
     },
     midiSummary() {
       return `${this.midiPlan.tracks.filter((track) => track.enabled).length} tracks / velocity ${this.midiPlan.velocity} / humanizacion ${this.midiPlan.humanization}`;
+    },
+    instrumentalSummary() {
+      return `${this.instrumental.stems.filter((stem) => !stem.muted).length} stems activos / ${this.instrumental.texture} / ${this.instrumental.ambience}`;
+    },
+    waveformBars() {
+      return Array.from({ length: 48 }, (_, index) => {
+        const wave = Math.sin(index * 0.72) * 0.5 + Math.sin(index * 0.21) * 0.5;
+        return Math.max(14, Math.round(38 + wave * 26 + (index % 5) * 3));
+      });
     },
     pianoRows() {
       return ["C5", "B4", "A4", "G4", "F4", "E4", "D4", "C4", "B3", "A3", "G3", "F3", "E3", "D3", "C3", "C2"];
@@ -849,6 +868,31 @@ createApp({
         background: track?.color || "#7C8CFF",
         opacity: track?.enabled ? 0.9 : 0.24,
       };
+    },
+    toggleStemMute(stemId) {
+      const stem = this.instrumental.stems.find((item) => item.id === stemId);
+      if (!stem) return;
+      stem.muted = !stem.muted;
+      this.markDirty("instrumental");
+    },
+    toggleStemSolo(stemId) {
+      const stem = this.instrumental.stems.find((item) => item.id === stemId);
+      if (!stem) return;
+      stem.solo = !stem.solo;
+      this.markDirty("instrumental");
+    },
+    addInstrumentalLayer() {
+      const name = `Layer ${this.instrumental.stems.length + 1}`;
+      this.instrumental.stems.push({
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        name,
+        role: "textura",
+        level: 42,
+        muted: false,
+        solo: false,
+      });
+      this.instrumental.layers = [...this.instrumental.layers, name];
+      this.markDirty("instrumental");
     },
     loadLyricTemplate(templateId) {
       const template = this.lyricTemplates.find((item) => item.id === templateId);
