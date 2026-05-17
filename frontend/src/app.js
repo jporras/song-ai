@@ -160,6 +160,21 @@ createApp({
         velocity: 62,
         melodyDensity: 42,
         chordRhythm: "half notes",
+        timingOffset: 0,
+        swing: 8,
+        tracks: [
+          { id: "vocal", name: "Vocal melody", role: "melodia", enabled: true, color: "#7C8CFF" },
+          { id: "chords", name: "Chords", role: "armonia", enabled: true, color: "#4ADE80" },
+          { id: "bass", name: "Bass guide", role: "base", enabled: true, color: "#60A5FA" },
+        ],
+        notes: [
+          { id: "n1", track: "vocal", pitch: "E4", start: 1, length: 2, velocity: 62 },
+          { id: "n2", track: "vocal", pitch: "G4", start: 4, length: 2, velocity: 68 },
+          { id: "n3", track: "vocal", pitch: "A4", start: 7, length: 3, velocity: 64 },
+          { id: "n4", track: "chords", pitch: "C3", start: 1, length: 4, velocity: 54 },
+          { id: "n5", track: "chords", pitch: "G3", start: 6, length: 4, velocity: 54 },
+          { id: "n6", track: "bass", pitch: "C2", start: 1, length: 3, velocity: 48 },
+        ],
       },
       melody: {
         vocal_style: "soft lullaby singing",
@@ -348,6 +363,12 @@ createApp({
     },
     musicPlanSummary() {
       return `${this.musicPlan.bpm} BPM / ${this.musicPlan.key} / ${this.musicPlan.timeSignature} / ${this.musicPlanDuration}s`;
+    },
+    midiSummary() {
+      return `${this.midiPlan.tracks.filter((track) => track.enabled).length} tracks / velocity ${this.midiPlan.velocity} / humanizacion ${this.midiPlan.humanization}`;
+    },
+    pianoRows() {
+      return ["C5", "B4", "A4", "G4", "F4", "E4", "D4", "C4", "B3", "A3", "G3", "F3", "E3", "D3", "C3", "C2"];
     },
     exportables() {
       const manifestArtifacts = this.exportManifest?.artifacts || [];
@@ -797,6 +818,37 @@ createApp({
       [sections[index], sections[target]] = [sections[target], sections[index]];
       this.musicPlan.sections = sections;
       this.markDirty("music-plan");
+    },
+    toggleMidiTrack(trackId) {
+      const track = this.midiPlan.tracks.find((item) => item.id === trackId);
+      if (!track) return;
+      track.enabled = !track.enabled;
+      this.markDirty("midi");
+    },
+    addMidiNote(trackId = "vocal") {
+      this.midiPlan.notes.push({
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        track: trackId,
+        pitch: "C4",
+        start: 2,
+        length: 2,
+        velocity: this.midiPlan.velocity,
+      });
+      this.markDirty("midi");
+    },
+    removeMidiNote(noteId) {
+      this.midiPlan.notes = this.midiPlan.notes.filter((note) => note.id !== noteId);
+      this.markDirty("midi");
+    },
+    noteStyle(note) {
+      const track = this.midiPlan.tracks.find((item) => item.id === note.track);
+      const row = Math.max(1, this.pianoRows.indexOf(note.pitch) + 1);
+      return {
+        gridColumn: `${note.start} / span ${note.length}`,
+        gridRow: `${row}`,
+        background: track?.color || "#7C8CFF",
+        opacity: track?.enabled ? 0.9 : 0.24,
+      };
     },
     loadLyricTemplate(templateId) {
       const template = this.lyricTemplates.find((item) => item.id === templateId);

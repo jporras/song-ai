@@ -56,6 +56,8 @@ Ultimo ajuste:
 - El editor de Lyrics conserva acciones por seccion como mejorar, recrear, expandir, acortar, variantes, duplicar, mover y eliminar, manteniendo variables `{variable}` editables.
 - Sprint Music Plan completado: `/music-plan` muestra un brief tecnico musical, controles de BPM/tonalidad/compas/progresion, timeline editable por secciones, intensidad por seccion y transiciones musicales.
 - Music Plan incluye notas de instrumentacion y un resumen de uso de transiciones para preparar MIDI, Instrumental y Voice sin convertirse todavia en DAW completo.
+- Sprint MIDI completado: `/midi` incorpora tracks editables, piano roll simplificado, notas visuales, controles de velocity, humanizacion, densidad melodica, swing, timing y ritmo de acordes.
+- MIDI permite activar/desactivar tracks, agregar/eliminar notas de preview y lanzar la generacion real de `song_base.mid` desde el pipeline profesional.
 - Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
 - La referencia visual o de YouTube queda solo como inspiracion de sensibilidad/ternura; el video es opcional y no define el formato.
 - La prioridad del sistema queda fija: buena letra, buena intencion emocional, buena estructura musical, soundtrack coherente, voz cantada y mezcla final.

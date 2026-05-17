@@ -438,15 +438,51 @@
         </section>
 
         <section v-if="activeTab === 'midi'" class="view">
+          <section class="intent-brief">
+            <div>
+              <span class="eyebrow">Composicion MIDI</span>
+              <h2>{{ midiSummary }}</h2>
+              <p>Base editable para melodia vocal, acordes, timing, velocity y humanizacion.</p>
+            </div>
+            <button class="primary" @click="runProductionStep(productionPipelineSteps.find((step) => step.phase === 'MIDI_GENERATION'))">Crear MIDI real</button>
+          </section>
+
           <section class="panel midi-board">
-            <h2>MIDI editable</h2>
-            <div class="timeline-grid">
-              <span v-for="n in 16" :key="n"></span>
+            <div class="section-head">
+              <div>
+                <h2>Piano roll simplificado</h2>
+                <p>Preview visual editable: no es un DAW completo todavia.</p>
+              </div>
+              <button @click="addMidiNote('vocal')">Agregar nota</button>
+            </div>
+            <div class="midi-layout">
+              <aside class="track-list">
+                <button v-for="track in midiPlan.tracks" :key="track.id" :class="{ selected: track.enabled }" @click="toggleMidiTrack(track.id)">
+                  <span :style="{ background: track.color }"></span>
+                  {{ track.name }}
+                  <small>{{ track.role }}</small>
+                </button>
+              </aside>
+              <div class="piano-roll">
+                <span v-for="row in pianoRows" :key="row" class="piano-row-label">{{ row }}</span>
+                <button
+                  v-for="note in midiPlan.notes"
+                  :key="note.id"
+                  class="midi-note"
+                  :style="noteStyle(note)"
+                  :title="`${note.track} ${note.pitch} vel ${note.velocity}`"
+                  @dblclick="removeMidiNote(note.id)"
+                >
+                  {{ note.pitch }}
+                </button>
+              </div>
             </div>
             <div class="grid two">
-              <label>Humanizacion <input type="range" min="0" max="100" v-model.number="midiPlan.humanization" @input="markDirty('midi')" /></label>
-              <label>Velocity <input type="range" min="0" max="127" v-model.number="midiPlan.velocity" @input="markDirty('midi')" /></label>
-              <label>Densidad melodica <input type="range" min="0" max="100" v-model.number="midiPlan.melodyDensity" @input="markDirty('midi')" /></label>
+              <label>Humanizacion <span>{{ midiPlan.humanization }}</span><input type="range" min="0" max="100" v-model.number="midiPlan.humanization" @input="markDirty('midi')" /></label>
+              <label>Velocity <span>{{ midiPlan.velocity }}</span><input type="range" min="0" max="127" v-model.number="midiPlan.velocity" @input="markDirty('midi')" /></label>
+              <label>Densidad melodica <span>{{ midiPlan.melodyDensity }}</span><input type="range" min="0" max="100" v-model.number="midiPlan.melodyDensity" @input="markDirty('midi')" /></label>
+              <label>Swing <span>{{ midiPlan.swing }}</span><input type="range" min="0" max="60" v-model.number="midiPlan.swing" @input="markDirty('midi')" /></label>
+              <label>Offset timing <input type="number" v-model.number="midiPlan.timingOffset" @input="markDirty('midi')" /></label>
               <label>Ritmo de acordes <input v-model="midiPlan.chordRhythm" @input="markDirty('midi')" /></label>
             </div>
             <div class="preview-strip">
