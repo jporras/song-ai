@@ -175,7 +175,7 @@ createApp({
       activeProject: null,
       professionalProjects: [],
       exportManifest: { artifacts: [] },
-      favorites: [],
+      favoriteProjects: {},
       archived: [],
       librarySearch: "",
       tagSearch: "",
@@ -221,12 +221,7 @@ createApp({
     allTags() {
       const tags = new Set(["suave", "warm", "epico", "piano", "cinematografico", "tierno", "ambiental"]);
       for (const songSet of this.sets) {
-        String(songSet.description || "")
-          .toLowerCase()
-          .split(/[^a-zA-Z0-9áéíóúñ]+/)
-          .filter((token) => token.length > 3)
-          .slice(0, 4)
-          .forEach((token) => tags.add(token));
+        this.tagsForSet(songSet).forEach((tag) => tags.add(tag));
       }
       return [...tags].sort();
     },
@@ -244,14 +239,24 @@ createApp({
         return !archived;
       });
     },
+    searchResultSets() {
+      if (!this.librarySearch.trim()) return [];
+      return this.visibleLibrarySets;
+    },
     favoriteSets() {
-      return this.visibleLibrarySets.filter((songSet) => this.favorites.includes(songSet.set_id));
+      if (this.librarySearch.trim()) return [];
+      return this.sets
+        .filter((songSet) => !this.archived.includes(songSet.set_id))
+        .filter((songSet) => Boolean(this.favoriteProjects[songSet.set_id]))
+        .sort((a, b) => String(this.favoriteProjects[b.set_id]?.favorited_at || "").localeCompare(String(this.favoriteProjects[a.set_id]?.favorited_at || "")));
     },
     recentSets() {
-      return this.visibleLibrarySets
-        .filter((songSet) => !this.favorites.includes(songSet.set_id))
+      if (this.librarySearch.trim()) return [];
+      return this.sets
+        .filter((songSet) => !this.archived.includes(songSet.set_id))
+        .filter((songSet) => !this.favoriteProjects[songSet.set_id])
         .slice()
-        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+        .sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)))
         .slice(0, 5);
     },
     draftReadiness() {
@@ -330,11 +335,14 @@ createApp({
       });
     },
     restoreLocalUiState() {
-      this.favorites = JSON.parse(localStorage.getItem("song-ai:favorites") || "[]");
+      const storedFavorites = JSON.parse(localStorage.getItem("song-ai:favorites") || "{}");
+      this.favoriteProjects = Array.isArray(storedFavorites)
+        ? Object.fromEntries(storedFavorites.map((id) => [id, { favorited_at: nowLabel() }]))
+        : storedFavorites;
       this.archived = JSON.parse(localStorage.getItem("song-ai:archived") || "[]");
     },
     persistLocalUiState() {
-      localStorage.setItem("song-ai:favorites", JSON.stringify(this.favorites));
+      localStorage.setItem("song-ai:favorites", JSON.stringify(this.favoriteProjects));
       localStorage.setItem("song-ai:archived", JSON.stringify(this.archived));
     },
     activateFromPath(path, push = false) {
@@ -639,22 +647,47 @@ createApp({
       this.markDirty("production");
     },
     toggleFavorite(setId) {
-      if (this.favorites.includes(setId)) this.favorites = this.favorites.filter((id) => id !== setId);
-      else this.favorites = [setId, ...this.favorites];
+      if (this.favoriteProjects[setId]) {
+        const next = { ...this.favoriteProjects };
+        delete next[setId];
+        this.favoriteProjects = next;
+      } else {
+        this.favoriteProjects = {
+          ...this.favoriteProjects,
+          [setId]: { favorited_at: nowLabel() },
+        };
+      }
       this.persistLocalUiState();
     },
     archiveSet(setId) {
       this.archived = [...new Set([...this.archived, setId])];
-      this.favorites = this.favorites.filter((id) => id !== setId);
+      const nextFavorites = { ...this.favoriteProjects };
+      delete nextFavorites[setId];
+      this.favoriteProjects = nextFavorites;
       this.persistLocalUiState();
       this.addMessage("Proyecto archivado. Seguira disponible en busqueda.");
     },
+    unarchiveSet(setId) {
+      this.archived = this.archived.filter((id) => id !== setId);
+      this.persistLocalUiState();
+      this.addMessage("Proyecto restaurado a la biblioteca principal.");
+    },
+    isFavorite(setId) {
+      return Boolean(this.favoriteProjects[setId]);
+    },
+    favoriteDate(setId) {
+      return this.favoriteProjects[setId]?.favorited_at || "";
+    },
+    isArchived(setId) {
+      return this.archived.includes(setId);
+    },
     tagsForSet(songSet) {
-      return String(songSet.description || "")
+      const stopWords = new Set(["para", "con", "una", "este", "esta", "cancion", "proyecto", "completa", "desde"]);
+      return `${songSet.project_name || ""} ${songSet.description || ""}`
         .toLowerCase()
         .split(/[^a-zA-Z0-9áéíóúñ]+/)
-        .filter((token) => token.length > 3)
-        .slice(0, 4);
+        .filter((token) => token.length > 3 && !stopWords.has(token))
+        .slice(0, 6);
     },
     saveProductionMetadata() {
       this.projectSet.project_name = this.activeProjectTitle;

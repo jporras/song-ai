@@ -81,7 +81,7 @@
             <article v-for="songSet in favoriteSets" :key="songSet.set_id" class="project-row">
               <button class="star active" title="Favorito activo" @click="toggleFavorite(songSet.set_id)">★</button>
               <strong>{{ songSet.project_name }}</strong>
-              <span>{{ songSet.set_id }}</span>
+              <span>{{ songSet.set_id }}<small>{{ favoriteDate(songSet.set_id) }}</small></span>
               <button title="Metadata del proyecto" @click="selectedSet = songSet">ℹ</button>
               <button class="primary" @click="loadProject(songSet.set_id)">Cargar</button>
             </article>
@@ -93,12 +93,53 @@
             <article v-for="songSet in recentSets" :key="songSet.set_id" class="project-row">
               <button class="star" title="Marcar favorito" @click="toggleFavorite(songSet.set_id)">☆</button>
               <strong>{{ songSet.project_name }}</strong>
-              <span>{{ songSet.created_at }}</span>
+              <span>{{ songSet.set_id }}<small>{{ songSet.updated_at || songSet.created_at }}</small></span>
               <button title="Metadata del proyecto" @click="selectedSet = songSet">ℹ</button>
               <button @click="archiveSet(songSet.set_id)">Archivar</button>
               <button class="primary" @click="loadProject(songSet.set_id)">Cargar</button>
             </article>
             <p v-if="recentSets.length === 0" class="empty-note">No hay proyectos recientes visibles.</p>
+          </section>
+
+          <section v-if="librarySearch.trim()" class="project-block">
+            <h3>Resultados</h3>
+            <article v-for="songSet in searchResultSets" :key="songSet.set_id" class="project-row">
+              <button class="star" :title="isFavorite(songSet.set_id) ? 'Quitar favorito' : 'Marcar favorito'" @click="toggleFavorite(songSet.set_id)">
+                {{ isFavorite(songSet.set_id) ? '★' : '☆' }}
+              </button>
+              <strong>{{ songSet.project_name }}</strong>
+              <span>
+                {{ songSet.set_id }}
+                <small>{{ isArchived(songSet.set_id) ? 'Archivado' : (songSet.updated_at || songSet.created_at) }}</small>
+              </span>
+              <button title="Metadata del proyecto" @click="selectedSet = songSet">ℹ</button>
+              <button v-if="isArchived(songSet.set_id)" @click="unarchiveSet(songSet.set_id)">Restaurar</button>
+              <button v-else @click="archiveSet(songSet.set_id)">Archivar</button>
+              <button class="primary" @click="loadProject(songSet.set_id)">Cargar</button>
+            </article>
+            <p v-if="searchResultSets.length === 0" class="empty-note">No hay coincidencias.</p>
+          </section>
+
+          <section v-if="selectedSet" class="metadata-panel">
+            <div>
+              <span class="eyebrow">ℹ Metadata</span>
+              <h3>{{ selectedSet.project_name }}</h3>
+              <p>{{ selectedSet.description || 'Sin descripcion.' }}</p>
+            </div>
+            <dl>
+              <dt>ID</dt><dd>{{ selectedSet.set_id }}</dd>
+              <dt>Creado</dt><dd>{{ selectedSet.created_at }}</dd>
+              <dt>Instrumental</dt><dd>{{ selectedSet.instrumental_id }}</dd>
+              <dt>Melodia</dt><dd>{{ selectedSet.melody_id }}</dd>
+              <dt>Lyrics</dt><dd>{{ selectedSet.lyrics_id }}</dd>
+              <dt>Tags</dt><dd>{{ tagsForSet(selectedSet).join(', ') || 'sin tags' }}</dd>
+            </dl>
+            <div class="actions">
+              <button @click="toggleFavorite(selectedSet.set_id)">{{ isFavorite(selectedSet.set_id) ? 'Quitar favorito' : 'Marcar favorito' }}</button>
+              <button v-if="isArchived(selectedSet.set_id)" @click="unarchiveSet(selectedSet.set_id)">Restaurar</button>
+              <button v-else @click="archiveSet(selectedSet.set_id)">Archivar</button>
+              <button class="primary" @click="loadProject(selectedSet.set_id)">Cargar proyecto</button>
+            </div>
           </section>
 
           <section class="creation-panel">

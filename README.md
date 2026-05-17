@@ -46,6 +46,8 @@ Ultimo ajuste:
 - Production concentra metadata editable, resumen expandible, estado local y exportables descargables; no abre carpetas del sistema porque la app vive en Docker.
 - Sistema visual actualizado: dark mode cinematografico por defecto con paleta `#0F1115`, panels `#171A21`, sidebar `#0B0D12`, bordes `#2A2F3A` y accent violeta azulado `#7C8CFF`.
 - Se suavizaron cards, footer de Gemma, sliders, acordeones, estados y hover/microanimaciones para acercar la UI a un estudio musical moderno tipo DAW elegante.
+- Sprint Biblioteca completado: `/library` muestra favoritos ordenados por fecha de favorito, recientes no archivados, busqueda por ID/nombre/descripcion/tags que incluye archivados y panel de metadata con acciones.
+- Archivar un proyecto lo oculta de las listas principales y elimina su favorito local; restaurar solo aparece desde resultados de busqueda.
 - Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
 - La referencia visual o de YouTube queda solo como inspiracion de sensibilidad/ternura; el video es opcional y no define el formato.
 - La prioridad del sistema queda fija: buena letra, buena intencion emocional, buena estructura musical, soundtrack coherente, voz cantada y mezcla final.

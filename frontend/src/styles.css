@@ -444,6 +444,11 @@ textarea {
   transition: border-color 180ms ease, background 180ms ease, transform 180ms ease;
 }
 
+.project-row span small {
+  display: block;
+  margin-top: 4px;
+}
+
 .project-row:hover,
 .export-row:hover {
   border-color: rgba(124, 140, 255, 0.46);
@@ -464,6 +469,34 @@ textarea {
 .empty-note {
   margin: 0;
   color: var(--muted);
+}
+
+.metadata-panel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(124, 140, 255, 0.28);
+  border-radius: var(--radius);
+  background: rgba(23, 26, 33, 0.82);
+  box-shadow: var(--soft-shadow);
+}
+
+.metadata-panel dl {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 10px 16px;
+  margin: 0;
+}
+
+.metadata-panel dt {
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.metadata-panel dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .align-right {
