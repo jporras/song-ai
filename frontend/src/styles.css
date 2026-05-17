@@ -725,6 +725,56 @@ summary span {
   align-self: end;
 }
 
+.music-timeline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.music-section-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(15, 17, 21, 0.52);
+}
+
+.music-section-card header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.music-section-card label {
+  gap: 6px;
+}
+
+.music-section-card label span {
+  color: var(--accent);
+}
+
+.transition-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.transition-grid article {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(124, 140, 255, 0.08);
+}
+
+.transition-grid strong,
+.transition-grid small {
+  display: block;
+}
+
 .summary-toggle {
   width: 100%;
   text-align: left;

@@ -146,6 +146,14 @@ createApp({
         progression: "C - G - Am - F",
         dynamicArc: "crece suavemente hasta el coro final",
         transition: "crescendo",
+        sections: [
+          { id: "intro", name: "Intro", seconds: 8, intensity: 18, transition: "ambient bridge" },
+          { id: "verse-1", name: "Verse 1", seconds: 24, intensity: 34, transition: "fill" },
+          { id: "chorus", name: "Chorus", seconds: 28, intensity: 58, transition: "crescendo" },
+          { id: "bridge", name: "Bridge", seconds: 18, intensity: 42, transition: "ambient bridge" },
+          { id: "outro", name: "Outro", seconds: 10, intensity: 20, transition: "riser" },
+        ],
+        instrumentationNotes: "Piano suave al frente, cuerdas largas, pad calido y textura ligera de caja musical.",
       },
       midiPlan: {
         humanization: 18,
@@ -334,6 +342,12 @@ createApp({
       const query = this.lyrics.templateSearch.trim().toLowerCase();
       if (!query) return this.lyricTemplates;
       return this.lyricTemplates.filter((template) => `${template.name} ${template.created_at}`.toLowerCase().includes(query));
+    },
+    musicPlanDuration() {
+      return this.musicPlan.sections.reduce((total, section) => total + Number(section.seconds || 0), 0);
+    },
+    musicPlanSummary() {
+      return `${this.musicPlan.bpm} BPM / ${this.musicPlan.key} / ${this.musicPlan.timeSignature} / ${this.musicPlanDuration}s`;
     },
     exportables() {
       const manifestArtifacts = this.exportManifest?.artifacts || [];
@@ -761,6 +775,28 @@ createApp({
       ];
       this.persistLocalUiState();
       this.addMessage(`Plantilla lyrics guardada: ${name}`);
+    },
+    addMusicSection() {
+      this.musicPlan.sections.push({
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        name: "Nueva seccion",
+        seconds: 16,
+        intensity: 40,
+        transition: "fill",
+      });
+      this.markDirty("music-plan");
+    },
+    removeMusicSection(index) {
+      this.musicPlan.sections.splice(index, 1);
+      this.markDirty("music-plan");
+    },
+    moveMusicSection(index, direction) {
+      const target = index + direction;
+      if (target < 0 || target >= this.musicPlan.sections.length) return;
+      const sections = [...this.musicPlan.sections];
+      [sections[index], sections[target]] = [sections[target], sections[index]];
+      this.musicPlan.sections = sections;
+      this.markDirty("music-plan");
     },
     loadLyricTemplate(templateId) {
       const template = this.lyricTemplates.find((item) => item.id === templateId);

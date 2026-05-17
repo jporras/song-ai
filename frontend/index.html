@@ -360,6 +360,15 @@
         </section>
 
         <section v-if="activeTab === 'music-plan'" class="view">
+          <section class="intent-brief">
+            <div>
+              <span class="eyebrow">Direccion musical</span>
+              <h2>{{ musicPlanSummary }}</h2>
+              <p>Este plan define la arquitectura musical que despues alimenta MIDI, Instrumental y Voice.</p>
+            </div>
+            <button class="primary" @click="runProductionStep(productionPipelineSteps.find((step) => step.phase === 'MUSIC_PLAN_GENERATION'))">Generar plan con IA</button>
+          </section>
+
           <section class="panel">
             <h2>Direccion musical profesional</h2>
             <div class="grid two">
@@ -378,6 +387,52 @@
                   <option>riser</option>
                 </select>
               </label>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+              <div>
+                <h2>Estructura por segundos</h2>
+                <p>Las canciones crecen de forma incremental; evita bloques aislados.</p>
+              </div>
+              <button @click="addMusicSection">Agregar seccion</button>
+            </div>
+            <div class="music-timeline">
+              <article v-for="(section, index) in musicPlan.sections" :key="section.id" class="music-section-card">
+                <header>
+                  <strong>{{ index + 1 }}. {{ section.name }}</strong>
+                  <div class="mini-actions">
+                    <button @click="moveMusicSection(index, -1)">↑</button>
+                    <button @click="moveMusicSection(index, 1)">↓</button>
+                    <button @click="removeMusicSection(index)">✖</button>
+                  </div>
+                </header>
+                <label>Nombre <input v-model="section.name" @input="markDirty('music-plan')" /></label>
+                <label>Duracion <input type="number" min="1" v-model.number="section.seconds" @input="markDirty('music-plan')" /></label>
+                <label>Intensidad <span>{{ section.intensity }}</span><input type="range" min="0" max="100" v-model.number="section.intensity" @input="markDirty('music-plan')" /></label>
+                <label>Transicion
+                  <select v-model="section.transition" @change="markDirty('music-plan')">
+                    <option>crescendo</option>
+                    <option>drop</option>
+                    <option>fill</option>
+                    <option>ambient bridge</option>
+                    <option>hard cut</option>
+                    <option>riser</option>
+                  </select>
+                </label>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Instrumentacion y transiciones</h2>
+            <textarea class="compact-textarea" v-model="musicPlan.instrumentationNotes" @input="markDirty('music-plan')"></textarea>
+            <div class="transition-grid">
+              <article v-for="transition in ['crescendo', 'drop', 'fill', 'ambient bridge', 'hard cut', 'riser']" :key="transition">
+                <strong>{{ transition }}</strong>
+                <small>{{ musicPlan.sections.filter((section) => section.transition === transition).length }} uso(s)</small>
+              </article>
             </div>
           </section>
         </section>
