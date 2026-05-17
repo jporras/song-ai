@@ -599,6 +599,45 @@ summary span {
   background: rgba(124, 140, 255, 0.1);
 }
 
+.production-status-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.production-status-panel select {
+  min-width: min(360px, 100%);
+}
+
+.pipeline-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.pipeline-step {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-height: 132px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(15, 17, 21, 0.48);
+}
+
+.pipeline-step span {
+  font-weight: 800;
+}
+
+.pipeline-step small {
+  min-height: 34px;
+  overflow-wrap: anywhere;
+}
+
+.pipeline-step button {
+  align-self: end;
+}
+
 .summary-toggle {
   width: 100%;
   text-align: left;

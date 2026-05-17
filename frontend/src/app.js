@@ -174,6 +174,7 @@ createApp({
       selectedSet: null,
       activeProject: null,
       professionalProjects: [],
+      productionProjectId: "",
       exportManifest: { artifacts: [] },
       favoriteProjects: {},
       archived: [],
@@ -211,6 +212,15 @@ createApp({
     },
     activeProjectId() {
       return this.activeProject?.set?.set_id || this.selectedSet?.set_id || "";
+    },
+    activeProfessionalProject() {
+      return this.professionalProjects.find((project) => project.id === this.productionProjectId) || this.professionalProjects[0] || null;
+    },
+    productionGlobalStatus() {
+      if (this.exportManifest?.artifacts?.length) return "Export listo";
+      if (this.activeProfessionalProject?.current_phase) return `${this.activeProfessionalProject.current_phase} / ${this.activeProfessionalProject.status}`;
+      if (this.activeProjectId) return "Set cargado, pendiente de proyecto profesional";
+      return "Sin proyecto activo";
     },
     productionTags() {
       return this.productionMetadata.tagsInput
@@ -297,10 +307,41 @@ createApp({
       }
       return [
         { name: "MP3", type: "final_song_mp3", size: "pendiente", url: "" },
+        { name: "FLAC", type: "final_song_flac", size: "pendiente", url: "" },
         { name: "WAV", type: "final_song_wav", size: "pendiente", url: "" },
         { name: "MIDI", type: "midi", size: "pendiente", url: "" },
         { name: "ZIP proyecto completo", type: "project_zip", size: "pendiente", url: "" },
       ];
+    },
+    productionPipelineSteps() {
+      const songId = this.activeProfessionalProject?.id || "";
+      return [
+        { phase: "SONG_SPEC_COLLECTION", label: "Spec", action: "Enviar intent", method: "POST", url: `/api/pro/projects/${songId}/spec/messages`, requires: songId },
+        { phase: "LYRICS_GENERATION", label: "Lyrics", action: "Generar lyrics", method: "POST", url: `/api/pro/projects/${songId}/lyrics`, requires: songId },
+        { phase: "LYRICS_TECHNICAL_REVIEW", label: "Revision lyrics", action: "Aprobar lyrics", method: "POST", url: `/api/pro/projects/${songId}/lyrics/review`, requires: songId },
+        { phase: "MUSIC_PLAN_GENERATION", label: "Music Plan", action: "Generar plan", method: "POST", url: `/api/pro/projects/${songId}/music-plan`, requires: songId },
+        { phase: "MIDI_GENERATION", label: "MIDI", action: "Crear MIDI", method: "POST", url: `/api/pro/projects/${songId}/midi`, requires: songId },
+        { phase: "INSTRUMENTAL_GENERATION", label: "Instrumental", action: "Generar instrumental", method: "POST", url: `/api/pro/projects/${songId}/instrumental`, requires: songId },
+        { phase: "VOCAL_SYNTHESIS", label: "Voice", action: "Generar voz", method: "POST", url: `/api/pro/projects/${songId}/vocals`, requires: songId },
+        { phase: "VOICE_CONVERSION", label: "Conversion", action: "Resolver conversion", method: "POST", url: `/api/pro/projects/${songId}/voice-conversion`, requires: songId },
+        { phase: "MIXING", label: "Mixing", action: "Mezclar", method: "POST", url: `/api/pro/projects/${songId}/mix`, requires: songId },
+        { phase: "MASTERING", label: "Mastering", action: "Masterizar", method: "POST", url: `/api/pro/projects/${songId}/master`, requires: songId },
+        { phase: "EXPORT", label: "Export", action: "Preparar export", method: "POST", url: `/api/pro/projects/${songId}/export`, requires: songId },
+      ];
+    },
+    productionSpecMessage() {
+      return [
+        this.intent.description,
+        `Tipo: ${this.intent.songType}`,
+        `Destinatario: ${this.intent.recipient}`,
+        `Idioma: ${this.intent.language}`,
+        `Duracion 120 segundos`,
+        `Voz ${this.voice.mainVoice || this.intent.vocalType}`,
+        `Instrumentos ${this.intent.instruments.join(", ")}`,
+        `${this.musicPlan.bpm} bpm en ${this.musicPlan.key}`,
+        `Estructura ${this.lyrics.structure}`,
+        `Salida mp3 y wav`,
+      ].join(". ");
     },
     bootstrapRunning() {
       return this.systemStatus.bootstrap?.status === "running";
@@ -455,6 +496,10 @@ createApp({
       const response = await fetch(apiUrl("/api/pro/projects"));
       const payload = await this.readApiPayload(response, { projects: [] });
       this.professionalProjects = payload.data.projects || [];
+      if (!this.productionProjectId && this.professionalProjects.length > 0) {
+        this.productionProjectId = this.professionalProjects[0].id;
+        await this.loadProfessionalExport(this.productionProjectId);
+      }
     },
     async loadJsonConfigs() {
       const response = await fetch(apiUrl("/api/json-configs"));
@@ -696,6 +741,43 @@ createApp({
       this.dirtyPhase = "";
       this.addMessage("Metadata de production guardada localmente.");
     },
+    async createProfessionalProjectFromProduction() {
+      const response = await fetch(apiUrl("/api/pro/projects"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: this.projectSet.project_name || this.activeProjectTitle,
+          description: this.projectSet.description || this.activeProjectDescription,
+        }),
+      });
+      const payload = await this.readApiPayload(response, {});
+      if (!payload.ok) {
+        this.addMessage(payload.detail || "No se pudo crear el proyecto profesional.");
+        return;
+      }
+      this.productionProjectId = payload.data.project.id;
+      await this.loadProfessionalProjects();
+      this.addMessage(`Proyecto profesional creado: ${this.productionProjectId}`);
+    },
+    async runProductionStep(step) {
+      if (!step.requires) {
+        this.addMessage("Crea o selecciona un proyecto profesional primero.");
+        return;
+      }
+      const response = await fetch(apiUrl(step.url), {
+        method: step.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(step.phase === "SONG_SPEC_COLLECTION" ? { message: this.productionSpecMessage } : {}),
+      });
+      const payload = await this.readApiPayload(response, {});
+      if (!payload.ok) {
+        this.addMessage(payload.detail || `No se pudo ejecutar ${step.label}.`);
+        return;
+      }
+      await this.loadProfessionalProjects();
+      if (step.phase === "EXPORT") await this.loadProfessionalExport(step.requires);
+      this.addMessage(`${step.label}: ${payload.data?.project?.current_phase || "completado"}`);
+    },
     async refreshSystemStatus() {
       await this.loadProviders();
       this.addMessage("Estado de componentes actualizado.");
@@ -724,6 +806,7 @@ createApp({
       this.addMessage(payload.data?.summary || payload.detail || "Generacion final solicitada.");
     },
     async loadProfessionalExport(songId) {
+      if (!songId) return;
       const response = await fetch(apiUrl(`/api/pro/projects/${songId}/export`));
       const payload = await this.readApiPayload(response, { artifacts: [] });
       this.exportManifest = payload.data;
@@ -849,6 +932,7 @@ createApp({
     exportLabel(type) {
       return {
         final_song_mp3: "MP3",
+        final_song_flac: "FLAC",
         final_song_wav: "WAV",
         midi: "MIDI",
         instrumental_wav: "Instrumental WAV",

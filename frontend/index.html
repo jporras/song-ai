@@ -379,6 +379,32 @@
             </div>
           </section>
 
+          <section class="panel production-status-panel">
+            <div class="section-head">
+              <div>
+                <span class="eyebrow">Estado global</span>
+                <h2>{{ productionGlobalStatus }}</h2>
+                <p>Production cierra el pipeline: mezcla, mastering, exportables y descarga desde Docker.</p>
+              </div>
+              <div class="actions">
+                <select v-model="productionProjectId" @change="loadProfessionalExport(productionProjectId)">
+                  <option value="">Seleccionar proyecto pro</option>
+                  <option v-for="project in professionalProjects" :key="project.id" :value="project.id">
+                    {{ project.title }} / {{ project.current_phase }}
+                  </option>
+                </select>
+                <button @click="createProfessionalProjectFromProduction">Crear proyecto pro</button>
+              </div>
+            </div>
+            <div class="pipeline-strip">
+              <article v-for="step in productionPipelineSteps" :key="step.phase" class="pipeline-step">
+                <span>{{ step.label }}</span>
+                <small>{{ step.phase }}</small>
+                <button :disabled="!step.requires" @click="runProductionStep(step)">{{ step.action }}</button>
+              </article>
+            </div>
+          </section>
+
           <section class="panel">
             <button class="summary-toggle" @click="productionSummaryOpen = !productionSummaryOpen">Resumen del proyecto</button>
             <dl v-if="productionSummaryOpen" class="summary-grid">
@@ -391,6 +417,7 @@
               <dt>Voz</dt><dd>{{ voice.mainVoice }}</dd>
               <dt>Inspiraciones</dt><dd>{{ intent.inspirations.join(', ') }}</dd>
               <dt>Estado global</dt><dd>{{ localFinalStatusMessage }}</dd>
+              <dt>Proyecto pro</dt><dd>{{ activeProfessionalProject?.id || 'pendiente' }}</dd>
             </dl>
           </section>
 
@@ -399,6 +426,7 @@
               <h2>Exportables</h2>
               <div class="actions">
                 <button @click="generateLocalFinalSong" :disabled="!canGenerateLocalFinalSong">Generar final local</button>
+                <button @click="loadProfessionalExport(productionProjectId)" :disabled="!productionProjectId">Actualizar export</button>
                 <button class="primary" @click="saveLatestMp3">Guardar MP3</button>
               </div>
             </div>
