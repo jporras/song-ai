@@ -58,7 +58,7 @@ class MusicPlanService:
             phase=SongPhase.MUSIC_PLAN_GENERATION.value,
             status=SongPhaseStatus.COMPLETED.value,
             progress=100,
-            message="Qwen genero el plan musical tecnico: tempo, tonalidad, acordes, estructura por segundos e intensidad.",
+            message="El director tecnico genero el plan musical tecnico: tempo, tonalidad, acordes, estructura por segundos e intensidad.",
             active_model="qwen",
             payload={"music_plan": str(path), "section_count": len(timeline)},
             artifact_id=str(artifact["artifact_id"]),

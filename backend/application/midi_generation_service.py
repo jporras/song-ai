@@ -87,7 +87,7 @@ class MidiGenerationService:
             phase=SongPhase.MIDI_GENERATION.value,
             status=SongPhaseStatus.COMPLETED.value,
             progress=100,
-            message="Qwen coordino la creacion del MIDI base con acordes, melodia vocal guia y marcadores de seccion.",
+            message="El director tecnico coordino la creacion del MIDI base con acordes, melodia vocal guia y marcadores de seccion.",
             active_model="qwen",
             payload={"midi": str(midi_path), "metadata": str(metadata_path)},
             artifact_id=str(midi_artifact["artifact_id"]),

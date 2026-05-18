@@ -47,7 +47,7 @@ class LyricsReviewService:
             )
             status = SongPhaseStatus.COMPLETED.value
             progress = 100
-            message = "Qwen aprobo la letra: estructura, repeticion y duracion son compatibles con la especificacion."
+            message = "El director tecnico aprobo la letra: estructura, repeticion y duracion son compatibles con la especificacion."
         else:
             project = self.storage.update_song_project_phase(
                 song_id,
@@ -56,7 +56,7 @@ class LyricsReviewService:
             )
             status = SongPhaseStatus.WAITING_USER_INPUT.value
             progress = 60
-            message = "Qwen encontro ajustes necesarios. Gemma debe ayudar a corregir la letra antes de continuar."
+            message = "El director tecnico encontro ajustes necesarios. Gemma debe ayudar a corregir la letra antes de continuar."
         self.storage.create_song_event(
             song_id=song_id,
             phase=SongPhase.LYRICS_TECHNICAL_REVIEW.value,

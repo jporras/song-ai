@@ -112,7 +112,7 @@ class SongWorkflowRepository:
             phase=SongPhase.SONG_SPEC_COLLECTION.value,
             status=SongPhaseStatus.WAITING_USER_INPUT.value,
             progress=0,
-            message="Proyecto creado. Gemma debe conversar con el usuario y Qwen validara la especificacion.",
+            message="Proyecto creado. Gemma debe conversar con el usuario y el director tecnico validara la especificacion.",
             active_model="gemma",
             payload={"title": project.title, "phase_count": len(PHASE_SEQUENCE)},
         )

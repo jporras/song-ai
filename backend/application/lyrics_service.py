@@ -19,7 +19,7 @@ class LyricsService:
             "structure": [section["id"] for section in sections],
             "sections": sections,
             "cantable": True,
-            "notes": "Letra generada por Gemma para canto; pendiente revision tecnica de Qwen.",
+            "notes": "Letra generada por Gemma para canto; pendiente revision tecnica interna.",
         }
         markdown = self.to_markdown(lyrics_payload)
         return self.write(song_id, lyrics_payload, markdown, "Letra cantable generada por Gemma.")

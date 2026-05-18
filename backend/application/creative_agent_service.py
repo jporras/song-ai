@@ -9,7 +9,7 @@ class CreativeAgentService:
         "voice_style": "Que tipo de voz imaginas: femenina suave, masculina calida, infantil o algun estilo especial?",
         "instruments": "Que instrumentos quieres sentir en la base? Puede ser piano, cuerdas, guitarra suave, pads, cajita musical u otros.",
         "bpm": "La prefieres muy lenta y arrulladora, o un poco mas moderada?",
-        "key": "Quieres una tonalidad concreta, como C major, o dejamos que Qwen elija una tonalidad dulce?",
+        "key": "Quieres una tonalidad concreta, como C major, o dejamos que el director tecnico elija una tonalidad dulce?",
         "output_format": "Que formato final necesitas primero: wav, mp3 o ambos?",
         "structure": "Quieres una estructura clasica con intro, versos, coro, puente y outro?",
     }
@@ -67,7 +67,7 @@ class CreativeAgentService:
         status = str(qwen_result.get("status", "missing_information"))
         if status == "ready_for_generation":
             return (
-                "Ya tengo una especificacion musical completa. Qwen la aprobo para iniciar el pipeline: "
+                "Ya tengo una especificacion musical completa. El director tecnico la aprobo para iniciar el pipeline: "
                 "primero letra cantable, luego revision tecnica, plan musical y MIDI base."
             )
         questions = [str(item) for item in qwen_result.get("questions_for_user", [])]

@@ -64,6 +64,8 @@ Ultimo ajuste:
 - Voice permite definir capas vocales y distribucion por seccion: quien canta, cuantas voces entran, modo de interpretacion, armonias, call & response y preview vocal antes de Production.
 - Sprint de integracion UX iniciado: la barra lateral ahora calcula estados `READY` para Music Plan, MIDI, Instrumental y Voice usando sus datos locales de trabajo, no solo drafts del flujo antiguo.
 - Verificacion final parcial completada sin recrear Docker: `npm.cmd run build`, `python -m unittest discover -s tests -p "test_*.py"` y `python -m compileall backend tests` pasan correctamente.
+- Verificacion Docker del flujo profesional completada: el contenedor existente genero spec, letra, revision, plan musical, MIDI, instrumental, voz, conversion opcional, mezcla, mastering y export con 13 artefactos, incluyendo `final_song.mp3` descargable.
+- Se ajustaron mensajes user-facing del backend para mantener a Gemma como cara visible y referirse al rol tecnico como `director tecnico`, dejando el identificador del modelo solo como detalle interno/API.
 - Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
 - La referencia visual o de YouTube queda solo como inspiracion de sensibilidad/ternura; el video es opcional y no define el formato.
 - La prioridad del sistema queda fija: buena letra, buena intencion emocional, buena estructura musical, soundtrack coherente, voz cantada y mezcla final.

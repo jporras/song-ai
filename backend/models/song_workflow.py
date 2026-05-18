@@ -47,7 +47,7 @@ PHASE_SEQUENCE: list[SongPhase] = [
 
 
 PHASE_LABELS: dict[SongPhase, str] = {
-    SongPhase.SONG_SPEC_COLLECTION: "1. Especificacion con Gemma/Qwen",
+    SongPhase.SONG_SPEC_COLLECTION: "1. Especificacion con Gemma y director tecnico",
     SongPhase.LYRICS_GENERATION: "2. Letra cantable",
     SongPhase.LYRICS_TECHNICAL_REVIEW: "3. Revision tecnica de letra",
     SongPhase.MUSIC_PLAN_GENERATION: "4. Plan musical tecnico",

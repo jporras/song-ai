@@ -110,7 +110,7 @@ class ProfessionalSongService:
             raise ValueError("Proyecto profesional no encontrado.")
         spec_record = project.get("spec")
         if not spec_record or not bool(dict(spec_record).get("approved_by_qwen")):
-            raise ValueError("La especificacion debe estar aprobada por Qwen antes de generar letra.")
+            raise ValueError("La especificacion debe estar aprobada por el director tecnico antes de generar letra.")
         self.model_manager.run_model("gemma", {"song_id": song_id, "phase": SongPhase.LYRICS_GENERATION.value})
         self.storage.create_song_event(
             song_id=song_id,
@@ -153,7 +153,7 @@ class ProfessionalSongService:
             phase=SongPhase.LYRICS_TECHNICAL_REVIEW.value,
             status=SongPhaseStatus.RUNNING.value,
             progress=35,
-            message="Qwen esta revisando estructura, repeticion, duracion y compatibilidad musical de la letra.",
+            message="El director tecnico esta revisando estructura, repeticion, duracion y compatibilidad musical de la letra.",
             active_model="qwen",
             payload={"lyrics_json_path": lyrics["lyrics_json_path"]},
         )
@@ -175,7 +175,7 @@ class ProfessionalSongService:
             raise ValueError("La especificacion debe estar aprobada antes de generar el plan musical.")
         lyrics_approved_path = self.storage.data_dir / "projects" / song_id / "lyrics_approved.json"
         if not lyrics_approved_path.exists():
-            raise ValueError("La letra debe estar aprobada por Qwen antes de generar el plan musical.")
+            raise ValueError("La letra debe estar aprobada por el director tecnico antes de generar el plan musical.")
         lyrics_approved = self.storage.read_json(lyrics_approved_path)
         if not bool(lyrics_approved.get("approved_by_qwen")):
             raise ValueError("La letra aprobada no esta disponible; revisa la fase LYRICS_TECHNICAL_REVIEW.")
@@ -186,7 +186,7 @@ class ProfessionalSongService:
             phase=SongPhase.MUSIC_PLAN_GENERATION.value,
             status=SongPhaseStatus.RUNNING.value,
             progress=40,
-            message="Qwen esta creando el plan musical tecnico para MIDI e instrumental.",
+            message="El director tecnico esta creando el plan musical tecnico para MIDI e instrumental.",
             active_model="qwen",
             payload={"lyrics_approved": str(lyrics_approved_path)},
         )
@@ -215,7 +215,7 @@ class ProfessionalSongService:
             phase=SongPhase.MIDI_GENERATION.value,
             status=SongPhaseStatus.RUNNING.value,
             progress=45,
-            message="Qwen esta coordinando el MIDI base con acordes, melodia vocal guia y marcadores.",
+            message="El director tecnico esta coordinando el MIDI base con acordes, melodia vocal guia y marcadores.",
             active_model="qwen",
             payload={"music_plan": str(self.storage.data_dir / "projects" / song_id / "music_plan.json")},
         )
@@ -446,13 +446,13 @@ class ProfessionalSongService:
             progress = 100
             project_status = SongPhaseStatus.READY.value
             current_phase = SongPhase.LYRICS_GENERATION.value
-            message = "Qwen aprobo la especificacion. El proyecto puede avanzar a generacion de letra cantable."
+            message = "El director tecnico aprobo la especificacion. El proyecto puede avanzar a generacion de letra cantable."
         else:
             status = SongPhaseStatus.WAITING_USER_INPUT.value
             progress = 55
             project_status = SongPhaseStatus.WAITING_USER_INPUT.value
             current_phase = SongPhase.SONG_SPEC_COLLECTION.value
-            message = "Qwen detecto informacion faltante. Gemma debe preguntarla al usuario en lenguaje natural."
+            message = "El director tecnico detecto informacion faltante. Gemma debe preguntarla al usuario en lenguaje natural."
         self.storage.create_song_event(
             song_id=song_id,
             phase=SongPhase.SONG_SPEC_COLLECTION.value,
