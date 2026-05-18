@@ -62,6 +62,7 @@ Ultimo ajuste:
 - Instrumental puede lanzar la generacion real del proveedor profesional y tambien crear un draft instrumental reutilizable para sets.
 - Sprint Voice completado: `/voice` agrega direccion de interpretacion vocal con voz principal, emocion, performance, pronunciacion, respiraciones, humanizacion, vibrato, blend de capas y opciones de armonias/conversion.
 - Voice permite definir capas vocales y distribucion por seccion: quien canta, cuantas voces entran, modo de interpretacion, armonias, call & response y preview vocal antes de Production.
+- Sprint de integracion UX iniciado: la barra lateral ahora calcula estados `READY` para Music Plan, MIDI, Instrumental y Voice usando sus datos locales de trabajo, no solo drafts del flujo antiguo.
 - Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
 - La referencia visual o de YouTube queda solo como inspiracion de sensibilidad/ternura; el video es opcional y no define el formato.
 - La prioridad del sistema queda fija: buena letra, buena intencion emocional, buena estructura musical, soundtrack coherente, voz cantada y mezcla final.

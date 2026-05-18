@@ -548,12 +548,11 @@ createApp({
       if (this.outdatedPhases.includes(phaseId)) return "OUTDATED";
       if (phaseId === "intent") return this.activeProjectId || this.intent.description ? "READY" : "EMPTY";
       if (phaseId === "lyrics") return this.lyricSections.length > 0 || this.lyricsEditor.selectedAssetId ? "READY" : "EMPTY";
+      if (phaseId === "music-plan") return this.musicPlan.sections.length > 0 && this.musicPlan.progression ? "READY" : "EMPTY";
+      if (phaseId === "midi") return this.midiPlan.tracks.length > 0 && this.midiPlan.notes.length > 0 ? "READY" : "EMPTY";
+      if (phaseId === "instrumental") return this.instrumental.stems.length > 0 || this.draftReadiness.find((item) => item.type === "instrumental")?.count > 0 ? "READY" : "EMPTY";
+      if (phaseId === "voice") return this.voice.layers.length > 0 && this.voice.sectionDirection.length > 0 ? "READY" : "EMPTY";
       if (phaseId === "production" && this.exportManifest?.artifacts?.length) return "READY";
-      const legacy = {
-        instrumental: "instrumental",
-        lyrics: "lyrics",
-      }[phaseId];
-      if (legacy && this.draftReadiness.find((item) => item.type === legacy)?.count > 0) return "READY";
       return "EMPTY";
     },
     phaseUi(phaseId) {
