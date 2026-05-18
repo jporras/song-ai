@@ -144,8 +144,8 @@ class LyricsService:
 
     def _sections_from_spec(self, spec: dict[str, object]) -> list[dict[str, object]]:
         recipient = str(spec.get("recipient_name", "mi amor"))
-        emotion = str(spec.get("emotion", "tender"))
-        theme = str(spec.get("theme", "love, care"))
+        emotion = self._singable_emotion(str(spec.get("emotion", "tender")), str(spec.get("language", "Spanish")))
+        theme = self._singable_theme(str(spec.get("theme", "love, care")), str(spec.get("language", "Spanish")))
         structure = list(spec.get("structure", [])) or [
             "intro",
             "verse_1",
@@ -177,10 +177,38 @@ class LyricsService:
             return [f"Suena bonito, {recipient},", "manana el sol vendra."]
         return [
             f"{recipient}, respira despacito,",
-            f"mi cancion te cuida en {emotion},",
+            f"mi cancion te cuida {emotion},",
             "va dejando en tu camita,",
             f"{theme} para sonar.",
         ]
+
+    def _singable_emotion(self, emotion: str, language: str) -> str:
+        lower = emotion.lower()
+        if language.lower().startswith("spanish"):
+            if "tender" in lower or "tier" in lower:
+                return "con ternura"
+            if "warm" in lower or "calid" in lower:
+                return "con calma tibia"
+            if "joy" in lower or "alegr" in lower:
+                return "con dulce alegria"
+            if "nostalg" in lower:
+                return "con luz de recuerdo"
+            return "con amor sereno"
+        return emotion
+
+    def _singable_theme(self, theme: str, language: str) -> str:
+        lower = theme.lower()
+        if language.lower().startswith("spanish"):
+            if any(word in lower for word in ("sleep", "dream", "dorm", "suen")):
+                return "un sueno de amor"
+            if any(word in lower for word in ("protection", "care", "cuid", "prote")):
+                return "mi promesa de cuidarte"
+            if "family" in lower or "famil" in lower:
+                return "el abrazo de la casa"
+            if "love" in lower or "amor" in lower:
+                return "un caminito de amor"
+            return "un cielo para sonar"
+        return theme
 
     def _section_label(self, section_id: str) -> str:
         return section_id.replace("_", " ").title()

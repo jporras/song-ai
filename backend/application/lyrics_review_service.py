@@ -106,6 +106,16 @@ class LyricsReviewService:
                     "severity": "medium",
                 }
             )
+        technical_tokens = self._technical_tokens(sections, str(spec.get("language", "Spanish")))
+        if technical_tokens:
+            issues.append(
+                {
+                    "code": "technical_tokens_in_lyrics",
+                    "message": "La letra contiene palabras tecnicas o de especificacion que no suenan cantables.",
+                    "severity": "medium",
+                    "tokens": technical_tokens,
+                }
+            )
         repeated_lines = self._repeated_lines(sections)
         if repeated_lines:
             issues.append(
@@ -139,9 +149,27 @@ class LyricsReviewService:
             recommendations.append("Agregar un coro memorable, cantable y no demasiado largo.")
         if "too_short_for_duration" in codes:
             recommendations.append("Extender la letra para que respire mejor con la duracion aprobada.")
+        if "technical_tokens_in_lyrics" in codes:
+            recommendations.append("Reescribir emociones y temas tecnicos como frases naturales y cantables.")
         if "excessive_repetition" in codes:
             recommendations.append("Reducir repeticiones y variar imagenes sin romper la intencion emocional.")
         return recommendations
+
+    def _technical_tokens(self, sections: list[dict[str, object]], language: str) -> list[str]:
+        if not language.lower().startswith("spanish"):
+            return []
+        blocked = {
+            "tender",
+            "warm",
+            "joyful",
+            "nostalgic",
+            "love, care",
+            "emotional dedication",
+            "sleep",
+            "protection",
+        }
+        text = "\n".join(self._all_lines(sections)).lower()
+        return sorted(token for token in blocked if token in text)
 
     def _repeated_lines(self, sections: list[dict[str, object]]) -> list[str]:
         counter = Counter(line.lower() for line in self._all_lines(sections))

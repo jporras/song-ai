@@ -418,7 +418,7 @@ createApp({
       const manifestArtifacts = this.exportManifest?.artifacts || [];
       if (manifestArtifacts.length > 0) {
         return manifestArtifacts
-          .filter((artifact) => ["final_song_mp3", "final_song_wav", "midi", "instrumental_wav", "vocals_wav", "mix_wav", "export_manifest_json"].includes(artifact.type))
+          .filter((artifact) => ["final_song_mp3", "final_song_flac", "final_song_wav", "midi", "project_zip", "instrumental_wav", "vocals_wav", "mix_wav", "export_manifest_json"].includes(artifact.type))
           .map((artifact) => ({
             name: this.exportLabel(artifact.type),
             type: artifact.type,
@@ -1270,6 +1270,7 @@ createApp({
         final_song_flac: "FLAC",
         final_song_wav: "WAV",
         midi: "MIDI",
+        project_zip: "ZIP proyecto completo",
         instrumental_wav: "Instrumental WAV",
         vocals_wav: "Vocals WAV",
         mix_wav: "Mix WAV",

@@ -122,6 +122,8 @@ class AudioExportTest(unittest.TestCase):
             self.assertEqual(generated["progress"]["current"], 3)
             self.assertIn("## Intro", lyrics["markdown"])
             self.assertIn("Isabella", lyrics["markdown"])
+            self.assertNotIn("tender", lyrics["markdown"].lower())
+            self.assertNotIn("love, care", lyrics["markdown"].lower())
             self.assertTrue((Path(temp_dir) / "projects" / song_id / "lyrics.json").exists())
             self.assertTrue((Path(temp_dir) / "projects" / song_id / "lyrics.md").exists())
 
@@ -181,6 +183,42 @@ class AudioExportTest(unittest.TestCase):
             self.assertEqual(reviewed["review"]["status"], "needs_revision")
             self.assertEqual(reviewed["progress"]["current"], 2)
             self.assertIn("too_few_sections", [issue["code"] for issue in reviewed["review"]["issues"]])
+
+    def test_professional_lyrics_review_rejects_technical_tokens(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            service = SongService(storage)
+            service.bootstrap()
+            created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
+            song_id = str(created["project"]["id"])
+            service.collect_professional_spec(
+                song_id,
+                {
+                    "message": (
+                        "Cancion de cuna para Isabella, 120 segundos, voz femenina suave, piano, "
+                        "cuerdas y pad, muy lenta a 70 bpm en C major, estructura intro verse chorus bridge outro y salida mp3."
+                    )
+                },
+            )
+            service.generate_professional_lyrics(song_id)
+            service.update_professional_lyrics(
+                song_id,
+                {
+                    "content": (
+                        "# Borrador\n\n"
+                        "## Intro\nDuerme suave, Isabella\nla noche empieza a cantar\n\n"
+                        "## Verse 1\nIsabella, respira despacito\nmi cancion te cuida en tender\nlove, care para sonar\notra linea dulce\n\n"
+                        "## Chorus\nIsabella mi luz pequena\ncada estrella te acompana\ncada latido es amor\ncoro suave\n\n"
+                        "## Verse 2\nIsabella, respira despacito\nmi cancion te cuida en tender\nlove, care para sonar\notra linea dulce\n\n"
+                        "## Bridge\nSi la sombra se despierta\nmi voz te vuelve a abrazar\ncon ternura y calma abierta\ntodo vuelve a descansar\n"
+                    )
+                },
+            )
+
+            reviewed = service.review_professional_lyrics(song_id)
+
+            self.assertEqual(reviewed["review"]["status"], "needs_revision")
+            self.assertIn("technical_tokens_in_lyrics", [issue["code"] for issue in reviewed["review"]["issues"]])
 
     def test_professional_music_plan_generation_prepares_midi_requirements(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
@@ -385,7 +423,7 @@ class AudioExportTest(unittest.TestCase):
             self.assertTrue((Path(temp_dir) / "projects" / song_id / "mixing.log").exists())
 
     @unittest.skipIf(not shutil.which("ffmpeg"), "ffmpeg no esta disponible para exportar MP3")
-    def test_professional_mastering_creates_final_wav_and_mp3(self) -> None:
+    def test_professional_mastering_creates_final_wav_mp3_and_flac(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             storage = StorageManager(Path(temp_dir))
             service = SongService(storage)
@@ -414,12 +452,15 @@ class AudioExportTest(unittest.TestCase):
             read = service.get_professional_master(song_id)
             final_wav_path = Path(str(read["final_wav"]))
             final_mp3_path = Path(str(read["final_mp3"]))
+            final_flac_path = Path(str(read["final_flac"]))
 
             self.assertEqual(mastered["progress"]["current"], 11)
             self.assertEqual(mastered["project"]["current_phase"], "EXPORT")
             self.assertTrue(final_wav_path.exists())
             self.assertTrue(final_mp3_path.exists())
+            self.assertTrue(final_flac_path.exists())
             self.assertGreater(final_mp3_path.stat().st_size, 0)
+            self.assertGreater(final_flac_path.stat().st_size, 0)
             with wave.open(str(final_wav_path), "rb") as wav_file:
                 self.assertEqual(wav_file.getframerate(), 44100)
                 self.assertGreater(wav_file.getnframes(), 0)
@@ -460,10 +501,16 @@ class AudioExportTest(unittest.TestCase):
             self.assertTrue((Path(temp_dir) / "projects" / song_id / "export_manifest.json").exists())
             artifact_types = {str(artifact["type"]) for artifact in read["artifacts"]}
             self.assertIn("final_song_mp3", artifact_types)
+            self.assertIn("final_song_flac", artifact_types)
+            self.assertIn("project_zip", artifact_types)
             self.assertIn("song_spec", artifact_types)
             self.assertTrue(str(filename).endswith("-final_song_mp3.mp3"))
             self.assertEqual(media_type, "audio/mpeg")
             self.assertEqual(download_path, Path(temp_dir) / "projects" / song_id / "final_song.mp3")
+            zip_path, zip_filename, zip_media_type = service.professional_artifact_download_file(song_id, "project_zip")
+            self.assertTrue(zip_path.exists())
+            self.assertTrue(str(zip_filename).endswith("-project_zip.zip"))
+            self.assertEqual(zip_media_type, "application/zip")
 
     def test_docker_bootstrap_creates_named_volume_directories_without_downloads(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:

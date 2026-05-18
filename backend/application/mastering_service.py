@@ -21,6 +21,7 @@ class MasteringService:
         mix_path = project_dir / "mix.wav"
         final_wav_path = project_dir / "final_song.wav"
         final_mp3_path = project_dir / "final_song.mp3"
+        final_flac_path = project_dir / "final_song.flac"
         log_path = project_dir / "mastering.log"
         if not mix_path.exists():
             raise ValueError("No existe mix.wav para masterizar.")
@@ -29,9 +30,10 @@ class MasteringService:
         mastered = self._master_frames(frames)
         self._write_wav(final_wav_path, mastered)
         self._export_mp3(final_wav_path, final_mp3_path)
+        self._export_flac(final_wav_path, final_flac_path)
         log_path.write_text(
-            "Mastering local: filtro de limpieza DC, normalizacion, limitador suave y export MP3.\n"
-            f"Mix: {mix_path}\nWAV final: {final_wav_path}\nMP3 final: {final_mp3_path}\n",
+            "Mastering local: filtro de limpieza DC, normalizacion, limitador suave y exports WAV/MP3/FLAC.\n"
+            f"Mix: {mix_path}\nWAV final: {final_wav_path}\nMP3 final: {final_mp3_path}\nFLAC final: {final_flac_path}\n",
             encoding="utf-8",
         )
         wav_artifact = self.storage.create_song_artifact(
@@ -50,16 +52,25 @@ class MasteringService:
             file_path=str(Path(final_mp3_path)),
             metadata={"source_wav": str(final_wav_path), "log_path": str(log_path)},
         )
+        flac_artifact = self.storage.create_song_artifact(
+            artifact_id=f"{song_id}_final_song_flac",
+            song_id=song_id,
+            phase=SongPhase.MASTERING.value,
+            artifact_type="final_song_flac",
+            file_path=str(Path(final_flac_path)),
+            metadata={"source_wav": str(final_wav_path), "log_path": str(log_path)},
+        )
         self.storage.create_song_event(
             song_id=song_id,
             phase=SongPhase.MASTERING.value,
             status=SongPhaseStatus.COMPLETED.value,
             progress=100,
-            message="Mastering terminado: final_song.wav y final_song.mp3 listos para export.",
+            message="Mastering terminado: final_song.wav, final_song.mp3 y final_song.flac listos para export.",
             active_model="local-mastering",
             payload={
                 "final_wav": str(final_wav_path),
                 "final_mp3": str(final_mp3_path),
+                "final_flac": str(final_flac_path),
                 "log": str(log_path),
             },
             artifact_id=str(mp3_artifact["artifact_id"]),
@@ -69,7 +80,8 @@ class MasteringService:
             "project": project,
             "final_wav": str(final_wav_path),
             "final_mp3": str(final_mp3_path),
-            "artifacts": [wav_artifact, mp3_artifact],
+            "final_flac": str(final_flac_path),
+            "artifacts": [wav_artifact, mp3_artifact, flac_artifact],
             "log": str(log_path),
         }
 
@@ -77,14 +89,17 @@ class MasteringService:
         project_dir = self.storage.data_dir / "projects" / song_id
         final_wav_path = project_dir / "final_song.wav"
         final_mp3_path = project_dir / "final_song.mp3"
-        if not final_wav_path.exists() or not final_mp3_path.exists():
-            raise ValueError("Este proyecto aun no tiene final_song.wav y final_song.mp3.")
+        final_flac_path = project_dir / "final_song.flac"
+        if not final_wav_path.exists() or not final_mp3_path.exists() or not final_flac_path.exists():
+            raise ValueError("Este proyecto aun no tiene final_song.wav, final_song.mp3 y final_song.flac.")
         return {
             "song_id": song_id,
             "final_wav": str(final_wav_path),
             "final_mp3": str(final_mp3_path),
+            "final_flac": str(final_flac_path),
             "wav_size_bytes": final_wav_path.stat().st_size,
             "mp3_size_bytes": final_mp3_path.stat().st_size,
+            "flac_size_bytes": final_flac_path.stat().st_size,
         }
 
     def _read_wav(self, path: Path) -> list[int]:
@@ -137,6 +152,26 @@ class MasteringService:
                 "-q:a",
                 "2",
                 str(final_mp3_path),
+            ],
+            check=True,
+        )
+
+    def _export_flac(self, final_wav_path: Path, final_flac_path: Path) -> None:
+        ffmpeg_path = shutil.which("ffmpeg")
+        if ffmpeg_path is None:
+            raise ValueError("ffmpeg no esta disponible para exportar final_song.flac.")
+        subprocess.run(
+            [
+                ffmpeg_path,
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(final_wav_path),
+                "-codec:a",
+                "flac",
+                str(final_flac_path),
             ],
             check=True,
         )
