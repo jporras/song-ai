@@ -483,6 +483,12 @@ textarea {
   grid-template-columns: minmax(0, 1fr) 140px auto;
 }
 
+.export-row strong small {
+  display: block;
+  margin-top: 4px;
+  font-weight: 600;
+}
+
 .star {
   width: 36px;
   padding: 7px 0;

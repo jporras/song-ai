@@ -13,6 +13,8 @@ La aplicacion se enfoca ahora en generar una cancion terminada con herramientas 
 Sprint actual: Sprint 15 en ejecucion: cierre del modo local real y pausa explicita del modo pro.
 
 Ultimo ajuste:
+- Control de calidad vocal agregado: `ProfessionalExportService` ya no permite exportar una cancion final si `vocals.wav` viene de `procedural_vocal_guide`; ese archivo queda tratado como guia/preview, no como voz cantada real.
+- `VocalSynthesisService` guarda `quality_status` en los metadatos de `vocals_wav`; Production muestra la advertencia y bloquea la descarga de MP3/WAV/FLAC finales cuando la voz no supera calidad minima.
 - Refactorizacion profesional iniciada en fase 1/12: se agregaron entidades SQLite nuevas para `SongProject`, `SongSpec`, `SongArtifact`, `SongEvent` y `ModelExecution`, con endpoints `/api/pro/projects` y `/api/pro/phases`.
 - El nuevo flujo profesional arranca en `SONG_SPEC_COLLECTION`: Gemma queda como interfaz creativa del usuario y Qwen queda reservado como director tecnico interno para validar la especificacion antes de generar.
 - El progreso operativo se reporta como fase de refactorizacion `1/12`; el pipeline musical interno conserva sus fases principales y marca `MIDI_GENERATION` como etapa obligatoria.

@@ -424,6 +424,7 @@ createApp({
             type: artifact.type,
             size: this.formatSize(artifact.size_bytes || 0),
             url: artifact.download_url,
+            note: this.exportNote(artifact),
           }));
       }
       return [
@@ -1276,6 +1277,17 @@ createApp({
         mix_wav: "Mix WAV",
         export_manifest_json: "Metadata JSON",
       }[type] || type;
+    },
+    exportNote(artifact) {
+      const metadata = artifact?.metadata || {};
+      if (metadata.quality_blocked) {
+        return metadata.quality_message || "Bloqueado por control de calidad vocal.";
+      }
+      if (artifact?.type === "vocals_wav" && metadata.mode === "procedural_vocal_guide") {
+        return "Guia vocal procedural: no es voz cantada real.";
+      }
+      if (metadata.quality_status === "preview_only") return "Preview tecnico, no final.";
+      return "";
     },
     formatSize(bytes) {
       if (!bytes) return "0 B";

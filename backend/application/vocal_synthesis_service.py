@@ -35,9 +35,11 @@ class VocalSynthesisService:
 
         if self.command_template:
             mode = "local_command"
+            quality_status = "final_candidate"
             self._run_command(project_dir, prompt_path, vocals_path, log_path)
         else:
             mode = "procedural_vocal_guide"
+            quality_status = "preview_only"
             self._render_procedural(lyrics_approved, midi_metadata, vocals_path)
             log_path.write_text(
                 "Voz guia procedural generada desde lyrics_approved.json y midi_metadata.json.\n",
@@ -52,6 +54,7 @@ class VocalSynthesisService:
             file_path=str(Path(vocals_path)),
             metadata={
                 "mode": mode,
+                "quality_status": quality_status,
                 "voice_style": voice_style,
                 "log_path": str(log_path),
             },
@@ -63,7 +66,7 @@ class VocalSynthesisService:
             progress=100,
             message="Voz cantada/guia generada desde letra aprobada y melodia vocal MIDI.",
             active_model="singing-voice-provider" if self.command_template else "local-vocal-guide",
-            payload={"vocals": str(vocals_path), "mode": mode, "log": str(log_path)},
+            payload={"vocals": str(vocals_path), "mode": mode, "quality_status": quality_status, "log": str(log_path)},
             artifact_id=str(artifact["artifact_id"]),
         )
         project = self.storage.update_song_project_phase(
@@ -75,6 +78,7 @@ class VocalSynthesisService:
             "project": project,
             "vocals": str(vocals_path),
             "mode": mode,
+            "quality_status": quality_status,
             "artifact": artifact,
             "log": str(log_path),
         }
@@ -87,6 +91,19 @@ class VocalSynthesisService:
             "song_id": song_id,
             "vocals": str(path),
             "size_bytes": path.stat().st_size,
+            "quality": self._quality_metadata(song_id),
+        }
+
+    def _quality_metadata(self, song_id: str) -> dict[str, object]:
+        project = self.storage.get_song_project(song_id) or {}
+        artifacts = [dict(item) for item in list(project.get("artifacts", []))]
+        matches = [artifact for artifact in artifacts if str(artifact.get("type", "")) == "vocals_wav"]
+        if not matches:
+            return {"mode": "", "quality_status": "unknown"}
+        metadata = dict(matches[-1].get("metadata", {}))
+        return {
+            "mode": str(metadata.get("mode", "")),
+            "quality_status": str(metadata.get("quality_status", "unknown")),
         }
 
     def _run_command(self, project_dir: Path, prompt_path: Path, vocals_path: Path, log_path: Path) -> None:

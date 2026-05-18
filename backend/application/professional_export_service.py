@@ -9,6 +9,7 @@ from models.song_workflow import SongPhase, SongPhaseStatus
 
 
 class ProfessionalExportService:
+    NON_FINAL_VOCAL_MODES = {"procedural_vocal_guide"}
     MEDIA_TYPES = {
         ".json": "application/json",
         ".md": "text/markdown",
@@ -34,10 +35,14 @@ class ProfessionalExportService:
         missing = sorted(required - available_types)
         if missing:
             raise ValueError("No se puede exportar todavia. Falta: " + ", ".join(missing))
+        quality = self._quality_report(artifacts)
+        if not bool(quality["export_ready"]):
+            raise ValueError(str(quality["message"]))
 
         project_dir = self.storage.data_dir / "projects" / song_id
         zip_artifact = self._create_project_zip(song_id, project_dir, artifacts)
         artifacts = self._existing_artifacts(self.storage.get_song_project(song_id) or project)
+        quality = self._quality_report(artifacts)
         manifest_path = project_dir / "export_manifest.json"
         title = str(project.get("title", song_id))
         manifest = {
@@ -45,7 +50,8 @@ class ProfessionalExportService:
             "title": title,
             "status": "export_ready",
             "source_of_truth": "sqlite",
-            "artifacts": [self._artifact_export_entry(song_id, artifact) for artifact in artifacts],
+            "quality": quality,
+            "artifacts": [self._artifact_export_entry(song_id, artifact, quality) for artifact in artifacts],
         }
         self.storage.write_json(manifest_path, manifest)
         manifest_artifact = self.storage.create_song_artifact(
@@ -71,6 +77,7 @@ class ProfessionalExportService:
             "project": project,
             "manifest": str(manifest_path),
             "artifacts": manifest["artifacts"],
+            "quality": quality,
             "progress": {"current": 11, "total": 11, "label": "11. Export", "status": "completed"},
         }
 
@@ -103,12 +110,16 @@ class ProfessionalExportService:
             return {
                 "song_id": song_id,
                 "manifest": str(manifest_path),
+                "quality": manifest.get("quality", {}),
                 "artifacts": manifest.get("artifacts", []),
             }
+        artifacts = self._existing_artifacts(project)
+        quality = self._quality_report(artifacts)
         return {
             "song_id": song_id,
             "manifest": "",
-            "artifacts": [self._artifact_export_entry(song_id, artifact) for artifact in self._existing_artifacts(project)],
+            "quality": quality,
+            "artifacts": [self._artifact_export_entry(song_id, artifact, quality) for artifact in artifacts],
         }
 
     def download_file(self, song_id: str, artifact_type: str) -> tuple[Path, str, str]:
@@ -116,6 +127,9 @@ class ProfessionalExportService:
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
         artifacts = self._existing_artifacts(project)
+        quality = self._quality_report(artifacts)
+        if self._is_final_download(artifact_type) and not bool(quality["export_ready"]):
+            raise ValueError(str(quality["message"]))
         matches = [artifact for artifact in artifacts if str(artifact["type"]) == artifact_type]
         if not matches:
             raise ValueError(f"No existe artefacto exportable de tipo {artifact_type}.")
@@ -136,19 +150,61 @@ class ProfessionalExportService:
                 artifacts.append(dict(artifact))
         return artifacts
 
-    def _artifact_export_entry(self, song_id: str, artifact: dict[str, object]) -> dict[str, object]:
+    def _artifact_export_entry(
+        self,
+        song_id: str,
+        artifact: dict[str, object],
+        quality: dict[str, object] | None = None,
+    ) -> dict[str, object]:
         artifact_type = str(artifact["type"])
         path = Path(str(artifact["file_path"]))
+        final_blocked = bool(quality) and self._is_final_download(artifact_type) and not bool(quality.get("export_ready"))
+        metadata = dict(artifact.get("metadata", {}))
+        if final_blocked:
+            metadata["quality_blocked"] = True
+            metadata["quality_message"] = str(quality.get("message", ""))
         return {
             "artifact_id": str(artifact["artifact_id"]),
             "type": artifact_type,
             "phase": str(artifact["phase"]),
             "file_path": str(path),
             "size_bytes": path.stat().st_size if path.exists() else 0,
-            "download_url": f"/api/pro/projects/{song_id}/artifacts/{artifact_type}/download",
-            "metadata": dict(artifact.get("metadata", {})),
+            "download_url": "" if final_blocked else f"/api/pro/projects/{song_id}/artifacts/{artifact_type}/download",
+            "metadata": metadata,
             "created_at": str(artifact.get("created_at", "")),
         }
+
+    def _quality_report(self, artifacts: list[dict[str, object]]) -> dict[str, object]:
+        vocals = self._latest_artifact(artifacts, "vocals_wav")
+        if not vocals:
+            return {
+                "export_ready": False,
+                "vocal_mode": "",
+                "message": "No se puede exportar como final: falta vocals.wav.",
+            }
+        metadata = dict(vocals.get("metadata", {}))
+        mode = str(metadata.get("mode", "unknown"))
+        if mode in self.NON_FINAL_VOCAL_MODES:
+            return {
+                "export_ready": False,
+                "vocal_mode": mode,
+                "message": (
+                    "No se puede exportar como final: vocals.wav es una guia vocal procedural, "
+                    "no una voz cantada real. Configura SONG_AI_SINGING_VOICE_COMMAND o usa un provider full-song real."
+                ),
+            }
+        return {
+            "export_ready": True,
+            "vocal_mode": mode,
+            "message": "Calidad minima aprobada: la voz proviene de un provider local configurado.",
+        }
+
+    def _latest_artifact(self, artifacts: list[dict[str, object]], artifact_type: str) -> dict[str, object] | None:
+        matches = [artifact for artifact in artifacts if str(artifact.get("type", "")) == artifact_type]
+        return matches[-1] if matches else None
+
+    def _is_final_download(self, artifact_type: str) -> bool:
+        return artifact_type in {"final_song_mp3", "final_song_wav", "final_song_flac", "project_zip"}
 
     def _safe_name(self, value: str) -> str:
         normalized = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip()).strip("._-")

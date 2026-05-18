@@ -733,8 +733,9 @@
               </div>
             </div>
             <small>{{ localFinalStatusMessage }}</small>
+            <small v-if="exportManifest.quality?.message">{{ exportManifest.quality.message }}</small>
             <article v-for="item in exportables" :key="item.type" class="export-row">
-              <strong>{{ item.name }}</strong>
+              <strong>{{ item.name }}<small v-if="item.note">{{ item.note }}</small></strong>
               <span>{{ item.size }}</span>
               <button :disabled="!item.url" @click="downloadArtifact(item)">Descargar</button>
             </article>
