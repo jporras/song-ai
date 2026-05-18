@@ -74,6 +74,53 @@ class BootstrapRunner:
 
 bootstrap_runner = BootstrapRunner()
 
+
+class LocalFinalRunner:
+    def __init__(self) -> None:
+        self.lock = Lock()
+        self.state: dict[str, Any] = {
+            "status": "idle",
+            "message": "Generacion final local no iniciada.",
+            "result": {},
+        }
+
+    def status(self) -> dict[str, Any]:
+        with self.lock:
+            return dict(self.state)
+
+    def start(self) -> dict[str, Any]:
+        with self.lock:
+            if self.state["status"] == "running":
+                return dict(self.state)
+            self.state = {
+                "status": "running",
+                "message": "Generando cancion final local en segundo plano.",
+                "result": {},
+            }
+        thread = Thread(target=self._run, daemon=True)
+        thread.start()
+        return self.status()
+
+    def _run(self) -> None:
+        try:
+            result = service.generate_local_final_song()
+            state = {
+                "status": "ready",
+                "message": str(result.get("summary", "Cancion final local generada.")),
+                "result": result,
+            }
+        except Exception as error:
+            state = {
+                "status": "error",
+                "message": str(error),
+                "result": {},
+            }
+        with self.lock:
+            self.state = state
+
+
+local_final_runner = LocalFinalRunner()
+
 app = FastAPI(title="Song AI Generator API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -421,7 +468,12 @@ def generate_audio_exports() -> dict[str, Any]:
 
 @app.post("/api/local-final-song")
 def generate_local_final_song() -> dict[str, Any]:
-    return run_action(service.generate_local_final_song)
+    return ok(local_final_runner.start())
+
+
+@app.get("/api/local-final-song/status")
+def get_local_final_song_status() -> dict[str, Any]:
+    return ok(local_final_runner.status())
 
 
 @app.get("/api/audio-exports/latest/download")

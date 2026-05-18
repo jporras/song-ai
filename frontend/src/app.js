@@ -254,6 +254,8 @@ createApp({
       studioStatus: {},
       localPipeline: {},
       systemStatus: { components: [], bootstrap: {} },
+      localFinalJob: { status: "idle", message: "Generacion final local no iniciada.", result: {} },
+      localFinalPollTimer: null,
       projectPhases: { phases: [] },
       modelStatus: {},
       orchestrationStatus: {},
@@ -465,10 +467,16 @@ createApp({
     bootstrapRunning() {
       return this.systemStatus.bootstrap?.status === "running";
     },
+    localFinalRunning() {
+      return this.localFinalJob?.status === "running";
+    },
     canGenerateLocalFinalSong() {
-      return Boolean(this.localPipeline.ready) && !this.bootstrapRunning;
+      return Boolean(this.localPipeline.ready) && !this.bootstrapRunning && !this.localFinalRunning;
     },
     localFinalStatusMessage() {
+      if (this.localFinalRunning) return this.localFinalJob.message || "Generando cancion final local en segundo plano.";
+      if (this.localFinalJob?.status === "error") return this.localFinalJob.message || "La generacion final local fallo.";
+      if (this.localFinalJob?.status === "ready") return this.localFinalJob.message || "Cancion final local lista.";
       if (this.bootstrapRunning) return "Bootstrap preparando dependencias locales. Consulta estado en unos minutos.";
       if (this.localPipeline.ready) return "Pipeline local listo para generar final.";
       return `Falta configurar: ${this.localPipeline.missing?.join(", ") || "requisitos locales"}.`;
@@ -483,6 +491,7 @@ createApp({
     await this.loadSets();
     await this.loadProfessionalProjects();
     await this.loadProviders();
+    await this.loadLocalFinalJob();
     await this.loadOrchestration();
     await this.loadJsonConfigs();
   },
@@ -589,6 +598,12 @@ createApp({
       this.localPipeline = (await this.readApiPayload(localPipelineResponse, {})).data;
       this.systemStatus = (await this.readApiPayload(systemResponse, {})).data;
       this.projectPhases = (await this.readApiPayload(phasesResponse, { phases: [] })).data;
+    },
+    async loadLocalFinalJob() {
+      const response = await fetch(apiUrl("/api/local-final-song/status"));
+      const payload = await this.readApiPayload(response, this.localFinalJob);
+      this.localFinalJob = payload.data;
+      if (this.localFinalJob.status === "running") this.scheduleLocalFinalPoll();
     },
     async loadOrchestration() {
       const [statusResponse, tasksResponse, runsResponse, eventsResponse] = await Promise.all([
@@ -1079,8 +1094,31 @@ createApp({
       }
       const response = await fetch(apiUrl("/api/local-final-song"), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       const payload = await this.readApiPayload(response, {});
+      if (!payload.ok) {
+        this.addMessage(payload.detail || "No se pudo iniciar la generacion final local.");
+        return;
+      }
+      this.localFinalJob = payload.data;
+      this.addMessage(this.localFinalJob.message || "Generacion final local iniciada.");
+      this.scheduleLocalFinalPoll();
       await this.loadProviders();
-      this.addMessage(payload.data?.summary || payload.detail || "Generacion final solicitada.");
+    },
+    scheduleLocalFinalPoll() {
+      if (this.localFinalPollTimer) clearTimeout(this.localFinalPollTimer);
+      this.localFinalPollTimer = setTimeout(() => this.pollLocalFinalJob(), 5000);
+    },
+    async pollLocalFinalJob() {
+      const previousStatus = this.localFinalJob?.status || "idle";
+      await this.loadLocalFinalJob();
+      if (this.localFinalJob.status === "running") return;
+      if (this.localFinalPollTimer) {
+        clearTimeout(this.localFinalPollTimer);
+        this.localFinalPollTimer = null;
+      }
+      await this.loadProviders();
+      if (previousStatus === "running") {
+        this.addMessage(this.localFinalJob.message || "Generacion final local actualizada.");
+      }
     },
     async loadProfessionalExport(songId) {
       if (!songId) return;

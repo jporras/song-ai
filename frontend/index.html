@@ -727,11 +727,12 @@
             <div class="section-head">
               <h2>Exportables</h2>
               <div class="actions">
-                <button @click="generateLocalFinalSong" :disabled="!canGenerateLocalFinalSong">Generar final local</button>
+                <button @click="generateLocalFinalSong" :disabled="!canGenerateLocalFinalSong">{{ localFinalRunning ? 'Generando...' : 'Generar final local' }}</button>
                 <button @click="loadProfessionalExport(productionProjectId)" :disabled="!productionProjectId">Actualizar export</button>
                 <button class="primary" @click="saveLatestMp3">Guardar MP3</button>
               </div>
             </div>
+            <small>{{ localFinalStatusMessage }}</small>
             <article v-for="item in exportables" :key="item.type" class="export-row">
               <strong>{{ item.name }}</strong>
               <span>{{ item.size }}</span>
