@@ -1182,7 +1182,12 @@ createApp({
       const response = await fetch(apiUrl("/api/assistant/gemma"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ set_id: this.activeProjectId, question: this.gemmaAssistant.question, active_phase: this.activeTab }),
+        body: JSON.stringify({
+          set_id: this.activeProjectId,
+          song_id: this.activeProfessionalProject?.id || "",
+          question: this.gemmaAssistant.question,
+          active_phase: this.activeTab,
+        }),
       });
       const payload = await response.json();
       this.gemmaAssistant.loading = false;

@@ -484,11 +484,7 @@ class SongService:
             if counts["lyrics"] == 0:
                 missing.append("letra")
             if not sets:
-                missing.append("set/proyecto")
-            if project is not None and not samples:
-                missing.append("sample/checkpoint")
-            if project is not None and not songs:
-                missing.append("cancion completa")
+                missing.append("proyecto activo")
 
         recommendations = [
             "Trabaja siempre sobre un proyecto activo para conservar intencion, letra, plan musical, MIDI y audio juntos.",
@@ -498,8 +494,7 @@ class SongService:
         if active_professional_project is not None:
             recommendations.insert(0, str(professional_next["recommendation"]))
         else:
-            recommendations.insert(1, "No avances a sample si falta instrumental, melodia o letra.")
-            recommendations.append("En el flujo legado el orden es set valido, sample, cancion completa, mezcla y WAV/MP3.")
+            recommendations.insert(1, "Crea o carga un proyecto profesional desde Biblioteca y continua por fases.")
             if "instrumental" in missing:
                 recommendations.insert(0, "Define el instrumental: genero, mood, BPM, tonalidad e instrumentos.")
             if "melodia" in missing:
@@ -567,7 +562,7 @@ class SongService:
                 f"Estado de trabajo desde SQLite: {readiness}\n"
                 "Ayuda al usuario a continuar el pipeline profesional. El flujo principal es proyecto, "
                 "spec, letra, revision, plan musical, MIDI, audio, mastering y export. "
-                "El flujo legado de set/sample solo aplica si no hay proyecto profesional activo."
+                "No presentes sample/checkpoint como requisito del flujo principal."
             )
         set_data = dict(project["set"])
         assets = dict(project["assets"])
@@ -593,10 +588,15 @@ class SongService:
                 return str(result["summary"])
         except Exception:
             pass
-        missing = ", ".join(str(item) for item in readiness["missing"]) or "nada critico"
+        missing_items = [
+            str(item)
+            for item in readiness["missing"]
+            if str(item) not in {"sample/checkpoint", "cancion completa"}
+        ]
+        missing = ", ".join(missing_items) or "ninguna fase critica bloqueada"
         return (
             "Gemma local esta en guia de respaldo porque llama.cpp no respondio. "
-            f"Falta: {missing}. Siguiente accion: {readiness['recommendations'][0]}"
+            f"Pendiente: {missing}. Siguiente accion: {readiness['recommendations'][0]}"
         )
 
     def describe_set(self, song_set: dict[str, object]) -> dict[str, object]:
