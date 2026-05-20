@@ -336,7 +336,7 @@ class SongService:
         readiness = self._workflow_readiness(project)
         if project is None:
             return {
-                "model": "Gemma 4 E4B IT GGUF",
+                "model": self.settings.local_models.interpreter_model if self.settings else "Gemma 2 2B IT GGUF",
                 "mode": "llama_cpp" if self.provider_registry.llama_cpp_status().get("enabled") else "local_guidance",
                 "status": "needs_project",
                 "message": self._run_gemma_or_fallback(
@@ -387,7 +387,7 @@ class SongService:
             }
         )
         return {
-            "model": "Gemma 4 E4B IT GGUF",
+            "model": self.settings.local_models.interpreter_model if self.settings else "Gemma 2 2B IT GGUF",
             "mode": "llama_cpp" if self.provider_registry.llama_cpp_status().get("available") else "local_guidance",
             "status": "active_project_loaded",
             "question": question,
@@ -665,6 +665,7 @@ class SongService:
     def system_status(self, bootstrap_status: dict[str, object] | None = None) -> dict[str, object]:
         bootstrap_status = bootstrap_status or {"status": "idle"}
         local_pipeline = self.local_pipeline_status()
+        llama_cpp = self.provider_registry.llama_cpp_status()
         components: list[dict[str, object]] = [
             {
                 "id": "sqlite",
@@ -688,6 +689,19 @@ class SongService:
                 "restartable": True,
             },
         ]
+        llm_models = dict(llama_cpp.get("models", {}))
+        for role, label in (("gemma", "Gemma GGUF"), ("qwen", "Qwen GGUF")):
+            metadata = dict(llm_models.get(role, {}))
+            exists = bool(metadata.get("exists"))
+            components.append(
+                {
+                    "id": f"llm_{role}",
+                    "label": label,
+                    "status": "ready" if exists else "missing",
+                    "detail": str(metadata.get("path") or llama_cpp.get("reason", "Modelo GGUF pendiente.")),
+                    "restartable": True,
+                }
+            )
         for requirement in list(local_pipeline.get("requirements", [])):
             configured = bool(requirement.get("configured"))
             optional = requirement.get("required_for_real_output") is False

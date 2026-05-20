@@ -21,14 +21,14 @@ class ModelOrchestrator:
     }
 
     DEFAULT_MODELS = {
-        "assistant": "Gemma 4 E4B IT GGUF",
-        "intent_extractor": "Gemma 4 E4B IT GGUF",
-        "interpreter": "Gemma 4 E4B IT GGUF",
+        "assistant": "Gemma 2 2B IT GGUF",
+        "intent_extractor": "Gemma 2 2B IT GGUF",
+        "interpreter": "Gemma 2 2B IT GGUF",
         "music": "MusicGen small",
         "soundtrack": "MusicGen small",
         "voice": "RVC / ACE-Step",
         "singing_voice": "RVC / ACE-Step",
-        "lyrics": "Gemma 4 E4B IT GGUF",
+        "lyrics": "Gemma 2 2B IT GGUF",
         "audio": "ffmpeg",
         "stems": "Demucs",
         "mixer": "ffmpeg",

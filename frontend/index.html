@@ -749,6 +749,8 @@
                 <button @click="refreshSystemStatus">Consultar</button>
                 <button @click="restartBootstrap" :disabled="bootstrapRunning">Preparar/reiniciar</button>
                 <button @click="upgradeBootstrap" :disabled="bootstrapRunning">Actualizar dependencias</button>
+                <button @click="refreshLlmModel('gemma')" :disabled="bootstrapRunning">Recrear Gemma</button>
+                <button @click="refreshLlmModel('qwen')" :disabled="bootstrapRunning">Recrear Qwen</button>
               </div>
             </div>
             <div class="component-grid">

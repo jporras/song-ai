@@ -20,6 +20,20 @@ LOCAL_AUDIO_MARKER = CACHE_ROOT / ".local-audio-deps.installed"
 ACE_STEP_MARKER = CACHE_ROOT / ".ace-step.installed"
 
 
+LLM_MODEL_CONFIG = {
+    "gemma": {
+        "url_env": "SONG_AI_GEMMA_GGUF_URL",
+        "path_env": "SONG_AI_GEMMA_GGUF_PATH",
+        "default_path": MODEL_ROOT / "llm" / "gemma" / "gemma.gguf",
+    },
+    "qwen": {
+        "url_env": "SONG_AI_QWEN_GGUF_URL",
+        "path_env": "SONG_AI_QWEN_GGUF_PATH",
+        "default_path": MODEL_ROOT / "llm" / "qwen" / "qwen.gguf",
+    },
+}
+
+
 def run_bootstrap(force: bool = False, upgrade: bool = False) -> dict[str, object]:
     summary: dict[str, object] = {
         "enabled": force or enabled("SONG_AI_BOOTSTRAP_ON_START"),
@@ -43,6 +57,26 @@ def run_bootstrap(force: bool = False, upgrade: bool = False) -> dict[str, objec
     download_url_models(summary)
     download_huggingface_models(summary)
     clone_provider_repositories(summary)
+    return summary
+
+
+def refresh_llm_model(role: str) -> dict[str, object]:
+    normalized_role = role.strip().lower()
+    if normalized_role not in LLM_MODEL_CONFIG:
+        raise RuntimeError("Modelo LLM no soportado. Usa 'gemma' o 'qwen'.")
+    summary: dict[str, object] = {
+        "enabled": True,
+        "upgrade": True,
+        "python": sys.version.split()[0],
+        "policy": "refresh_single_llm_model",
+        "directories": [],
+        "installed_deps": False,
+        "downloads": [],
+        "providers": [],
+        "model_role": normalized_role,
+    }
+    ensure_directories(summary)
+    download_url_models(summary, refresh_roles={normalized_role}, require_url=True)
     return summary
 
 
@@ -121,15 +155,29 @@ def install_ace_step(upgrade: bool = False) -> bool:
     return True
 
 
-def download_url_models(summary: dict[str, object]) -> None:
+def download_url_models(
+    summary: dict[str, object],
+    refresh_roles: set[str] | None = None,
+    require_url: bool = False,
+) -> None:
+    refresh_roles = refresh_roles or set()
     url_targets = {
-        "SONG_AI_GEMMA_GGUF_URL": Path(os.getenv("SONG_AI_GEMMA_GGUF_PATH", str(MODEL_ROOT / "llm" / "gemma" / "gemma.gguf"))),
-        "SONG_AI_QWEN_GGUF_URL": Path(os.getenv("SONG_AI_QWEN_GGUF_PATH", str(MODEL_ROOT / "llm" / "qwen" / "qwen.gguf"))),
-        "SONG_AI_VOICE_MODEL_URL": MODEL_ROOT / "voice",
+        config["url_env"]: {
+            "role": role,
+            "target": Path(os.getenv(str(config["path_env"]), str(config["default_path"]))),
+        }
+        for role, config in LLM_MODEL_CONFIG.items()
     }
-    for env_name, target in url_targets.items():
+    url_targets["SONG_AI_VOICE_MODEL_URL"] = {"role": "voice", "target": MODEL_ROOT / "voice"}
+    for env_name, metadata in url_targets.items():
+        role = str(metadata["role"])
+        target = Path(metadata["target"])
+        if refresh_roles and role not in refresh_roles:
+            continue
         url = os.getenv(env_name, "").strip()
         if not url:
+            if require_url:
+                raise RuntimeError(f"Falta configurar {env_name} para descargar/recrear el modelo {role}.")
             continue
         if target.suffix:
             target_path = target
@@ -138,9 +186,22 @@ def download_url_models(summary: dict[str, object]) -> None:
             target.mkdir(parents=True, exist_ok=True)
             filename = Path(url.split("?")[0]).name or f"{env_name.lower()}.bin"
             target_path = target / filename
+        if role in refresh_roles and target_path.exists():
+            target_path.unlink()
+        downloaded = False
         if not target_path.exists():
-            urllib.request.urlretrieve(url, target_path)
-        summary["downloads"].append({"env": env_name, "path": str(target_path)})
+            download_to_path(url, target_path)
+            downloaded = True
+        summary["downloads"].append({"env": env_name, "role": role, "path": str(target_path), "downloaded": downloaded})
+
+
+def download_to_path(url: str, target_path: Path) -> None:
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = target_path.with_suffix(target_path.suffix + ".download")
+    if temporary_path.exists():
+        temporary_path.unlink()
+    urllib.request.urlretrieve(url, temporary_path)
+    temporary_path.replace(target_path)
 
 
 def download_huggingface_models(summary: dict[str, object]) -> None:

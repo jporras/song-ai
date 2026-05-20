@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from application.song_service import SongService
-from bootstrap.docker_bootstrap import run_bootstrap
+from bootstrap.docker_bootstrap import refresh_llm_model, run_bootstrap
 from config.settings import Settings
 from core.storage import StorageManager
 
@@ -38,27 +38,34 @@ class BootstrapRunner:
         with self.lock:
             return dict(self.state)
 
-    def start(self, upgrade: bool = False) -> dict[str, Any]:
+    def start(self, upgrade: bool = False, model_role: str | None = None) -> dict[str, Any]:
         with self.lock:
             if self.state["status"] == "running":
                 return dict(self.state)
+            if model_role:
+                message = f"Recreando modelo {model_role} en segundo plano."
+            else:
+                message = "Bootstrap actualizando dependencias en segundo plano." if upgrade else "Bootstrap ejecutandose en segundo plano."
             self.state = {
                 "status": "running",
-                "message": "Bootstrap actualizando dependencias en segundo plano." if upgrade else "Bootstrap ejecutandose en segundo plano.",
+                "message": message,
                 "upgrade": upgrade,
+                "model_role": model_role,
                 "result": {},
             }
-        thread = Thread(target=self._run, kwargs={"upgrade": upgrade}, daemon=True)
+        thread = Thread(target=self._run, kwargs={"upgrade": upgrade, "model_role": model_role}, daemon=True)
         thread.start()
         return self.status()
 
-    def _run(self, upgrade: bool = False) -> None:
+    def _run(self, upgrade: bool = False, model_role: str | None = None) -> None:
         try:
-            result = run_bootstrap(force=True, upgrade=upgrade)
+            result = refresh_llm_model(model_role) if model_role else run_bootstrap(force=True, upgrade=upgrade)
+            message = f"Modelo {model_role} recreado." if model_role else "Bootstrap actualizado." if upgrade else "Bootstrap finalizado."
             state = {
                 "status": "ready",
-                "message": "Bootstrap actualizado." if upgrade else "Bootstrap finalizado.",
+                "message": message,
                 "upgrade": upgrade,
+                "model_role": model_role,
                 "result": result,
             }
         except Exception as error:
@@ -66,6 +73,7 @@ class BootstrapRunner:
                 "status": "error",
                 "message": str(error),
                 "upgrade": upgrade,
+                "model_role": model_role,
                 "result": {},
             }
         with self.lock:
@@ -205,6 +213,11 @@ def restart_bootstrap() -> dict[str, Any]:
 @app.post("/api/system/bootstrap/upgrade")
 def upgrade_bootstrap() -> dict[str, Any]:
     return ok(bootstrap_runner.start(upgrade=True))
+
+
+@app.post("/api/system/models/{model_role}/refresh")
+def refresh_llm_model_endpoint(model_role: str) -> dict[str, Any]:
+    return ok(bootstrap_runner.start(upgrade=True, model_role=model_role))
 
 
 @app.get("/api/projects/phases")

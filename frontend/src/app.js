@@ -1087,6 +1087,12 @@ createApp({
       await this.loadProviders();
       this.addMessage(payload.data?.message || payload.detail || "Actualizacion iniciada.");
     },
+    async refreshLlmModel(role) {
+      const response = await fetch(apiUrl(`/api/system/models/${role}/refresh`), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const payload = await this.readApiPayload(response, {});
+      await this.loadProviders();
+      this.addMessage(payload.data?.message || payload.detail || `Recreacion de ${role} iniciada.`);
+    },
     async generateLocalFinalSong() {
       if (!this.canGenerateLocalFinalSong) {
         this.addMessage(this.localFinalStatusMessage);

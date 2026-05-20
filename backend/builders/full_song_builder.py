@@ -39,8 +39,8 @@ class FullSongBuilder:
                     "final_mix",
                 ],
                 "required_pipeline": {
-                    "interpreter": "Gemma 4 E4B IT GGUF via llama.cpp",
-                    "lyrics": "Gemma 4 E4B IT GGUF via llama.cpp",
+                    "interpreter": "Gemma 2 2B IT GGUF via llama.cpp",
+                    "lyrics": "Gemma 2 2B IT GGUF via llama.cpp",
                     "technical": "Qwen3 4B GGUF via llama.cpp",
                     "soundtrack": "MusicGen small, MusicGen medium if hardware allows",
                     "singing_voice": "RVC / ACE-Step, so-vits-svc optional",

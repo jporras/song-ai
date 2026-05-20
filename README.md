@@ -256,8 +256,8 @@ SONG_AI_QWEN_GGUF_PATH=/app/models/llm/qwen/qwen.gguf
 URLs opcionales de descarga:
 
 ```text
-SONG_AI_GEMMA_GGUF_URL=
-SONG_AI_QWEN_GGUF_URL=
+SONG_AI_GEMMA_GGUF_URL=https://huggingface.co/second-state/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf
+SONG_AI_QWEN_GGUF_URL=https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf
 ```
 
 Endpoints por rol:
@@ -275,11 +275,11 @@ docker compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build
 
 No hay que activar Gemma/Qwen con una variable adicional: Song AI intenta usarlos automaticamente cuando los servidores llama.cpp estan disponibles. Si no responden o faltan los `.gguf`, conserva guia local.
 
-Si el estado indica que faltan modelos, el bootstrap necesita URLs directas en:
+Si el estado indica que faltan modelos, `Preparar/reiniciar` o `Actualizar dependencias` descargan los GGUF cuando esas URLs estan configuradas. Los botones `Recrear Gemma` y `Recrear Qwen` eliminan el peso existente y lo vuelven a descargar en el volumen Docker.
 
 ```text
-SONG_AI_GEMMA_GGUF_URL=
-SONG_AI_QWEN_GGUF_URL=
+POST /api/system/models/gemma/refresh
+POST /api/system/models/qwen/refresh
 ```
 
 Tambien puedes colocar manualmente los archivos en el volumen Docker:
