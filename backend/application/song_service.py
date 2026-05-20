@@ -71,6 +71,7 @@ class SongService:
             storage,
             self.model_manager,
             soundtrack_command=settings.local_models.soundtrack_command if settings else "",
+            full_song_command=settings.local_models.full_song_command if settings else "",
             singing_voice_command=settings.local_models.singing_voice_command if settings else "",
             voice_conversion_command=settings.local_models.voice_conversion_command if settings else "",
             local_command_timeout_seconds=settings.local_models.local_command_timeout_seconds if settings else 3600,

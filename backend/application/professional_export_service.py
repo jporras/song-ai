@@ -30,7 +30,7 @@ class ProfessionalExportService:
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
         artifacts = self._existing_artifacts(project)
-        required = {"song_spec", "lyrics_json", "lyrics_approved_json", "music_plan_json", "midi", "instrumental_wav", "vocals_wav", "mix_wav", "final_song_wav", "final_song_mp3", "final_song_flac"}
+        required = self._required_artifacts(artifacts)
         available_types = {str(artifact["type"]) for artifact in artifacts}
         missing = sorted(required - available_types)
         if missing:
@@ -175,6 +175,15 @@ class ProfessionalExportService:
         }
 
     def _quality_report(self, artifacts: list[dict[str, object]]) -> dict[str, object]:
+        full_song = self._latest_final_full_song_artifact(artifacts)
+        if full_song:
+            mode = str(dict(full_song.get("metadata", {})).get("generation_mode", "local_full_song_command"))
+            return {
+                "export_ready": True,
+                "vocal_mode": "full_song_provider",
+                "generation_mode": mode,
+                "message": "Calidad minima aprobada: la cancion final proviene de un provider full-song local.",
+            }
         vocals = self._latest_artifact(artifacts, "vocals_wav")
         if not vocals:
             return {
@@ -202,6 +211,22 @@ class ProfessionalExportService:
     def _latest_artifact(self, artifacts: list[dict[str, object]], artifact_type: str) -> dict[str, object] | None:
         matches = [artifact for artifact in artifacts if str(artifact.get("type", "")) == artifact_type]
         return matches[-1] if matches else None
+
+    def _latest_final_full_song_artifact(self, artifacts: list[dict[str, object]]) -> dict[str, object] | None:
+        matches = [
+            artifact
+            for artifact in artifacts
+            if str(artifact.get("type", "")) == "final_song_wav"
+            and dict(artifact.get("metadata", {})).get("generation_mode") == "local_full_song_command"
+        ]
+        return matches[-1] if matches else None
+
+    def _required_artifacts(self, artifacts: list[dict[str, object]]) -> set[str]:
+        base = {"song_spec", "lyrics_json", "lyrics_approved_json", "music_plan_json", "midi"}
+        final = {"final_song_wav", "final_song_mp3", "final_song_flac"}
+        if self._latest_final_full_song_artifact(artifacts):
+            return base | final
+        return base | {"instrumental_wav", "vocals_wav", "mix_wav"} | final
 
     def _is_final_download(self, artifact_type: str) -> bool:
         return artifact_type in {"final_song_mp3", "final_song_wav", "final_song_flac", "project_zip"}

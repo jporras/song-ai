@@ -564,6 +564,52 @@ class AudioExportTest(unittest.TestCase):
             self.assertTrue(str(zip_filename).endswith("-project_zip.zip"))
             self.assertEqual(zip_media_type, "application/zip")
 
+    @unittest.skipIf(not shutil.which("ffmpeg"), "ffmpeg no esta disponible para exportar MP3")
+    def test_professional_full_song_command_can_create_export_without_stem_vocals(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            temp_path = Path(temp_dir)
+            full_song_source = temp_path / "source_full_song.wav"
+            self.write_tone_wav(full_song_source, 440.0)
+            base_settings = Settings.load()
+            local_settings = replace(
+                base_settings.local_models,
+                full_song_command=(
+                    f'"{sys.executable}" "{PROJECT_ROOT / "tools" / "use_audio_file.py"}" '
+                    f'--input "{full_song_source}" --output "{{output_path}}"'
+                ),
+                singing_voice_command="",
+            )
+            settings = replace(base_settings, data_dir=temp_path, local_models=local_settings)
+            storage = StorageManager(temp_path)
+            service = SongService(storage, settings)
+            service.bootstrap()
+            created = service.create_professional_project({"title": "Cancion full song"})
+            song_id = str(created["project"]["id"])
+            service.collect_professional_spec(
+                song_id,
+                {
+                    "message": (
+                        "Cancion de cuna para Isabella, 20 segundos, voz femenina suave, piano, "
+                        "cuerdas y pad, muy lenta a 70 bpm en C major, estructura intro verse chorus verse bridge outro y salida mp3."
+                    )
+                },
+            )
+            service.generate_professional_lyrics(song_id)
+            service.review_professional_lyrics(song_id)
+            service.generate_professional_music_plan(song_id)
+            service.generate_professional_midi(song_id)
+
+            mastered = service.master_professional_song(song_id)
+            exported = service.export_professional_song(song_id)
+            read = service.get_professional_export(song_id)
+            final_wav = next(artifact for artifact in read["artifacts"] if artifact["type"] == "final_song_wav")
+
+            self.assertEqual(mastered["generation_mode"], "local_full_song_command")
+            self.assertTrue(exported["quality"]["export_ready"])
+            self.assertEqual(exported["quality"]["vocal_mode"], "full_song_provider")
+            self.assertEqual(final_wav["metadata"]["generation_mode"], "local_full_song_command")
+            self.assertTrue(Path(str(mastered["final_mp3"])).exists())
+
     def test_docker_bootstrap_creates_named_volume_directories_without_downloads(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)

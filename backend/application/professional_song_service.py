@@ -12,6 +12,7 @@ from application.mixing_service import MixingService
 from application.model_manager_service import ModelManagerService
 from application.music_plan_service import MusicPlanService
 from application.professional_export_service import ProfessionalExportService
+from application.professional_full_song_service import ProfessionalFullSongService
 from application.technical_director_service import TechnicalDirectorService
 from application.vocal_synthesis_service import VocalSynthesisService
 from application.voice_conversion_service import VoiceConversionService
@@ -25,6 +26,7 @@ class ProfessionalSongService:
         storage: StorageManager,
         model_manager: ModelManagerService | None = None,
         soundtrack_command: str = "",
+        full_song_command: str = "",
         singing_voice_command: str = "",
         voice_conversion_command: str = "",
         local_command_timeout_seconds: int = 3600,
@@ -45,6 +47,11 @@ class ProfessionalSongService:
         self.vocal_synthesis_service = VocalSynthesisService(
             storage,
             command_template=singing_voice_command,
+            timeout_seconds=local_command_timeout_seconds,
+        )
+        self.full_song_service = ProfessionalFullSongService(
+            storage,
+            command_template=full_song_command,
             timeout_seconds=local_command_timeout_seconds,
         )
         self.voice_conversion_service = VoiceConversionService(
@@ -360,6 +367,21 @@ class ProfessionalSongService:
     def master_song(self, song_id: str) -> dict[str, object]:
         if self.storage.get_song_project(song_id) is None:
             raise ValueError("Proyecto profesional no encontrado.")
+        if self.full_song_service.configured():
+            self.model_manager.run_model("local-full-song-provider", {"song_id": song_id, "phase": SongPhase.MASTERING.value})
+            self.storage.create_song_event(
+                song_id=song_id,
+                phase=SongPhase.MASTERING.value,
+                status=SongPhaseStatus.RUNNING.value,
+                progress=35,
+                message="Generando cancion final completa con provider local full-song.",
+                active_model="local-full-song-provider",
+                payload={},
+            )
+            result = self.full_song_service.generate(song_id)
+            self.model_manager.unload_model("local-full-song-provider")
+            result["progress"] = self.progress_for(result["project"])
+            return result
         self.mixing_service.get(song_id)
         self.model_manager.run_model("local-mastering", {"song_id": song_id, "phase": SongPhase.MASTERING.value})
         self.storage.create_song_event(
