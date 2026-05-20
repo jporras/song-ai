@@ -182,6 +182,34 @@ docker compose up -d --build
 
 No uses `docker compose down -v` salvo que quieras borrar modelos, cache y datos.
 
+## Aceleracion GPU / iGPU
+
+La aceleracion recomendada para ACE-Step es NVIDIA CUDA. Para intentarlo, usa el override GPU:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+
+Validar dentro del contenedor:
+
+```powershell
+docker compose exec -T app sh -lc "nvidia-smi || true; ls -la /dev/nvidia* 2>/dev/null || true"
+```
+
+Tambien existe un override experimental para iGPU en hosts Linux que exponen `/dev/dri`:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.igpu.yml up -d --build
+```
+
+Validar:
+
+```powershell
+docker compose exec -T app sh -lc "ls -la /dev/dri 2>/dev/null || true"
+```
+
+Importante: en Docker Desktop sobre Windows, una Intel iGPU puede existir en el sistema, pero normalmente no queda disponible para PyTorch/ACE-Step dentro del contenedor Linux. Si dentro del contenedor no aparecen `/dev/dri`, `/dev/dxg` ni `/dev/nvidia*`, la generacion real solo puede correr por CPU o con una GPU NVIDIA correctamente expuesta.
+
 ## Variables Principales
 
 Archivo base:
@@ -196,6 +224,8 @@ Full Song local con ACE-Step:
 SONG_AI_FULL_SONG_COMMAND=python tools/acestep_generate.py --prompt {prompt_path} --lyrics {lyrics_path} --output {output_path} --checkpoint-path /app/models/music/ace-step --duration 60 --cpu-offload true --overlapped-decode true
 SONG_AI_INSTALL_ACE_STEP=true
 SONG_AI_ALLOW_CPU_FULL_SONG=true
+SONG_AI_IGPU_EXPERIMENTAL=false
+LIBVA_DRIVER_NAME=iHD
 ```
 
 Rutas alternativas por stems:

@@ -1,0 +1,10 @@
+services:
+  app:
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+    environment:
+      SONG_AI_IGPU_EXPERIMENTAL: ${SONG_AI_IGPU_EXPERIMENTAL:-true}
+      LIBVA_DRIVER_NAME: ${LIBVA_DRIVER_NAME:-iHD}
