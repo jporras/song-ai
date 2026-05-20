@@ -33,7 +33,7 @@ class LocalModelSettings:
     @classmethod
     def load(cls, project_root: Path) -> "LocalModelSettings":
         return cls(
-            llama_cpp_enabled=os.getenv("SONG_AI_LLAMA_CPP_ENABLED", "false").lower() == "true",
+            llama_cpp_enabled=True,
             llama_cpp_dir=Path(os.getenv("SONG_AI_LLAMA_CPP_DIR", str(project_root / "models" / "llama.cpp"))),
             llama_cpp_base_url=os.getenv("SONG_AI_LLAMA_CPP_BASE_URL", "http://localhost:8080"),
             llama_cpp_interpreter_base_url=os.getenv(
@@ -67,6 +67,7 @@ class LocalModelSettings:
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "llama_cpp_mode": "auto",
             "llama_cpp_enabled": self.llama_cpp_enabled,
             "llama_cpp_dir": str(self.llama_cpp_dir),
             "llama_cpp_base_url": self.llama_cpp_base_url,

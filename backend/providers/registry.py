@@ -23,7 +23,7 @@ class ProviderRegistry:
         self.music_providers: list[MusicProvider] = [LocalMusicProvider()]
         self.voice_providers: list[VoiceProvider] = [LocalVoiceProvider()]
         self.lyrics_providers: list[LyricsProvider] = []
-        if local_settings is not None and local_settings.llama_cpp_enabled:
+        if local_settings is not None:
             self.interpreter_providers.append(LlamaCppInterpreterProvider(local_settings))
             self.technical_providers.append(LlamaCppTechnicalProvider(local_settings))
             self.lyrics_providers.append(LlamaCppLyricsProvider(local_settings))
@@ -100,15 +100,22 @@ class ProviderRegistry:
     def llama_cpp_status(self) -> dict[str, object]:
         if self.local_settings is None:
             return {"enabled": False, "available": False, "reason": "No local settings loaded", "models": {}}
-        if not self.local_settings.llama_cpp_enabled:
+        model_files = self._llm_model_files()
+        missing_models = [
+            name
+            for name, metadata in model_files.items()
+            if not bool(metadata.get("exists"))
+        ]
+        if missing_models:
             return {
-                "enabled": False,
+                "enabled": True,
                 "available": False,
                 "base_url": self.local_settings.llama_cpp_base_url,
                 "interpreter_base_url": self.local_settings.llama_cpp_interpreter_base_url,
                 "technical_base_url": self.local_settings.llama_cpp_technical_base_url,
-                "models": self._llm_model_files(),
-                "reason": "Set SONG_AI_LLAMA_CPP_ENABLED=true para activar Gemma via llama.cpp.",
+                "models": model_files,
+                "missing_models": missing_models,
+                "reason": "Faltan modelos GGUF en el volumen Docker. Configura SONG_AI_GEMMA_GGUF_URL y SONG_AI_QWEN_GGUF_URL o coloca los archivos en /app/models/llm.",
             }
         provider = next(
             (item for item in self.interpreter_providers if isinstance(item, LlamaCppInterpreterProvider)),
@@ -126,7 +133,7 @@ class ProviderRegistry:
             "base_url": self.local_settings.llama_cpp_base_url,
             "interpreter_base_url": self.local_settings.llama_cpp_interpreter_base_url,
             "technical_base_url": self.local_settings.llama_cpp_technical_base_url,
-            "models": self._llm_model_files(),
+            "models": model_files,
             **provider.status(),
         }
 
@@ -190,8 +197,8 @@ class ProviderRegistry:
                 "engine": "llama.cpp",
                 "model": self.local_settings.interpreter_model,
                 "required_for_real_output": False,
-                "configured": self.local_settings.llama_cpp_enabled,
-                "detail": "Recomendado para Gemma/Qwen reales; la app conserva guia local si llama.cpp no responde.",
+                "configured": True,
+                "detail": "Gemma/Qwen se intentan automaticamente; la app conserva guia local si faltan modelos o el servidor no responde.",
             },
             {
                 "role": "soundtrack",
@@ -283,8 +290,6 @@ class ProviderRegistry:
                 return "configured"
             return "requires_configuration"
         if provider_name.startswith(("local-", "llamacpp-", "musicgen-", "singing-voice-")):
-            if provider_name.startswith("llamacpp-") and self.local_settings is not None:
-                return "configured" if self.local_settings.llama_cpp_enabled else "disabled"
             return "ready"
         return "unknown"
 

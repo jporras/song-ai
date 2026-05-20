@@ -596,8 +596,8 @@ class SongService:
         missing = ", ".join(missing_items) or "ninguna fase critica bloqueada"
         llama_cpp = self.provider_registry.llama_cpp_status()
         reason = str(llama_cpp.get("reason") or llama_cpp.get("error") or "").strip()
-        if not bool(llama_cpp.get("enabled")):
-            prefix = "Gemma esta usando guia local porque llama.cpp esta desactivado."
+        if llama_cpp.get("missing_models"):
+            prefix = "Gemma esta usando guia local porque faltan los modelos GGUF de llama.cpp."
         elif not bool(llama_cpp.get("available")):
             prefix = "Gemma esta usando guia local porque llama.cpp no respondio."
         else:

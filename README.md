@@ -34,7 +34,7 @@ Qwen es interno. Actua como director tecnico: valida especificacion, revisa letr
 
 La guia de Gemma prioriza el proyecto profesional activo. Solo menciona `sample/checkpoint` cuando no existe proyecto profesional y se esta usando el flujo legado de set.
 
-En la charla con Gemma, si llama.cpp esta desactivado o no responde, el fallback local explica la causa real, responde con la siguiente fase profesional pendiente y evita presentar `sample/checkpoint` o `cancion completa` como requisitos del flujo principal.
+En la charla con Gemma, la app intenta usar llama.cpp automaticamente. Si los servicios o modelos todavia no estan listos, el fallback local explica la causa real, responde con la siguiente fase profesional pendiente y evita presentar `sample/checkpoint` o `cancion completa` como requisitos del flujo principal.
 
 Flujo conceptual:
 
@@ -270,13 +270,23 @@ SONG_AI_LLAMA_CPP_TECHNICAL_BASE_URL=http://llama-qwen:8080
 Levantar llama.cpp con los GGUF ya descargados:
 
 ```powershell
-docker compose -f docker-compose.yml -f docker-compose.llm.yml --profile llm up -d --build
+docker compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build
 ```
 
-Luego activar:
+No hay que activar Gemma/Qwen con una variable adicional: Song AI intenta usarlos automaticamente cuando los servidores llama.cpp estan disponibles. Si no responden o faltan los `.gguf`, conserva guia local.
+
+Si el estado indica que faltan modelos, el bootstrap necesita URLs directas en:
 
 ```text
-SONG_AI_LLAMA_CPP_ENABLED=true
+SONG_AI_GEMMA_GGUF_URL=
+SONG_AI_QWEN_GGUF_URL=
+```
+
+Tambien puedes colocar manualmente los archivos en el volumen Docker:
+
+```text
+/app/models/llm/gemma/gemma.gguf
+/app/models/llm/qwen/qwen.gguf
 ```
 
 ## Bootstrap

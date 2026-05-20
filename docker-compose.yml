@@ -7,7 +7,6 @@ services:
     ports:
       - "8000:8000"
     environment:
-      SONG_AI_LLAMA_CPP_ENABLED: ${SONG_AI_LLAMA_CPP_ENABLED:-false}
       SONG_AI_LLAMA_CPP_BASE_URL: ${SONG_AI_LLAMA_CPP_BASE_URL:-http://host.docker.internal:8080}
       SONG_AI_LLAMA_CPP_INTERPRETER_BASE_URL: ${SONG_AI_LLAMA_CPP_INTERPRETER_BASE_URL:-http://llama-gemma:8080}
       SONG_AI_LLAMA_CPP_TECHNICAL_BASE_URL: ${SONG_AI_LLAMA_CPP_TECHNICAL_BASE_URL:-http://llama-qwen:8080}

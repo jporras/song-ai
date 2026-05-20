@@ -2,7 +2,6 @@ services:
   llama-gemma:
     image: ghcr.io/ggml-org/llama.cpp:server
     container_name: song-ai-llama-gemma
-    profiles: ["llm"]
     command:
       - "--host"
       - "0.0.0.0"
@@ -20,7 +19,6 @@ services:
   llama-qwen:
     image: ghcr.io/ggml-org/llama.cpp:server
     container_name: song-ai-llama-qwen
-    profiles: ["llm"]
     command:
       - "--host"
       - "0.0.0.0"
