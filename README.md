@@ -17,6 +17,8 @@ Ultimo ajuste:
 - `VocalSynthesisService` guarda `quality_status` en los metadatos de `vocals_wav`; Production muestra la advertencia y bloquea la descarga de MP3/WAV/FLAC finales cuando la voz no supera calidad minima.
 - `SONG_AI_FULL_SONG_COMMAND` quedo conectado al pipeline profesional: en la fase de Mastering, si existe un provider full-song local como ACE-Step, genera `final_song.wav`, `final_song.mp3` y `final_song.flac` como candidato final sin depender de la voz procedural por stems.
 - `.env.example`, `backend/.env.example` y `docker-compose.yml` quedan alineados para usar ACE-Step como ruta local principal y dejar `SONG_AI_SOUNDTRACK_COMMAND`/`SONG_AI_SINGING_VOICE_COMMAND` como alternativa por stems.
+- El estado de providers ya distingue la ruta principal Full Song de la ruta alternativa por stems: `singing_voice` separado puede quedar sin configurar sin bloquear la cancion final si ACE-Step/full-song esta listo.
+- El estado de estudio ya no bloquea la salida final local solo porque llama.cpp/Gemma real este apagado; Gemma/Qwen reales siguen recomendados, pero la app mantiene guia local si el servidor LLM no responde.
 - Refactorizacion profesional iniciada en fase 1/12: se agregaron entidades SQLite nuevas para `SongProject`, `SongSpec`, `SongArtifact`, `SongEvent` y `ModelExecution`, con endpoints `/api/pro/projects` y `/api/pro/phases`.
 - El nuevo flujo profesional arranca en `SONG_SPEC_COLLECTION`: Gemma queda como interfaz creativa del usuario y Qwen queda reservado como director tecnico interno para validar la especificacion antes de generar.
 - El progreso operativo se reporta como fase de refactorizacion `1/12`; el pipeline musical interno conserva sus fases principales y marca `MIDI_GENERATION` como etapa obligatoria.

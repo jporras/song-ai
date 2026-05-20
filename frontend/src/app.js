@@ -479,7 +479,7 @@ createApp({
       if (this.localFinalJob?.status === "error") return this.localFinalJob.message || "La generacion final local fallo.";
       if (this.localFinalJob?.status === "ready") return this.localFinalJob.message || "Cancion final local lista.";
       if (this.bootstrapRunning) return "Bootstrap preparando dependencias locales. Consulta estado en unos minutos.";
-      if (this.localPipeline.ready) return "Pipeline local listo para generar final.";
+      if (this.localPipeline.ready) return "Pipeline local listo: Full Song puede generar cancion con voz integrada.";
       return `Falta configurar: ${this.localPipeline.missing?.join(", ") || "requisitos locales"}.`;
     },
   },

@@ -157,34 +157,42 @@ class ProviderRegistry:
                 "missing": ["settings"],
                 "requirements": [],
             }
+        full_song_configured = bool(self.local_settings.full_song_command.strip())
+        soundtrack_configured = bool(self.local_settings.soundtrack_command.strip())
+        singing_voice_configured = bool(self.local_settings.singing_voice_command.strip())
+        stems_required = not full_song_configured
         requirements = [
             {
                 "role": "full_song",
                 "engine": "ACE-Step",
                 "model": "ACE-Step local command",
                 "required_for_real_output": True,
-                "configured": bool(self.local_settings.full_song_command.strip()),
+                "configured": full_song_configured,
+                "detail": "Ruta principal: genera cancion completa con voz integrada.",
             },
             {
                 "role": "interpreter_and_lyrics",
                 "engine": "llama.cpp",
                 "model": self.local_settings.interpreter_model,
-                "required_for_real_output": True,
+                "required_for_real_output": False,
                 "configured": self.local_settings.llama_cpp_enabled,
+                "detail": "Recomendado para Gemma/Qwen reales; la app conserva guia local si llama.cpp no responde.",
             },
             {
                 "role": "soundtrack",
                 "engine": "MusicGen",
                 "model": self.local_settings.soundtrack_model,
-                "required_for_real_output": True,
-                "configured": True,
+                "required_for_real_output": stems_required,
+                "configured": soundtrack_configured,
+                "detail": "Ruta alternativa por stems; no es necesaria si Full Song esta configurado.",
             },
             {
                 "role": "singing_voice",
                 "engine": self.local_settings.singing_voice_engine,
                 "model": self.local_settings.singing_voice_engine,
-                "required_for_real_output": True,
-                "configured": True,
+                "required_for_real_output": stems_required,
+                "configured": singing_voice_configured,
+                "detail": "Ruta alternativa para vocals.wav separado; no es necesaria si Full Song esta configurado.",
             },
             {
                 "role": "stems",
