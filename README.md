@@ -34,7 +34,7 @@ Qwen es interno. Actua como director tecnico: valida especificacion, revisa letr
 
 La guia de Gemma prioriza el proyecto profesional activo. Solo menciona `sample/checkpoint` cuando no existe proyecto profesional y se esta usando el flujo legado de set.
 
-En la charla con Gemma, si llama.cpp no responde, el fallback local responde con la siguiente fase profesional pendiente y evita presentar `sample/checkpoint` o `cancion completa` como requisitos del flujo principal.
+En la charla con Gemma, si llama.cpp esta desactivado o no responde, el fallback local explica la causa real, responde con la siguiente fase profesional pendiente y evita presentar `sample/checkpoint` o `cancion completa` como requisitos del flujo principal.
 
 Flujo conceptual:
 

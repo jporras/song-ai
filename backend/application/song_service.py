@@ -594,10 +594,16 @@ class SongService:
             if str(item) not in {"sample/checkpoint", "cancion completa"}
         ]
         missing = ", ".join(missing_items) or "ninguna fase critica bloqueada"
-        return (
-            "Gemma local esta en guia de respaldo porque llama.cpp no respondio. "
-            f"Pendiente: {missing}. Siguiente accion: {readiness['recommendations'][0]}"
-        )
+        llama_cpp = self.provider_registry.llama_cpp_status()
+        reason = str(llama_cpp.get("reason") or llama_cpp.get("error") or "").strip()
+        if not bool(llama_cpp.get("enabled")):
+            prefix = "Gemma esta usando guia local porque llama.cpp esta desactivado."
+        elif not bool(llama_cpp.get("available")):
+            prefix = "Gemma esta usando guia local porque llama.cpp no respondio."
+        else:
+            prefix = "Gemma esta usando guia local porque la respuesta de llama.cpp no fue usable."
+        detail = f" Detalle: {reason}." if reason else ""
+        return f"{prefix}{detail} Pendiente: {missing}. Siguiente accion: {readiness['recommendations'][0]}"
 
     def describe_set(self, song_set: dict[str, object]) -> dict[str, object]:
         compatibility = dict(song_set.get("compatibility_data", {}))
