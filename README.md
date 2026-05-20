@@ -1,680 +1,411 @@
-# Song AI Generator
+# Song AI
 
-Sistema modular en Python para generar canciones personalizadas completas mediante assets reutilizables:
+Song AI es un estudio musical local asistido por IA para crear canciones completas desde una idea creativa hasta exportables finales. La aplicacion corre en Docker, guarda el trabajo en SQLite y volumenes persistentes, y mantiene separados los artefactos de letra, plan musical, MIDI, audio y exportacion.
 
-- instrumental base,
-- melodia vocal adaptable,
-- letra dinamica.
-
-La aplicacion se enfoca ahora en generar una cancion terminada con herramientas locales. El modo pro queda pausado hasta que el pipeline local produzca sin errores una cancion decente con instrumental, melodia, voz cantada y mezcla. El caso guia actual es una cancion de cuna o cancion infantil/emocional completa, no un Short ni una letra simple repetitiva.
+El objetivo actual es generar canciones locales con herramientas gratuitas. El modo pro/pago esta pausado.
 
 ## Estado Actual
 
-Sprint actual: Sprint 15 en ejecucion: cierre del modo local real y pausa explicita del modo pro.
+La ruta local principal es **Full Song con ACE-Step**:
 
-Ultimo ajuste:
-- Control de calidad vocal agregado: `ProfessionalExportService` ya no permite exportar una cancion final si `vocals.wav` viene de `procedural_vocal_guide`; ese archivo queda tratado como guia/preview, no como voz cantada real.
-- `VocalSynthesisService` guarda `quality_status` en los metadatos de `vocals_wav`; Production muestra la advertencia y bloquea la descarga de MP3/WAV/FLAC finales cuando la voz no supera calidad minima.
-- `SONG_AI_FULL_SONG_COMMAND` quedo conectado al pipeline profesional: en la fase de Mastering, si existe un provider full-song local como ACE-Step, genera `final_song.wav`, `final_song.mp3` y `final_song.flac` como candidato final sin depender de la voz procedural por stems.
-- `.env.example`, `backend/.env.example` y `docker-compose.yml` quedan alineados para usar ACE-Step como ruta local principal y dejar `SONG_AI_SOUNDTRACK_COMMAND`/`SONG_AI_SINGING_VOICE_COMMAND` como alternativa por stems.
-- El estado de providers ya distingue la ruta principal Full Song de la ruta alternativa por stems: `singing_voice` separado puede quedar sin configurar sin bloquear la cancion final si ACE-Step/full-song esta listo.
-- El estado de estudio ya no bloquea la salida final local solo porque llama.cpp/Gemma real este apagado; Gemma/Qwen reales siguen recomendados, pero la app mantiene guia local si el servidor LLM no responde.
-- llama.cpp quedo preparado por roles: Gemma usa `SONG_AI_LLAMA_CPP_INTERPRETER_BASE_URL`, Qwen usa `SONG_AI_LLAMA_CPP_TECHNICAL_BASE_URL`, y los GGUF se descargan en rutas persistentes `SONG_AI_GEMMA_GGUF_PATH` y `SONG_AI_QWEN_GGUF_PATH`.
-- Se agrego `docker-compose.llm.yml` con dos servicios opcionales `llama-gemma` y `llama-qwen`; se activan con el profile `llm` cuando los modelos GGUF ya existen en el volumen `song_ai_models`.
-- Refactorizacion profesional iniciada en fase 1/12: se agregaron entidades SQLite nuevas para `SongProject`, `SongSpec`, `SongArtifact`, `SongEvent` y `ModelExecution`, con endpoints `/api/pro/projects` y `/api/pro/phases`.
-- El nuevo flujo profesional arranca en `SONG_SPEC_COLLECTION`: Gemma queda como interfaz creativa del usuario y Qwen queda reservado como director tecnico interno para validar la especificacion antes de generar.
-- El progreso operativo se reporta como fase de refactorizacion `1/12`; el pipeline musical interno conserva sus fases principales y marca `MIDI_GENERATION` como etapa obligatoria.
-- Fase 2/12 en marcha: `CreativeAgentService` convierte lenguaje del usuario a `song_spec`, `TechnicalDirectorService` valida campos faltantes como Qwen y `ModelManagerService` aplica la politica de un modelo pesado cargado a la vez.
-- Se agrego `POST /api/pro/projects/{song_id}/spec/messages` para el flujo Usuario -> Gemma -> Qwen -> Gemma -> Usuario; si Qwen aprueba, el proyecto avanza a `LYRICS_GENERATION` y se guarda `projects/{song_id}/song_spec.json`.
-- Fase 3/12 en marcha: `LyricsService` genera letra cantable desde `song_spec`, guarda `projects/{song_id}/lyrics.json` y `lyrics.md`, y conserva edicion via `GET/PUT /api/pro/projects/{song_id}/lyrics`.
-- La generacion de letra profesional avanza el proyecto a `LYRICS_TECHNICAL_REVIEW`, donde Qwen revisara estructura, repeticion, duracion y compatibilidad musical en la siguiente fase.
-- Fase 4/12 en marcha: `LyricsReviewService` permite a Qwen revisar estructura, repeticion, longitud y compatibilidad con duracion/BPM/estilo mediante `POST /api/pro/projects/{song_id}/lyrics/review`.
-- Si Qwen aprueba la letra, se guarda `projects/{song_id}/lyrics_approved.json` y el proyecto avanza a `MUSIC_PLAN_GENERATION`; si falla, vuelve a edicion de letra con recomendaciones para Gemma.
-- Fase 5/12 en marcha: `MusicPlanService` genera `projects/{song_id}/music_plan.json` con BPM, key, compas, progresion de acordes, estructura por segundos, intensidad por seccion y requisitos para MIDI.
-- Se agregaron `POST/GET /api/pro/projects/{song_id}/music-plan`; al completar el plan musical el proyecto avanza a `MIDI_GENERATION`, fase obligatoria antes del audio.
-- Fase 6/12 en marcha: `MidiGenerationService` crea un `song_base.mid` real y `midi_metadata.json` desde `music_plan.json`, con tracks para marcadores de seccion, acordes y melodia vocal guia.
-- Se agregaron `POST/GET /api/pro/projects/{song_id}/midi`; al completar el MIDI el proyecto avanza a `INSTRUMENTAL_GENERATION`.
-- Fase 7/12 en marcha: `InstrumentalGenerationService` genera `instrumental.wav` desde `music_plan.json` y `song_base.mid`; usa `SONG_AI_SOUNDTRACK_COMMAND` si esta configurado y si no usa un renderer local procedural para mantener el pipeline ejecutable.
-- Se agregaron `POST/GET /api/pro/projects/{song_id}/instrumental`; al completar el instrumental el proyecto avanza a `VOCAL_SYNTHESIS`.
-- Fase 8/12 en marcha: `VocalSynthesisService` genera `vocals.wav` desde `lyrics_approved.json`, `midi_metadata.json` y `voice_style`; usa `SONG_AI_SINGING_VOICE_COMMAND` si esta configurado y si no crea una guia vocal cantada procedural.
-- Se agregaron `POST/GET /api/pro/projects/{song_id}/vocals`; al completar la voz el proyecto avanza a `VOICE_CONVERSION`.
-- Fase 9/12 en marcha: `VoiceConversionService` aplica conversion opcional con `SONG_AI_VOICE_CONVERSION_COMMAND`; si no hay provider configurado, omite la fase y deja `vocals_converted.wav` como passthrough de `vocals.wav`.
-- Se agregaron `POST/GET /api/pro/projects/{song_id}/voice-conversion`; al completar u omitir la conversion el proyecto avanza a `MIXING`.
-- Fase 10/12 en marcha: `MixingService` combina `instrumental.wav` con `vocals_converted.wav` o `vocals.wav`, aplica ganancia, reverb suave y normalizacion, y genera `mix.wav`.
-- Se agregaron `POST/GET /api/pro/projects/{song_id}/mix`; al completar la mezcla el proyecto avanza a `MASTERING`.
-- Fase 11/12 en marcha: `MasteringService` procesa `mix.wav`, aplica limpieza DC, normalizacion, limitador suave y exporta `final_song.wav` + `final_song.mp3`.
-- Se agregaron `POST/GET /api/pro/projects/{song_id}/master`; al completar el mastering el proyecto avanza a `EXPORT`.
-- Fase 12/12 en marcha: `ProfessionalExportService` crea `export_manifest.json`, lista artefactos desde SQLite y expone descargas por tipo de artefacto.
-- Se agregaron `POST/GET /api/pro/projects/{song_id}/export` y `GET /api/pro/projects/{song_id}/artifacts/{artifact_type}/download`; al exportar, el proyecto queda `completed`.
-- Refactor UX iniciado: la app adopta layout de estudio musical con sidebar persistente, workspace central y footer global de Gemma como unica interfaz conversacional visible.
-- La navegacion principal queda orientada a rutas de producto: `/library`, `/intent`, `/lyrics`, `/music-plan`, `/midi`, `/instrumental`, `/voice` y `/production`.
-- La sidebar muestra proyecto activo y fases con estados visuales `EMPTY`, `PROCESSING`, `READY`, `DIRTY`, `OUTDATED` y `ERROR`; los cambios locales activan dirty state y modal de navegacion.
-- Biblioteca queda enfocada en proyectos vivos: favoritos, recientes, busqueda por ID/nombre/descripcion/tags y archivado local que oculta proyectos salvo en busqueda.
-- Lyrics cambia a editor estructural por secciones movibles/duplicables/eliminables con acciones creativas y deteccion de variables `{variable}`.
-- Production concentra metadata editable, resumen expandible, estado local y exportables descargables; no abre carpetas del sistema porque la app vive en Docker.
-- Sistema visual actualizado: dark mode cinematografico por defecto con paleta `#0F1115`, panels `#171A21`, sidebar `#0B0D12`, bordes `#2A2F3A` y accent violeta azulado `#7C8CFF`.
-- Se suavizaron cards, footer de Gemma, sliders, acordeones, estados y hover/microanimaciones para acercar la UI a un estudio musical moderno tipo DAW elegante.
-- Sprint Biblioteca completado: `/library` muestra favoritos ordenados por fecha de favorito, recientes no archivados, busqueda por ID/nombre/descripcion/tags que incluye archivados y panel de metadata con acciones.
-- Archivar un proyecto lo oculta de las listas principales y elimina su favorito local; restaurar solo aparece desde resultados de busqueda.
-- Sprint Production completado: `/production` concentra metadata editable, estado global, seleccion/creacion de proyecto profesional, pasos de pipeline desde spec hasta export y lista de exportables descargables.
-- Production puede enviar la intencion consolidada al flujo profesional, ejecutar fases paso a paso y refrescar `export_manifest.json` sin abrir carpetas del sistema.
-- Sprint Intent completado: `/intent` funciona como brief creativo con descripcion, destinatario, tipo de cancion, idioma, BPM, tonalidad, direccion vocal general, sliders emocionales, instrumentos por acordeon e inspiraciones enriquecidas.
-- Intent puede convertir la identidad musical en drafts base de instrumental y melodia guia sin entrar todavia en detalles tecnicos de Voice o Instrumental.
-- Sprint Lyrics completado: `/lyrics` agrega metricas de composicion, renumeracion automatica por tipo de seccion, presets de seccion, preview markdown y plantillas locales guardables/cargables.
-- El editor de Lyrics conserva acciones por seccion como mejorar, recrear, expandir, acortar, variantes, duplicar, mover y eliminar, manteniendo variables `{variable}` editables.
-- Sprint Music Plan completado: `/music-plan` muestra un brief tecnico musical, controles de BPM/tonalidad/compas/progresion, timeline editable por secciones, intensidad por seccion y transiciones musicales.
-- Music Plan incluye notas de instrumentacion y un resumen de uso de transiciones para preparar MIDI, Instrumental y Voice sin convertirse todavia en DAW completo.
-- Sprint MIDI completado: `/midi` incorpora tracks editables, piano roll simplificado, notas visuales, controles de velocity, humanizacion, densidad melodica, swing, timing y ritmo de acordes.
-- MIDI permite activar/desactivar tracks, agregar/eliminar notas de preview y lanzar la generacion real de `song_base.mid` desde el pipeline profesional.
-- Sprint Instrumental completado: `/instrumental` agrega brief de escultura sonora, controles de textura, ambiente, profundidad, brillo, movimiento, ancho stereo, stems/capas con mute/solo y waveform minimalista de preview.
-- Instrumental puede lanzar la generacion real del proveedor profesional y tambien crear un draft instrumental reutilizable para sets.
-- Sprint Voice completado: `/voice` agrega direccion de interpretacion vocal con voz principal, emocion, performance, pronunciacion, respiraciones, humanizacion, vibrato, blend de capas y opciones de armonias/conversion.
-- Voice permite definir capas vocales y distribucion por seccion: quien canta, cuantas voces entran, modo de interpretacion, armonias, call & response y preview vocal antes de Production.
-- Sprint de integracion UX iniciado: la barra lateral ahora calcula estados `READY` para Music Plan, MIDI, Instrumental y Voice usando sus datos locales de trabajo, no solo drafts del flujo antiguo.
-- Verificacion final parcial completada sin recrear Docker: `npm.cmd run build`, `python -m unittest discover -s tests -p "test_*.py"` y `python -m compileall backend tests` pasan correctamente.
-- Verificacion Docker del flujo profesional completada: el contenedor existente genero spec, letra, revision, plan musical, MIDI, instrumental, voz, conversion opcional, mezcla, mastering y export con 13 artefactos, incluyendo `final_song.mp3` descargable.
-- Se ajustaron mensajes user-facing del backend para mantener a Gemma como cara visible y referirse al rol tecnico como `director tecnico`, dejando el identificador del modelo solo como detalle interno/API.
-- El boton `Generar final local` ahora inicia `/api/local-final-song` como tarea interna en segundo plano y la UI consulta `/api/local-final-song/status`, evitando que una generacion local lenta bloquee la pantalla sin feedback.
-- Auditoria de fases/exportables: Lyrics ya evita tokens tecnicos en ingles dentro de letras en español y la revision tecnica los rechaza; Mastering ahora produce WAV, MP3 y FLAC; Export crea tambien `project_export.zip` descargable.
-- Se corrigio el alcance del producto: el objetivo es generar una cancion completa con buena letra, estructura musical, soundtrack, voz cantada, mezcla final y exportacion de audio.
-- La referencia visual o de YouTube queda solo como inspiracion de sensibilidad/ternura; el video es opcional y no define el formato.
-- La prioridad del sistema queda fija: buena letra, buena intencion emocional, buena estructura musical, soundtrack coherente, voz cantada y mezcla final.
-- Se agregaron defaults de cancion de cuna para Isabella en la UI y en los mocks creativos.
-- Se configuro el stack local/hibrido recomendado: Gemma 4 E4B IT GGUF para interpreter/lyrics, Qwen3 4B GGUF para soporte tecnico, MusicGen para soundtrack, RVC/ACE-Step para voz cantada, Demucs para stems y ffmpeg para mezcla/export.
-- El sistema explicita que no debe priorizar canciones de 20 segundos, formato Short, repeticion excesiva, letras genericas ni TTS hablado como si fuera canto.
-- El proyecto fue inicializado como repositorio Git en `main` y subido a `https://github.com/jporras/song-ai`.
-- `docs/` queda como planeamiento inicial local y no se versiona en Git; el repositorio contiene solo el proyecto ejecutable, configuracion y documentacion operativa.
-- Se agrego estado de estudio IA en `GET /api/studio/status`: providers activos por rol, politica de SQLite como fuente activa, JSON como snapshots y handoffs via estado.
-- La UI de Biblioteca muestra providers activos, estado de modelos locales y contrato del estudio IA.
-- Estructura alineada con arquitectura backend/frontend: el codigo Python vive en `backend/`.
-- Entorno virtual local creado en `.venv` con Python 3.11.0.
-- Las opciones de estado/verificacion/listado de carpetas salieron del menu principal y ahora viven como diagnostico de test.
-- El menu principal ahora guia al usuario por procesos creativos: instrumental, melodia, letra, set, sample y cancion completa.
-- Las preguntas creativas muestran catalogos numerados y permiten opcion personalizada cuando aplica.
-- Cada pregunta creativa incluye una explicacion breve y una opcion `L` para describir libremente; la app interpreta ese texto de forma local/mock y asigna un valor cercano.
-- Sprints 8 a 12 completados en modo mock/local: providers, mezcla, exportaciones y plantillas reutilizables.
-- Transformacion web iniciada: backend FastAPI con arquitectura hexagonal, frontend Vue/Vite y SQLite en un solo contenedor Docker.
-- Los sets ahora representan proyectos musicales: guardan nombre de proyecto, fecha, descripcion, IDs de assets y ruta del `set.json` en SQLite.
-- La vista de produccion incluye asistencia IA para recordar que un set/proyecto necesita completar los puntos 1, 2 y 3: instrumental, melodia y letra.
-- `AGENTS.md` define como regla del rol IA que la asistencia debe recordar, validar y bloquear avance cuando falte instrumental, melodia o letra.
-- Los sets persistidos en SQLite se pueden exportar/regenerar como JSON; si el `set.json` ya existe, se sobrescribe desde la version vigente en base de datos.
-- La UI incluye un footer de asistencia IA con sugerencias dinamicas para reforzar el procedimiento correcto: completar instrumental, melodia y letra, crear set, generar sample y luego cancion completa.
-- `AGENTS.md` tambien define que la IA debe ayudar a completar una cancion acorde al proyecto activo usando nombre, descripcion, intents, assets y set como contexto.
-- Se inicio `ModelOrchestrator` en modo mock: registra handoffs, tasks y model runs en SQLite sin cargar modelos reales todavia.
-- Cada proyecto conserva un historico de pasos (`project_events`) con fecha, fase, actor/modelo, estado y mensaje para reconstruir el camino de creacion de la cancion.
-- Produccion ahora muestra explicitamente el paso `Generar WAV/MP3`; en modo mock crea `exports/final_mix.wav` como audio valido de prueba y genera `final_mix.mp3` si `ffmpeg` esta disponible.
-- Produccion incluye `Crear MP3 predefinido`, que arma la cancion de cuna para Isabella con los defaults actuales, crea set/sample/cancion/mezcla y exporta WAV/MP3 en un solo flujo.
-- Produccion incluye `Cancion local final`, que solo genera final si existen comandos locales reales para soundtrack, voz cantada y ffmpeg. Si falta algo, no entrega un MP3 final falso.
-- El pipeline local valida disponibilidad real de ACE-Step antes de marcarlo como listo; si el comando falla, la API devuelve error JSON legible en vez de tumbar la UI.
-- Cuando `Full Song` esta listo, `Soundtrack` y `Singing Voice` se muestran como ruta alternativa/opcional por stems, no como bloqueo rojo.
-- La descarga `Guardar MP3 final` exige `local_final_manifest.json`; una maqueta mock con guia vocal sintetica ya no se puede confundir ni descargar como cancion final local.
-- El modo pro queda en pausa: no se registran providers pagos/remotos en el pipeline activo.
-- Produccion incluye `Estado local del sistema`: lista componentes, servicios/volumenes, comandos locales y bootstrap con indicador visual, boton para consultar estado y boton para preparar/reiniciar bootstrap en segundo plano.
-- La barra lateral muestra el set activo y las fases del proyecto/set para que el avance este siempre visible mientras se trabaja.
-- Produccion centra la charla del usuario en Gemma; Qwen queda como apoyo tecnico interno del orquestador y no como chat directo.
-- La actividad local muestra hora con minutos y segundos en cada evento visible.
-- Biblioteca es el punto de entrada del flujo: lista sets anteriores por nombre/fecha, permite crear un nuevo set y carga el proyecto activo antes de pasar a Produccion.
-- Pendiente: completar la cadena local real de voz cantada/calidad con ACE-Step como provider principal. Actualmente el estado local bloquea el MP3 final si `full_song` no esta listo; `soundtrack/singing_voice` quedan como ruta alternativa por stems.
-- El bootstrap repara instalaciones parciales de ACE-Step limpiando paquetes Torch/Torchvision conflictivos del volumen `provider-cache` y reinstalando el provider; la generacion local guarda log en `local_pipeline/local_command.log` y respeta `SONG_AI_LOCAL_COMMAND_TIMEOUT_SECONDS`.
-- El estado local exige GPU CUDA para habilitar ACE-Step por defecto. Si Docker no expone GPU, `Full Song` queda bloqueado con mensaje claro; `SONG_AI_ALLOW_CPU_FULL_SONG=true` permite intentarlo por CPU, pero puede tardar horas.
-- El compose normal arranca sin GPU y mantiene `Full Song` bloqueado si CUDA no esta disponible. Para intentar ACE-Step con GPU usa `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build`; si Docker/WSL no ve la GPU, el daemon mostrara el error de NVIDIA y no arrancara ese modo.
-- La API de fases usa una ruta estatica prioritaria (`/api/projects/phases`) y la UI tolera respuestas fallidas para no dejar la pantalla en blanco.
-- El bootstrap de Docker arranca en segundo plano junto con FastAPI para que reparaciones largas de modelos/dependencias no dejen la UI sin responder.
-- FastAPI no usa `provider-cache/python` como `PYTHONPATH` global; ese cache se inyecta solo en comandos/probes de audio para evitar que una reparacion pip afecte el servidor vivo.
-- Las pruebas de import de ACE-Step se ejecutan en subprocess aislado para que un fallo nativo de Torch/diffusers no tumbe FastAPI.
-- Produccion incluye charla con Gemma para el proyecto activo via llama.cpp cuando `SONG_AI_LLAMA_CPP_ENABLED=true`; si llama.cpp no responde, conserva guia local y deja la app ejecutable.
-- Qwen tecnico queda como rol interno para ajustes de pipeline, workers, SQLite y ffmpeg; el usuario habla con Gemma y Gemma registra el handoff tecnico.
+- ACE-Step genera una cancion completa con instrumental y voz cantada integrada.
+- La fase de Mastering del pipeline profesional puede usar `SONG_AI_FULL_SONG_COMMAND`.
+- Si Full Song esta listo, `soundtrack` y `singing_voice` separados son opcionales.
+- Si el sistema cae en `procedural_vocal_guide`, la app bloquea la descarga como final.
 
-Completado:
-- Sprint 1: estructura modular, menu principal, carpetas de datos y storage basico.
-- Sprint 2: modelos JSON iniciales, `AssetDraft`, `SongSet`, `manifest.json` e `intent.json`.
-- Sprint 3: exploradores mock para instrumentales, melodias y letras.
-- Sprint 4: curaduria basica con favoritos.
-- Sprint 5: set builder mock con validacion de assets disponibles.
-- Sprint 6: sample builder mock desde el ultimo set valido.
-- Sprint 7: full song builder mock desde el ultimo sample valido.
-
-- Sprint 8: providers locales mock intercambiables.
-- Sprint 9: modo pro pausado; no se registran providers pagos/remotos en el pipeline activo.
-- Sprint 10: mezcla mock con verificacion de `ffmpeg` y contrato de stems.
-- Sprint 11: exportaciones completas planeadas por formato.
-- Sprint 12: plantillas reutilizables desde sets.
-- Sprint 13: estado de estudio IA, providers activos y contrato multi-modelo en UI/API.
-
-Pendiente siguiente:
-- Levantar/instalar los binarios y modelos GGUF reales de llama.cpp para Gemma 4 E4B IT y Qwen3 4B; la app ya tiene cliente HTTP, providers y fallback local.
-- Configurar `SONG_AI_SOUNDTRACK_COMMAND` para generar `stems/instrumental.wav` localmente con MusicGen u otra herramienta gratuita.
-- Configurar `SONG_AI_SINGING_VOICE_COMMAND` para generar `stems/vocals.wav` localmente con RVC/ACE-Step u otra herramienta gratuita de voz cantada.
-- Usar ffmpeg local/Docker para mezclar y exportar `exports/final_mix.wav` y `exports/final_mix.mp3`.
-- Implementar carga por demanda y liberacion de memoria entre modelos.
-
-## Alcance De Cancion
-
-El sistema debe crear una cancion completa de cuna, infantil/emocional o familiar personalizada. Puede usar nombre propio, narrativa suave, tono poetico y estructura musical completa.
-
-Estructuras soportadas:
-- intro,
-- verso 1,
-- pre-coro opcional,
-- coro,
-- verso 2,
-- puente opcional,
-- coro final,
-- outro.
-
-El sistema debe poder producir:
-- letra original de buena calidad,
-- estructura musical completa,
-- soundtrack/instrumental,
-- voz cantada,
-- mezcla final,
-- exportacion de audio,
-- video opcional solo como fase futura.
-
-No se considera objetivo principal:
-- canciones de 20 segundos,
-- formato Short,
-- repeticion excesiva,
-- letras genericas,
-- TTS hablado como si fuera canto.
-
-## Stack Local/Hibrido
-
-LLM via llama.cpp:
-- `interpreter`: Gemma 4 E4B IT GGUF para entender intencion, pedir/inferir datos faltantes, decidir estilo, tono y estructura, y coordinar servicios.
-- `lyrics`: Gemma 4 E4B IT GGUF para crear letra completa, mejorar metrica/rima, adaptar tono, estructurar secciones y generar prompts musicales.
-- `technical`: Qwen3 4B GGUF para soporte tecnico, codigo, debugging y arquitectura.
-
-Audio:
-- `soundtrack`: MusicGen small inicialmente; MusicGen medium si el hardware lo permite.
-- `singing_voice`: RVC / ACE-Step; so-vits-svc opcional.
-- `stems`: Demucs.
-- `mixer`: ffmpeg.
-
-Variables para conectar llama.cpp:
-
-```powershell
-$env:SONG_AI_LLAMA_CPP_ENABLED="true"
-$env:SONG_AI_LLAMA_CPP_BASE_URL="http://localhost:8080"
-$env:SONG_AI_INTERPRETER_MODEL="Gemma 4 E4B IT GGUF"
-$env:SONG_AI_LYRICS_MODEL="Gemma 4 E4B IT GGUF"
-$env:SONG_AI_TECHNICAL_MODEL="Qwen3 4B GGUF"
-```
-
-En Docker, si llama.cpp corre en el host, usa:
-
-```powershell
-$env:SONG_AI_LLAMA_CPP_ENABLED="true"
-$env:SONG_AI_LLAMA_CPP_BASE_URL="http://host.docker.internal:8080"
-docker compose up --build
-```
-
-El endpoint esperado es el servidor HTTP de llama.cpp compatible con `POST /completion`. La app mantiene fallback local si el servidor no esta disponible.
-
-Restricciones de ejecucion:
-- proyecto local/hibrido para portatil de 16 GB RAM,
-- no cargar todos los modelos al mismo tiempo,
-- cargar por demanda y liberar memoria,
-- persistir progreso en SQLite,
-- emitir eventos de progreso al usuario.
-
-## Estructura
+Estado esperado en Docker cuando ACE-Step esta importable:
 
 ```text
-backend/
-  adapters/
-  application/
-  audio/
-  builders/
-  config/
-  core/
-  explorers/
-  models/
-  providers/
-  utils/
-  main.py
-  server.py
-  requirements.txt
-data/
-  drafts/
-  sets/
-  samples/
-  songs/
-  templates/
-frontend/
-  src/
+full_song: ready
+soundtrack: optional
+singing_voice: optional
+mix_and_export: ready
 ```
 
-## Ejecucion
+Importante: Song AI ya esta preparado para generar voz cantada real por ACE-Step, pero la calidad final depende de que ACE-Step pueda ejecutar realmente en el contenedor. Con GPU es lo recomendado; por CPU puede tardar mucho.
 
-### Docker
+## Arquitectura
 
-Levantar backend y frontend:
+### Roles IA
+
+Gemma es la unica interfaz conversacional visible para el usuario. Interpreta la intencion creativa, ayuda con letra, tema, emocion, estilo y narrativa.
+
+Qwen es interno. Actua como director tecnico: valida especificacion, revisa letra, estructura plan musical, decide fases y coordina requisitos del pipeline. El usuario no conversa directamente con Qwen.
+
+Flujo conceptual:
+
+```text
+Usuario -> Gemma -> Qwen -> Gemma -> Usuario
+```
+
+### Backend
+
+- FastAPI sirve API y frontend compilado.
+- SQLite es la fuente activa de trabajo.
+- JSON, Markdown, MIDI y audio son snapshots o artefactos regenerables.
+- Los providers son intercambiables: local, full-song, stems y futuros pro.
+- Los modelos se cargan por fase; no se deben cargar todos al mismo tiempo.
+
+### Frontend
+
+La UI usa una experiencia tipo estudio musical:
+
+- sidebar persistente,
+- workspace central,
+- footer global de Gemma,
+- dark mode,
+- paginas por fase creativa.
+
+Rutas principales:
+
+```text
+/library
+/intent
+/lyrics
+/music-plan
+/midi
+/instrumental
+/voice
+/production
+```
+
+## Flujo Profesional
+
+Las fases actuales del pipeline son:
+
+1. `SONG_SPEC_COLLECTION`
+2. `LYRICS_GENERATION`
+3. `LYRICS_TECHNICAL_REVIEW`
+4. `MUSIC_PLAN_GENERATION`
+5. `MIDI_GENERATION`
+6. `INSTRUMENTAL_GENERATION`
+7. `VOCAL_SYNTHESIS`
+8. `VOICE_CONVERSION`
+9. `MIXING`
+10. `MASTERING`
+11. `EXPORT`
+
+La ruta recomendada para cancion final es:
+
+```text
+Intent -> Lyrics -> Music Plan -> MIDI -> Mastering con Full Song -> Export
+```
+
+Cuando `SONG_AI_FULL_SONG_COMMAND` esta configurado, Mastering usa ACE-Step y genera:
+
+```text
+final_song.wav
+final_song.mp3
+final_song.flac
+```
+
+La ruta por stems sigue disponible para integraciones futuras:
+
+```text
+Instrumental -> Vocals -> Voice Conversion -> Mix -> Mastering -> Export
+```
+
+Si `vocals.wav` viene de `procedural_vocal_guide`, se trata como preview tecnico y no como voz real.
+
+## Persistencia
+
+Volumenes Docker:
+
+```text
+song_ai_data            SQLite, proyectos, letras, MIDI, audio y exports
+song_ai_models          modelos locales: llm, music, voice, stems, huggingface
+song_ai_providers       repos/adaptadores locales
+song_ai_provider_cache  paquetes Python pesados instalados en runtime
+```
+
+Estructura relevante dentro de `/app/data`:
+
+```text
+projects/<song_id>/
+  song_spec.json
+  lyrics.json
+  lyrics.md
+  lyrics_approved.json
+  music_plan.json
+  song_base.mid
+  midi_metadata.json
+  instrumental.wav
+  vocals.wav
+  mix.wav
+  final_song.wav
+  final_song.mp3
+  final_song.flac
+  export_manifest.json
+  project_export.zip
+```
+
+SQLite guarda:
+
+- proyectos,
+- eventos,
+- artefactos,
+- especificacion,
+- ejecuciones/model runs,
+- rutas JSON indexadas.
+
+## Docker
+
+Levantar la app:
 
 ```powershell
-docker compose up --build
+docker compose up -d --build
 ```
 
-Servicio:
-- Aplicacion web Vue + backend API: `http://localhost:8000`
+Abrir:
 
-El contenedor se construye en dos etapas:
-- `frontend-builder`: usa Node.js solo para compilar Vue/Vite.
-- `runtime`: usa `python:3.11-slim-bookworm` para ejecutar FastAPI, audio y bootstrap.
+```text
+http://localhost:8000
+```
 
-Node.js no queda en el runtime final porque la app sirve `frontend/dist` ya compilado. Python queda fijado en 3.11 por compatibilidad con modelos y librerias de audio. Las dependencias base del backend (`fastapi`, `uvicorn`) van en la imagen Docker; las dependencias pesadas/variables de audio se instalan en volumen Docker mediante bootstrap.
+Ver logs:
 
-Volumenes Docker persistentes:
-- `song_ai_data`: proyectos, SQLite, sets, samples, canciones y exports.
-- `song_ai_models`: modelos locales descargados (`llm/`, `music/`, `voice/`, `stems/`, `huggingface/`).
-- `song_ai_providers`: repositorios/adaptadores locales clonados para providers gratuitos.
-- `song_ai_provider_cache`: cache pip y paquetes Python instalados en runtime para audio local.
+```powershell
+docker logs -f song-ai-app
+```
 
-Politica de actualizacion:
-- Docker no actualiza Python ni paquetes base a ciegas; eso cambia solo cuando se reconstruye la imagen con cambios del proyecto.
-- El bootstrap no reinstala dependencias pesadas si ya existen marcadores compatibles en el volumen y los modulos Python requeridos son importables.
-- Si el volumen ya tiene paquetes Python instalados de una version anterior pero no tiene marcador, el bootstrap detecta modulos importables, crea el marcador y evita repetir `pip install`.
-- Si ACE-Step existe pero sus dependencias internas fallan, por ejemplo `diffusers` requiere una version mas nueva de `huggingface_hub`, el bootstrap repara solo esa dependencia compatible en vez de reinstalar paquetes pesados como PyTorch.
-- Si cambian `requirements-local-audio.txt`, `SONG_AI_ACE_STEP_PACKAGE`, URLs de modelos o repos configurados, el bootstrap descarga/instala lo necesario.
-- No hay cron automatico porque actualizar modelos/librerias sin control puede romper compatibilidad con Python 3.11 o con los pesos descargados. La actualizacion interna existe como tarea de UI/API bajo demanda.
+Reiniciar sin perder modelos ni datos:
 
-El contenedor puede preparar dependencias/modelos al arrancar si se activa el bootstrap:
+```powershell
+docker compose restart app
+```
+
+Reconstruir conservando volumenes:
+
+```powershell
+docker compose up -d --build
+```
+
+No uses `docker compose down -v` salvo que quieras borrar modelos, cache y datos.
+
+## Variables Principales
+
+Archivo base:
+
+```text
+.env.example
+```
+
+Full Song local con ACE-Step:
+
+```text
+SONG_AI_FULL_SONG_COMMAND=python tools/acestep_generate.py --prompt {prompt_path} --lyrics {lyrics_path} --output {output_path} --checkpoint-path /app/models/music/ace-step --duration 60 --cpu-offload true --overlapped-decode true
+SONG_AI_INSTALL_ACE_STEP=true
+SONG_AI_ALLOW_CPU_FULL_SONG=true
+```
+
+Rutas alternativas por stems:
+
+```text
+SONG_AI_SOUNDTRACK_COMMAND=
+SONG_AI_SINGING_VOICE_COMMAND=
+SONG_AI_VOICE_CONVERSION_COMMAND=
+```
+
+Si Full Song funciona, esas tres pueden quedar vacias.
+
+## Modelos LLM Locales
+
+Gemma y Qwen estan preparados para llama.cpp, pero no son obligatorios para que ACE-Step genere audio final. Si llama.cpp no esta activo, la app usa guia local.
+
+Rutas persistentes:
+
+```text
+SONG_AI_GEMMA_GGUF_PATH=/app/models/llm/gemma/gemma.gguf
+SONG_AI_QWEN_GGUF_PATH=/app/models/llm/qwen/qwen.gguf
+```
+
+URLs opcionales de descarga:
+
+```text
+SONG_AI_GEMMA_GGUF_URL=
+SONG_AI_QWEN_GGUF_URL=
+```
+
+Endpoints por rol:
+
+```text
+SONG_AI_LLAMA_CPP_INTERPRETER_BASE_URL=http://llama-gemma:8080
+SONG_AI_LLAMA_CPP_TECHNICAL_BASE_URL=http://llama-qwen:8080
+```
+
+Levantar llama.cpp con los GGUF ya descargados:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.llm.yml --profile llm up -d --build
+```
+
+Luego activar:
+
+```text
+SONG_AI_LLAMA_CPP_ENABLED=true
+```
+
+## Bootstrap
+
+El bootstrap corre dentro del contenedor y prepara volumenes:
+
+- crea directorios de modelos,
+- instala dependencias pesadas en `/app/provider-cache/python`,
+- instala ACE-Step si esta activado,
+- descarga modelos por URL si se configuran,
+- clona providers si se configuran.
+
+Variables:
 
 ```text
 SONG_AI_BOOTSTRAP_ON_START=true
 SONG_AI_INSTALL_LOCAL_AUDIO_DEPS=true
 SONG_AI_INSTALL_ACE_STEP=true
 SONG_AI_BOOTSTRAP_UPGRADE=false
-SONG_AI_DOWNLOAD_MUSICGEN=true
-SONG_AI_MUSICGEN_MODEL_ID=facebook/musicgen-small
+SONG_AI_PROVIDER_REPOS=
 ```
 
-Tambien puede descargar modelos por URL o clonar providers:
+Actualizar dependencias internas bajo demanda:
 
 ```text
-SONG_AI_GEMMA_GGUF_URL=https://...
-SONG_AI_QWEN_GGUF_URL=https://...
-SONG_AI_VOICE_MODEL_URL=https://...
-SONG_AI_PROVIDER_REPOS=acestep=https://github.com/.../ACE-Step.git;rvc=https://github.com/.../RVC.git
-```
-
-El bootstrap es idempotente: crea carpetas y solo descarga/clona/instala cuando falta contenido. Si los procesos son largos, se puede levantar el Docker y dejar que el contenedor termine de instalar en ejecucion. Los modelos y librerias quedan en volumenes Docker, no en carpetas temporales del contenedor.
-
-Si necesitas reemplazar o actualizar librerias ya instaladas en `song_ai_provider_cache`, activa:
-
-```text
-SONG_AI_BOOTSTRAP_UPGRADE=true
-```
-
-Con ese flag, pip usa `--upgrade --upgrade-strategy eager`. Sin ese flag, el bootstrap usa marcadores en el volumen y deteccion de modulos ya instalados para evitar reinstalar y evitar warnings de carpetas ya existentes. Si hay marcador pero los modulos no importan correctamente, se considera instalacion incompleta y se reinstala. El runtime tambien desactiva el aviso de nueva version de pip para que los logs se concentren en el estado real del pipeline.
-
-La ruta final local por defecto en Docker usa ACE-Step como generador completo de cancion:
-
-```text
-SONG_AI_FULL_SONG_COMMAND=python tools/acestep_generate.py --prompt {prompt_path} --lyrics {lyrics_path} --output {output_path} --checkpoint-path /app/models/music/ace-step --duration 60 --cpu-offload true --overlapped-decode true
-```
-
-ACE-Step se instala en `/app/provider-cache/python` cuando `SONG_AI_INSTALL_ACE_STEP=true`. Sus checkpoints se guardan en `/app/models/music/ace-step`, dentro del volumen `song_ai_models`. El primer arranque puede tardar bastante porque instala librerias y descarga pesos; los siguientes arranques reutilizan el volumen.
-
-SQLite guarda el indice de rutas de configuraciones JSON en `data/song_ai.sqlite`.
-
-No se usa Nginx en esta etapa porque FastAPI sirve la API y el frontend compilado por Vite desde el mismo contenedor. Si mas adelante se separan frontend/backend o se requiere reverse proxy/cache TLS, se agregara una carpeta `nginx/` con su configuracion Docker.
-
-### Uso Desde La UI
-
-1. Abre `http://localhost:8000`.
-2. En `Instrumental`, usa o ajusta los valores por defecto de cancion de cuna: genero `lullaby`, mood `tender`, BPM `72`, piano, music box, soft pad y strings.
-3. Guarda el instrumental.
-4. En `Melodia`, usa una guia de voz cantada suave, rango medio y estructura completa.
-5. Guarda la melodia.
-6. En `Letra`, usa el tema `lullaby for {name}` y placeholders como `name=Isabella`.
-7. Guarda la letra.
-8. En `Editor de letra`, selecciona un draft de letra, modifica el Markdown y guarda cambios. Esto actualiza `lyrics.md` sin tocar instrumental ni melodia.
-9. En `Produccion`, crea el set/proyecto. El set solo se habilita si existen instrumental, melodia y letra.
-10. Crea el sample/checkpoint.
-11. Crea la cancion completa mock.
-12. Si quieres validar rapido el flujo por defecto, usa `Crear maqueta` para generar la cancion de cuna de Isabella con set, sample, cancion, mezcla y WAV/MP3 mock.
-13. Para el flujo manual: prepara mezcla.
-14. Prepara exports.
-15. Genera WAV/MP3. En fase mock se crea `final_mix.wav` y, dentro del contenedor Docker, `final_mix.mp3` usando `ffmpeg`.
-16. Usa la charla con Gemma para pedir sugerencias sobre el proyecto activo. Si llama.cpp esta activo, Gemma responde desde `POST /completion`; si no, usa guia local y registra handoffs en SQLite.
-17. Qwen no se expone como chat del usuario en Produccion: Gemma traduce la necesidad musical y registra un handoff tecnico interno hacia Qwen cuando corresponde.
-18. En `Biblioteca`, revisa providers activos, estado del estudio IA, tasks, model runs, historico del proyecto y rutas JSON indexadas.
-
-El flujo tiene dos salidas diferenciadas:
-- **Maqueta tecnica**: valida archivos, stems, manifest y descarga, pero no es la cancion final.
-- **Cancion local final**: exige herramientas locales configuradas para generar instrumental real, voz cantada real y mezcla final. Si falta una herramienta, la app no crea un falso final.
-
-El modo pro queda fuera de esta etapa. Solo se retomara cuando el modo local genere una cancion decente sin errores.
-
-Para conectar herramientas locales reales, configura comandos por variables de entorno. La app reemplaza estos placeholders:
-- `{prompt_path}`: archivo con prompt musical e intents.
-- `{lyrics_path}`: letra final exportada.
-- `{instrumental_path}`: instrumental WAV generado.
-- `{output_path}`: salida esperada del comando.
-- `{work_dir}`: carpeta de trabajo del pipeline.
-
-Ejemplo de contrato:
-
-```text
-SONG_AI_SOUNDTRACK_COMMAND=python tools/musicgen_generate.py --prompt {prompt_path} --output {output_path}
-SONG_AI_SINGING_VOICE_COMMAND=python tools/singing_voice_generate.py --lyrics {lyrics_path} --prompt {prompt_path} --instrumental {instrumental_path} --output {output_path}
-```
-
-Scripts locales incluidos:
-- `tools/check_local_audio_stack.py`: revisa ffmpeg, comandos configurados y dependencias Python.
-- `tools/acestep_generate.py`: genera una cancion completa local con ACE-Step usando prompt y letra; es la ruta final recomendada en Docker.
-- `tools/musicgen_generate.py`: genera instrumental con MusicGen via `transformers` cuando `torch`, `transformers` y `scipy` estan instalados y el modelo esta disponible/cacheado.
-- `tools/singing_voice_generate.py`: adaptador para un backend local real de voz cantada. No simula voz por si mismo; exige un comando backend que produzca `vocals.wav`.
-- `tools/use_audio_file.py`: usa un archivo local ya generado y lo copia/convierte a WAV para que Song AI lo mezcle. Es util para integrar herramientas locales externas mientras se completa el worker automatico.
-
-Ejemplo mas completo:
-
-```text
-SONG_AI_FULL_SONG_COMMAND=python tools/acestep_generate.py --prompt {prompt_path} --lyrics {lyrics_path} --output {output_path} --checkpoint-path /app/models/music/ace-step --duration 60
-SONG_AI_SOUNDTRACK_COMMAND=python tools/musicgen_generate.py --prompt {prompt_path} --output {output_path} --model facebook/musicgen-small --seconds 45
-SONG_AI_SINGING_VOICE_COMMAND=python tools/singing_voice_generate.py --lyrics {lyrics_path} --prompt {prompt_path} --instrumental {instrumental_path} --output {output_path} --backend-command "python tools/mi_backend_voz_cantada.py --lyrics {lyrics_path} --prompt {prompt_path} --instrumental {instrumental_path} --output {output_path}"
-```
-
-Ejemplo usando archivos locales ya generados:
-
-```text
-SONG_AI_SOUNDTRACK_COMMAND=python tools/use_audio_file.py --input C:\audio\instrumental.wav --output {output_path}
-SONG_AI_SINGING_VOICE_COMMAND=python tools/use_audio_file.py --input C:\audio\voz_cantada.wav --output {output_path}
-```
-
-Antes de generar final local:
-
-```text
-python tools/check_local_audio_stack.py
-```
-
-El endpoint de estado local es:
-
-```text
-GET /api/local-pipeline/status
-GET /api/system/status
-GET /api/projects/phases
-```
-
-La generacion final local se ejecuta con:
-
-```text
-POST /api/local-final-song
-POST /api/system/bootstrap/restart
 POST /api/system/bootstrap/upgrade
 ```
 
-`/api/system/bootstrap/upgrade` permite actualizar/reemplazar dependencias internas del contenedor desde la UI, sin entrar al Docker. Ejecuta el bootstrap con `pip --upgrade --upgrade-strategy eager` y conserva los volumenes.
+La politica por defecto evita reinstalar paquetes pesados si ya son importables y hay marcador compatible en el volumen.
 
-### Proyectos Activos
+## Como Generar Una Cancion
 
-La aplicacion trabaja sobre proyectos de canciones. Un proyecto activo corresponde a un set y debe cargar transversalmente:
-- nombre y descripcion del proyecto,
-- instrumental seleccionado,
-- melodia seleccionada,
-- letra seleccionada y su `lyrics.md` editable,
-- set activo,
-- samples asociados,
-- canciones asociadas,
-- eventos de progreso del proyecto.
+1. Abre `http://localhost:8000`.
+2. Ve a `Library` y crea o carga un proyecto.
+3. En `Intent`, define la idea musical.
+4. En `Lyrics`, edita o genera letra por secciones.
+5. En `Music Plan`, define BPM, tonalidad, estructura e instrumentos.
+6. En `MIDI`, genera la base editable.
+7. En `Production`, ejecuta Mastering/Full Song.
+8. Ejecuta Export.
+9. Descarga MP3/WAV/FLAC si el control de calidad lo permite.
 
-Desde `Biblioteca`, usa `Cargar proyecto` sobre un set guardado. Al cargarlo, la app actualiza el formulario de proyecto, la configuracion visible, el editor de letra y el contexto usado por la asistencia IA.
+Para cancion final real, el camino mas directo es que Production use ACE-Step en Mastering mediante `SONG_AI_FULL_SONG_COMMAND`.
 
-### Backend Web Local
+## Control De Calidad Vocal
 
-Si no usas Docker, primero construye el frontend con Node/Vite:
-
-```powershell
-cd frontend
-npm install
-npm run build
-cd ..
-```
-
-Luego ejecuta API FastAPI y frontend estatico desde Python:
-
-```powershell
-$env:PYTHONPATH="backend"
-.\.venv\Scripts\python.exe backend\server.py
-```
-
-URL local:
+La app distingue tres casos:
 
 ```text
-http://localhost:8000
+full_song_provider        final permitido
+local_command vocals.wav  final permitido
+procedural_vocal_guide    preview, final bloqueado
 ```
 
-### Local con venv
+Si `vocals.wav` es procedural:
 
-Activar entorno virtual en PowerShell:
+- se puede escuchar como guia,
+- no se ofrece como cancion final,
+- MP3/WAV/FLAC finales quedan sin descarga,
+- Export devuelve un mensaje claro.
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
+## Endpoints Utiles
 
-Verificar version:
-
-```powershell
-python --version
-```
-
-Ejecutar aplicacion:
-
-```powershell
-$env:PYTHONPATH="backend"
-.\.venv\Scripts\python.exe backend\main.py
-```
-
-El menu guia el flujo creativo:
-- explorar instrumental con modo rapido, guiado o desde perfil/base,
-- explorar melodia vocal con modo rapido, guiado o basada en perfil,
-- crear letra con plantilla rapida, modo guiado o variacion IA mock,
-- listar drafts,
-- marcar favoritos,
-- listar favoritos,
-- crear un set valido con los primeros drafts disponibles,
-- crear un sample/checkpoint mock desde el ultimo set,
-- crear una cancion completa mock desde el ultimo sample.
-- listar providers disponibles,
-- preparar mezcla mock,
-- preparar exportaciones,
-- generar WAV/MP3 desde la cancion mas reciente,
-- crear MP3 predefinido de la cancion de cuna base,
-- consultar a Gemma sobre el proyecto activo,
-- dejar que Gemma coordine internamente ajustes tecnicos con Qwen,
-- guardar plantilla reutilizable.
-
-Flujo sugerido:
+Estado:
 
 ```text
-1. Explorar instrumental
-2. Explorar melodia vocal
-3. Crear letra
-4. Listar drafts
-7. Crear set valido
-8. Crear sample/checkpoint mock
-9. Crear cancion completa mock
-```
-
-Para crear una cancion completa primero debe existir un set/proyecto valido. Ese set esta compuesto por los puntos 1, 2 y 3:
-- instrumental,
-- melodia,
-- letra.
-
-La asistencia IA del frontend revisa los drafts disponibles y recuerda que partes faltan antes de crear el set, sample o cancion completa.
-
-Los puntos 1, 2 y 3 preguntan por intencion creativa y guardan esa informacion en `intent.json`.
-
-Las preguntas creativas muestran opciones posibles antes de pedir respuesta. Por ejemplo:
-- estilos o generos,
-- atmosfera emocional,
-- BPM,
-- tonalidad,
-- instrumentos,
-- estilo vocal,
-- rango vocal,
-- estructura,
-- idioma,
-- tema lirico,
-- placeholders.
-
-Cuando una opcion no cubre la idea del usuario, el flujo permite escribir una alternativa personalizada.
-
-Tambien existe la opcion `L. Describir libremente para interpretar`. En esta fase la interpretacion es local/mock por palabras clave; mas adelante podra conectarse a un provider IA sin cambiar el flujo.
-
-En instrumentos, la app muestra un catalogo base por familias como teclas, guitarras, bajos, percusion, cuerdas, metales, sintetizadores, sonidos regionales y efectos. No pretende ser una lista total de todos los instrumentos posibles; para eso estan las opciones `L` y `C`.
-
-Ejecutar diagnostico de test:
-
-```powershell
-python tests\diagnostics.py
-```
-
-El diagnostico valida:
-- estado basico del proyecto,
-- existencia o creacion de carpetas de datos,
-- listado de carpetas de datos.
-
-## Persistencia
-
-Cada draft guarda:
-- `manifest.json`,
-- `intent.json`,
-- `metadata.json`,
-- archivo mock del asset (`instrumental.txt`, `melody.txt` o `lyrics.md`).
-
-Los sets se guardan en `data/sets/<set_id>/set.json`.
-Cada set es un proyecto musical y contiene:
-- `project_name`: nombre visible del proyecto/cancion.
-- `created_at`: fecha de creacion.
-- `description`: descripcion breve del objetivo musical.
-- IDs de instrumental, melodia y letra.
-- `compatibility_data`: estado de compatibilidad entre assets.
-
-Los samples mock se guardan en `data/samples/<sample_id>/sample.json` y `preview.txt`. En el alcance actual el sample es un checkpoint de calidad antes de la cancion completa, no el formato final ni un Short.
-
-Las canciones completas se guardan en `data/songs/<song_id>/`.
-
-Dentro de cada cancion:
-- `song.json`: metadata de la cancion y rutas planeadas.
-- `exports/`: aqui quedaran mezclas finales y metadata.
-- `stems/`: aqui quedaran stems como instrumental y voces.
-
-Formatos comunes planeados para `exports/`:
-- `final_mix.mp3`: comprimido, muy compatible para compartir y reproducir.
-- `final_mix.m4a`: AAC comprimido, comun en moviles y buena calidad por tamano.
-- `final_mix.ogg`: formato abierto util para web/apps.
-- `final_mix.wav`: sin compresion, recomendado para master y procesamiento.
-- `final_mix.flac`: lossless comprimido, alta calidad con menor peso.
-- `final_mix.aiff`: sin compresion, comun en produccion musical.
-- `lyrics.md`: letra editable.
-- `manifest.json`: metadata del export.
-
-Formatos comunes planeados para `stems/`:
-- `instrumental.wav`
-- `vocals.wav`
-- `melody_guide.wav`
-- `drums.wav`
-- `bass.wav`
-- `music.wav`
-- versiones `.flac` cuando se quiera compresion lossless.
-
-En la fase actual mock se genera una maqueta audible de cancion en `exports/final_mix.wav`: instrumental sintetico suave, guia melodica y una guia vocal sintetica de vocales, ademas de una copia de la letra real del set en `exports/lyrics.md`. Esta guia vocal ayuda a validar melodia, estructura y mezcla, pero no pronuncia la letra ni reemplaza una voz cantada real. Tambien se crean stems mock separados en `stems/instrumental.wav`, `stems/melody_guide.wav` y `stems/vocals.wav` para conservar instrumental, melodia y voz por separado. En Docker tambien se genera `exports/final_mix.mp3` con `ffmpeg`; si se ejecuta fuera de Docker y `ffmpeg` no esta disponible, queda `exports/final_mix.mp3.pending.txt`. El archivo `exports/final_mix.mock.txt` sigue marcando donde se reemplazara el contenido por la mezcla real cuando se conecten providers de audio.
-
-La UI incluye la accion **Guardar MP3 en mi equipo**, que descarga el ultimo `final_mix.mp3` desde Docker hacia una ruta elegida por el usuario en el navegador. La API equivalente es:
-
-```text
-GET /api/audio-exports/latest/download?format=mp3
-```
-
-La cancion final real debe pasar por:
-- letra completa y prompt musical con Gemma,
-- soundtrack/instrumental con MusicGen,
-- voz cantada con RVC/ACE-Step,
-- stems opcionales con Demucs,
-- mezcla y normalizacion con ffmpeg,
-- export WAV/MP3.
-
-Las plantillas reutilizables se guardan en `data/templates/<template_id>/template.json`.
-
-SQLite indexa las rutas de los JSON generados:
-- `manifest.json`
-- `intent.json`
-- `metadata.json`
-- `set.json`
-- `sample.json`
-- `song.json`
-- `exports/manifest.json`
-- `template.json`
-
-SQLite tambien guarda orquestacion multi-modelo:
-- `tasks`: tareas del pipeline y progreso.
-- `model_runs`: ejecuciones de modelos/providers.
-- `project_events`: historico de pasos por proyecto/cancion.
-
-En esta fase los handoffs son mock y sirven para validar contratos, progreso, persistencia y UI antes de cargar modelos reales.
-
-Al iniciar, la app sincroniza de forma conservadora sets antiguos desde `data/sets/<set_id>/set.json` hacia SQLite cuando todavia no existen en la tabla activa. Esto corrige proyectos creados antes del indice SQLite sin convertir los JSON en fuente de verdad permanente.
-
-La API expone este indice en:
-
-```text
-GET /api/json-configs
-```
-
-El estado activo del estudio IA se expone en:
-
-```text
+GET /api/system/status
+GET /api/local-pipeline/status
 GET /api/studio/status
 GET /api/models/status
 GET /api/providers
 ```
 
-`GET /api/studio/status` indica:
-- providers activos por rol (`interpreter`, `music`, `voice`, `lyrics`),
-- que SQLite es la fuente activa,
-- que los JSON son snapshots regenerables,
-- que los handoffs entre modelos deben pasar por SQLite, tasks, `intent.json`, `manifest.json` o `set.json`,
-- que no hay prompts encadenados directamente entre modelos.
-
-Los sets tambien se guardan en SQLite para que la interfaz pueda listarlos, mostrarlos como proyectos y enseñar su configuracion cuando el usuario lo pida:
+Proyecto profesional:
 
 ```text
-GET /api/sets
-GET /api/sets/{set_id}
-GET /api/projects/{set_id}
-POST /api/sets
-POST /api/presets/lullaby/mp3
-POST /api/sets/export
-GET /api/lyrics/{asset_id}
-PUT /api/lyrics/{asset_id}
-POST /api/mix
-POST /api/exports
-POST /api/audio-exports
-POST /api/assistant/gemma
-POST /api/assistant/qwen
-GET /api/orchestration/status
-GET /api/tasks
-GET /api/model-runs
-GET /api/project-events
-POST /api/orchestration/handoff
-GET /api/studio/status
+GET  /api/pro/projects
+POST /api/pro/projects
+POST /api/pro/projects/{song_id}/spec/messages
+POST /api/pro/projects/{song_id}/lyrics
+POST /api/pro/projects/{song_id}/lyrics/review
+POST /api/pro/projects/{song_id}/music-plan
+POST /api/pro/projects/{song_id}/midi
+POST /api/pro/projects/{song_id}/instrumental
+POST /api/pro/projects/{song_id}/vocals
+POST /api/pro/projects/{song_id}/voice-conversion
+POST /api/pro/projects/{song_id}/mix
+POST /api/pro/projects/{song_id}/master
+POST /api/pro/projects/{song_id}/export
+GET  /api/pro/projects/{song_id}/artifacts/{artifact_type}/download
 ```
 
-`POST /api/sets` recibe opcionalmente:
+Bootstrap:
 
-```json
-{
-  "project_name": "Mi nueva cancion",
-  "description": "Balada pop calida para una dedicatoria familiar"
-}
+```text
+POST /api/system/bootstrap/restart
+POST /api/system/bootstrap/upgrade
 ```
 
-Cada set expone nombre de proyecto, fecha, descripcion, IDs de instrumental, melodia y letra, compatibilidad, ruta del `set.json` y un bloque `ai_management` preparado para que el interpreter provider gestione sugerencias y recuerde los requisitos creativos del proyecto.
+## Scripts
 
-`POST /api/sets/export` exporta todos los sets persistidos en SQLite hacia sus archivos `set.json`. La base de datos conserva la version de trabajo; el JSON es una copia exportada y se sobrescribe cuando ya existe un archivo previo con el mismo nombre.
+```text
+tools/acestep_generate.py
+tools/musicgen_generate.py
+tools/singing_voice_generate.py
+tools/use_audio_file.py
+tools/check_local_audio_stack.py
+```
 
-## Reglas De Documentacion
+`tools/acestep_generate.py` es la ruta recomendada para cancion local completa.
 
-Cada avance funcional, cambio de arquitectura o sprint completado debe quedar registrado en este README.
+`tools/use_audio_file.py` sirve para pruebas o para integrar archivos generados externamente.
+
+## Verificacion
+
+Backend:
+
+```powershell
+python -m unittest discover -s tests -p "test_*.py"
+python -m compileall backend tests
+```
+
+Frontend:
+
+```powershell
+cd frontend
+npm.cmd run build
+```
+
+Docker:
+
+```powershell
+docker compose up -d --build
+docker compose exec -T app python -c "import sys; sys.path.insert(0, '/app/backend'); from config.settings import Settings; from audio.local_song_pipeline import LocalSongPipeline; s=Settings.load(); print(LocalSongPipeline(s.local_models).status())"
+```
+
+## Limitaciones Actuales
+
+- La voz real depende de que ACE-Step ejecute correctamente en Docker.
+- Con CPU, ACE-Step puede tardar mucho.
+- Con GPU, usa un compose GPU cuando el entorno Docker/WSL la exponga correctamente.
+- Gemma/Qwen reales requieren modelos GGUF y servidores llama.cpp activos.
+- La ruta por stems separados sigue preparada, pero la ruta final recomendada es Full Song.
+
+## Estado Del Repositorio
+
+Repositorio remoto:
+
+```text
+https://github.com/jporras/song-ai
+```
+
+Rama principal:
+
+```text
+main
+```
+
+## Reglas De Mantenimiento
+
+- SQLite es la fuente activa.
+- JSON y audio son artefactos/snapshots.
+- No confundir maqueta tecnica con cancion final.
+- No exponer Qwen como chat del usuario.
+- Conservar instrumental, melodia y letra como assets separados cuando se use ruta por stems.
+- Actualizar este README cuando cambie arquitectura, flujo o configuracion.
