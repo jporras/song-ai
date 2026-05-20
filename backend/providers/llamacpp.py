@@ -13,9 +13,9 @@ class LlamaCppError(RuntimeError):
 
 
 class LlamaCppClient:
-    def __init__(self, settings: LocalModelSettings) -> None:
+    def __init__(self, settings: LocalModelSettings, base_url: str | None = None) -> None:
         self.settings = settings
-        self.base_url = settings.llama_cpp_base_url.rstrip("/")
+        self.base_url = (base_url or settings.llama_cpp_base_url).rstrip("/")
 
     def complete(self, prompt: str, system_prompt: str = "") -> str:
         payload = {
@@ -75,7 +75,7 @@ class LlamaCppClient:
 class LlamaCppInterpreterProvider(InterpreterProvider):
     def __init__(self, settings: LocalModelSettings) -> None:
         self.settings = settings
-        self.client = LlamaCppClient(settings)
+        self.client = LlamaCppClient(settings, settings.llama_cpp_interpreter_base_url)
 
     def name(self) -> str:
         return "llamacpp-gemma-interpreter"
@@ -125,7 +125,7 @@ class LlamaCppLyricsProvider(LyricsProvider):
 class LlamaCppTechnicalProvider(InterpreterProvider):
     def __init__(self, settings: LocalModelSettings) -> None:
         self.settings = settings
-        self.client = LlamaCppClient(settings)
+        self.client = LlamaCppClient(settings, settings.llama_cpp_technical_base_url)
 
     def name(self) -> str:
         return "llamacpp-qwen-technical"

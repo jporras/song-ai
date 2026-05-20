@@ -8,6 +8,10 @@ class LocalModelSettings:
     llama_cpp_enabled: bool
     llama_cpp_dir: Path
     llama_cpp_base_url: str
+    llama_cpp_interpreter_base_url: str
+    llama_cpp_technical_base_url: str
+    gemma_gguf_path: Path
+    qwen_gguf_path: Path
     llama_cpp_timeout_seconds: int
     llama_cpp_n_predict: int
     llama_cpp_temperature: float
@@ -32,6 +36,16 @@ class LocalModelSettings:
             llama_cpp_enabled=os.getenv("SONG_AI_LLAMA_CPP_ENABLED", "false").lower() == "true",
             llama_cpp_dir=Path(os.getenv("SONG_AI_LLAMA_CPP_DIR", str(project_root / "models" / "llama.cpp"))),
             llama_cpp_base_url=os.getenv("SONG_AI_LLAMA_CPP_BASE_URL", "http://localhost:8080"),
+            llama_cpp_interpreter_base_url=os.getenv(
+                "SONG_AI_LLAMA_CPP_INTERPRETER_BASE_URL",
+                os.getenv("SONG_AI_LLAMA_CPP_BASE_URL", "http://localhost:8080"),
+            ),
+            llama_cpp_technical_base_url=os.getenv(
+                "SONG_AI_LLAMA_CPP_TECHNICAL_BASE_URL",
+                os.getenv("SONG_AI_LLAMA_CPP_BASE_URL", "http://localhost:8080"),
+            ),
+            gemma_gguf_path=Path(os.getenv("SONG_AI_GEMMA_GGUF_PATH", "/app/models/llm/gemma/gemma.gguf")),
+            qwen_gguf_path=Path(os.getenv("SONG_AI_QWEN_GGUF_PATH", "/app/models/llm/qwen/qwen.gguf")),
             llama_cpp_timeout_seconds=int(os.getenv("SONG_AI_LLAMA_CPP_TIMEOUT_SECONDS", "45")),
             llama_cpp_n_predict=int(os.getenv("SONG_AI_LLAMA_CPP_N_PREDICT", "512")),
             llama_cpp_temperature=float(os.getenv("SONG_AI_LLAMA_CPP_TEMPERATURE", "0.35")),
@@ -56,6 +70,10 @@ class LocalModelSettings:
             "llama_cpp_enabled": self.llama_cpp_enabled,
             "llama_cpp_dir": str(self.llama_cpp_dir),
             "llama_cpp_base_url": self.llama_cpp_base_url,
+            "llama_cpp_interpreter_base_url": self.llama_cpp_interpreter_base_url,
+            "llama_cpp_technical_base_url": self.llama_cpp_technical_base_url,
+            "gemma_gguf_path": str(self.gemma_gguf_path),
+            "qwen_gguf_path": str(self.qwen_gguf_path),
             "llama_cpp_timeout_seconds": self.llama_cpp_timeout_seconds,
             "llama_cpp_n_predict": self.llama_cpp_n_predict,
             "llama_cpp_temperature": self.llama_cpp_temperature,

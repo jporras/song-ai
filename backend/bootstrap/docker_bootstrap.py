@@ -123,17 +123,21 @@ def install_ace_step(upgrade: bool = False) -> bool:
 
 def download_url_models(summary: dict[str, object]) -> None:
     url_targets = {
-        "SONG_AI_GEMMA_GGUF_URL": MODEL_ROOT / "llm" / "gemma",
-        "SONG_AI_QWEN_GGUF_URL": MODEL_ROOT / "llm" / "qwen",
+        "SONG_AI_GEMMA_GGUF_URL": Path(os.getenv("SONG_AI_GEMMA_GGUF_PATH", str(MODEL_ROOT / "llm" / "gemma" / "gemma.gguf"))),
+        "SONG_AI_QWEN_GGUF_URL": Path(os.getenv("SONG_AI_QWEN_GGUF_PATH", str(MODEL_ROOT / "llm" / "qwen" / "qwen.gguf"))),
         "SONG_AI_VOICE_MODEL_URL": MODEL_ROOT / "voice",
     }
-    for env_name, target_dir in url_targets.items():
+    for env_name, target in url_targets.items():
         url = os.getenv(env_name, "").strip()
         if not url:
             continue
-        target_dir.mkdir(parents=True, exist_ok=True)
-        filename = Path(url.split("?")[0]).name or f"{env_name.lower()}.bin"
-        target_path = target_dir / filename
+        if target.suffix:
+            target_path = target
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            target.mkdir(parents=True, exist_ok=True)
+            filename = Path(url.split("?")[0]).name or f"{env_name.lower()}.bin"
+            target_path = target / filename
         if not target_path.exists():
             urllib.request.urlretrieve(url, target_path)
         summary["downloads"].append({"env": env_name, "path": str(target_path)})

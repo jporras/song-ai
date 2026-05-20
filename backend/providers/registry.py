@@ -99,12 +99,15 @@ class ProviderRegistry:
 
     def llama_cpp_status(self) -> dict[str, object]:
         if self.local_settings is None:
-            return {"enabled": False, "available": False, "reason": "No local settings loaded"}
+            return {"enabled": False, "available": False, "reason": "No local settings loaded", "models": {}}
         if not self.local_settings.llama_cpp_enabled:
             return {
                 "enabled": False,
                 "available": False,
                 "base_url": self.local_settings.llama_cpp_base_url,
+                "interpreter_base_url": self.local_settings.llama_cpp_interpreter_base_url,
+                "technical_base_url": self.local_settings.llama_cpp_technical_base_url,
+                "models": self._llm_model_files(),
                 "reason": "Set SONG_AI_LLAMA_CPP_ENABLED=true para activar Gemma via llama.cpp.",
             }
         provider = next(
@@ -112,8 +115,20 @@ class ProviderRegistry:
             None,
         )
         if provider is None:
-            return {"enabled": True, "available": False, "reason": "Proveedor llama.cpp no registrado."}
-        return {"enabled": True, "base_url": self.local_settings.llama_cpp_base_url, **provider.status()}
+            return {
+                "enabled": True,
+                "available": False,
+                "reason": "Proveedor llama.cpp no registrado.",
+                "models": self._llm_model_files(),
+            }
+        return {
+            "enabled": True,
+            "base_url": self.local_settings.llama_cpp_base_url,
+            "interpreter_base_url": self.local_settings.llama_cpp_interpreter_base_url,
+            "technical_base_url": self.local_settings.llama_cpp_technical_base_url,
+            "models": self._llm_model_files(),
+            **provider.status(),
+        }
 
     def model_status(self) -> dict[str, object]:
         local = self.local_settings.to_dict() if self.local_settings is not None else {}
@@ -272,3 +287,21 @@ class ProviderRegistry:
                 return "configured" if self.local_settings.llama_cpp_enabled else "disabled"
             return "ready"
         return "unknown"
+
+    def _llm_model_files(self) -> dict[str, dict[str, object]]:
+        if self.local_settings is None:
+            return {}
+        gemma = self.local_settings.gemma_gguf_path
+        qwen = self.local_settings.qwen_gguf_path
+        return {
+            "gemma": {
+                "path": str(gemma),
+                "exists": gemma.exists(),
+                "role": "creative_user_agent",
+            },
+            "qwen": {
+                "path": str(qwen),
+                "exists": qwen.exists(),
+                "role": "technical_director_agent",
+            },
+        }

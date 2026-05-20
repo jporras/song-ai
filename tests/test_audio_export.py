@@ -634,6 +634,30 @@ class AudioExportTest(unittest.TestCase):
             self.assertTrue((temp_path / "providers").exists())
             self.assertTrue((temp_path / "provider-cache" / "python").exists())
 
+    def test_docker_bootstrap_downloads_gguf_models_to_configured_paths(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "source.gguf"
+            source.write_text("fake gguf", encoding="utf-8")
+            gemma_path = temp_path / "models" / "llm" / "gemma" / "gemma.gguf"
+            qwen_path = temp_path / "models" / "llm" / "qwen" / "qwen.gguf"
+            with patch.object(docker_bootstrap, "MODEL_ROOT", temp_path / "models"), patch.dict(
+                os.environ,
+                {
+                    "SONG_AI_GEMMA_GGUF_URL": source.as_uri(),
+                    "SONG_AI_QWEN_GGUF_URL": source.as_uri(),
+                    "SONG_AI_GEMMA_GGUF_PATH": str(gemma_path),
+                    "SONG_AI_QWEN_GGUF_PATH": str(qwen_path),
+                },
+                clear=False,
+            ):
+                summary = {"downloads": []}
+                docker_bootstrap.download_url_models(summary)
+
+            self.assertTrue(gemma_path.exists())
+            self.assertTrue(qwen_path.exists())
+            self.assertEqual(len(summary["downloads"]), 2)
+
     def test_docker_bootstrap_markers_skip_existing_installs(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
