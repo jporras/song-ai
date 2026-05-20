@@ -32,6 +32,8 @@ Gemma es la unica interfaz conversacional visible para el usuario. Interpreta la
 
 Qwen es interno. Actua como director tecnico: valida especificacion, revisa letra, estructura plan musical, decide fases y coordina requisitos del pipeline. El usuario no conversa directamente con Qwen.
 
+La guia de Gemma prioriza el proyecto profesional activo. Solo menciona `sample/checkpoint` cuando no existe proyecto profesional y se esta usando el flujo legado de set.
+
 Flujo conceptual:
 
 ```text

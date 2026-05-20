@@ -17,6 +17,7 @@ from builders.template_builder import TemplateBuilder
 from core import creative_options as options
 from core.storage import StorageManager
 from explorers.mock_explorers import MockExplorerSuite
+from models.song_workflow import PHASE_LABELS, PHASE_SEQUENCE
 from providers.registry import ProviderRegistry
 from config.settings import Settings
 
@@ -465,40 +466,92 @@ class SongService:
         sets = self.list_sets()
         samples = list(project["samples"]) if project is not None else []
         songs = list(project["songs"]) if project is not None else []
+        professional_projects = self.storage.list_song_projects()
+        active_professional_project = next(
+            (item for item in professional_projects if str(item.get("status")) != "completed"),
+            professional_projects[0] if professional_projects else None,
+        )
+        professional_next = self._professional_next_step(active_professional_project)
         missing: list[str] = []
-        if counts["instrumental"] == 0:
-            missing.append("instrumental")
-        if counts["melody"] == 0:
-            missing.append("melodia")
-        if counts["lyrics"] == 0:
-            missing.append("letra")
-        if not sets:
-            missing.append("set/proyecto")
-        if project is not None and not samples:
-            missing.append("sample/checkpoint")
-        if project is not None and not songs:
-            missing.append("cancion completa")
+        if active_professional_project is not None:
+            if professional_next["status"] != "completed":
+                missing.append(str(professional_next["missing_label"]))
+        else:
+            if counts["instrumental"] == 0:
+                missing.append("instrumental")
+            if counts["melody"] == 0:
+                missing.append("melodia")
+            if counts["lyrics"] == 0:
+                missing.append("letra")
+            if not sets:
+                missing.append("set/proyecto")
+            if project is not None and not samples:
+                missing.append("sample/checkpoint")
+            if project is not None and not songs:
+                missing.append("cancion completa")
 
         recommendations = [
-            "Trabaja siempre sobre un proyecto activo para conservar instrumental, melodia y letra juntos.",
-            "No avances a sample si falta instrumental, melodia o letra.",
+            "Trabaja siempre sobre un proyecto activo para conservar intencion, letra, plan musical, MIDI y audio juntos.",
             "Revisa la letra editable antes de exportar para mejorar metrica, rima y narrativa.",
-            "El cierre correcto es set valido, sample, cancion completa, mezcla y WAV/MP3.",
+            "El cierre correcto del flujo profesional es especificacion, letra, revision, plan musical, MIDI, audio, mastering y export.",
         ]
-        if "instrumental" in missing:
-            recommendations.insert(0, "Define el instrumental: genero, mood, BPM, tonalidad e instrumentos.")
-        if "melodia" in missing:
-            recommendations.insert(0, "Define la melodia vocal: estilo cantado, rango, energia y estructura.")
-        if "letra" in missing:
-            recommendations.insert(0, "Crea o edita una letra completa con versos, coro y cierre emocional.")
+        if active_professional_project is not None:
+            recommendations.insert(0, str(professional_next["recommendation"]))
+        else:
+            recommendations.insert(1, "No avances a sample si falta instrumental, melodia o letra.")
+            recommendations.append("En el flujo legado el orden es set valido, sample, cancion completa, mezcla y WAV/MP3.")
+            if "instrumental" in missing:
+                recommendations.insert(0, "Define el instrumental: genero, mood, BPM, tonalidad e instrumentos.")
+            if "melodia" in missing:
+                recommendations.insert(0, "Define la melodia vocal: estilo cantado, rango, energia y estructura.")
+            if "letra" in missing:
+                recommendations.insert(0, "Crea o edita una letra completa con versos, coro y cierre emocional.")
 
         return {
             "draft_counts": counts,
             "sets": len(sets),
             "samples": len(samples),
             "songs": len(songs),
+            "professional_project": active_professional_project,
+            "professional_next": professional_next,
             "missing": missing,
             "recommendations": recommendations,
+        }
+
+    def _professional_next_step(self, project: dict[str, object] | None) -> dict[str, object]:
+        if project is None:
+            return {
+                "status": "missing_project",
+                "missing_label": "proyecto profesional activo",
+                "recommendation": "Crea o carga un proyecto desde Biblioteca antes de generar audio final.",
+            }
+        if str(project.get("status")) == "completed":
+            return {
+                "status": "completed",
+                "missing_label": "",
+                "recommendation": "El proyecto ya tiene export preparado. Revisa Production y descarga los artefactos finales.",
+            }
+        current_phase = str(project.get("current_phase") or PHASE_SEQUENCE[0].value)
+        phase_by_value = {phase.value: phase for phase in PHASE_SEQUENCE}
+        current = phase_by_value.get(current_phase, PHASE_SEQUENCE[0])
+        label = PHASE_LABELS.get(current, current_phase)
+        phase_actions = {
+            "SONG_SPEC_COLLECTION": "Completa la intencion con Gemma hasta que el director tecnico apruebe song_spec.json.",
+            "LYRICS_GENERATION": "Genera o edita la letra cantable por secciones.",
+            "LYRICS_TECHNICAL_REVIEW": "Aprueba la letra con revision tecnica antes de planear musica.",
+            "MUSIC_PLAN_GENERATION": "Genera el plan musical: BPM, tonalidad, acordes, estructura y transiciones.",
+            "MIDI_GENERATION": "Crea el MIDI base obligatorio con melodia vocal guia y progresion armonica.",
+            "INSTRUMENTAL_GENERATION": "Genera el instrumental o confirma la ruta Full Song si ACE-Step sera el proveedor principal.",
+            "VOCAL_SYNTHESIS": "Genera la voz cantada real o continua por Full Song si ACE-Step integra voz e instrumental.",
+            "VOICE_CONVERSION": "Resuelve la conversion vocal opcional o saltala si no aplica.",
+            "MIXING": "Mezcla stems si usas ruta separada, o pasa a Mastering con Full Song.",
+            "MASTERING": "Ejecuta Mastering/Full Song para producir final_song.wav y final_song.mp3.",
+            "EXPORT": "Prepara export_manifest.json y descarga MP3/WAV/FLAC/MIDI/ZIP.",
+        }
+        return {
+            "status": str(project.get("status", "pending")),
+            "missing_label": label,
+            "recommendation": phase_actions.get(current_phase, f"Continua la fase profesional: {label}."),
         }
 
     def _build_gemma_prompt(
@@ -512,8 +565,9 @@ class SongService:
             return (
                 f"Pregunta del usuario: {question}\n"
                 f"Estado de trabajo desde SQLite: {readiness}\n"
-                "Ayuda al usuario a iniciar una cancion completa. Recuerda que debe completar instrumental, "
-                "melodia y letra antes del set, luego sample, cancion completa, mezcla y MP3."
+                "Ayuda al usuario a continuar el pipeline profesional. El flujo principal es proyecto, "
+                "spec, letra, revision, plan musical, MIDI, audio, mastering y export. "
+                "El flujo legado de set/sample solo aplica si no hay proyecto profesional activo."
             )
         set_data = dict(project["set"])
         assets = dict(project["assets"])
@@ -557,8 +611,8 @@ class SongService:
                     "3. Letra",
                 ],
                 "completion_rule": (
-                    "Para crear un set y avanzar a sample/cancion completa debe existir "
-                    "al menos un draft de instrumental, melodia y letra."
+                    "Para usar el flujo legado de set debe existir al menos un draft de instrumental, "
+                    "melodia y letra. El flujo principal recomendado usa proyecto profesional y fases."
                 ),
                 "summary": (
                     f"Proyecto '{song_set.get('project_name', song_set['set_id'])}' compuesto por instrumental "
@@ -566,7 +620,7 @@ class SongService:
                     f"y letra {song_set['lyrics_id']}."
                 ),
                 "compatibility_status": compatibility.get("status", "unknown"),
-                "next_suggestion": "El set ya tiene instrumental, melodia y letra. Genera un sample como checkpoint y luego produce la cancion completa con soundtrack, voz cantada, mezcla y exports.",
+                "next_suggestion": "El set ya tiene instrumental, melodia y letra. Para el flujo principal, cargalo como proyecto activo y continua las fases profesionales hasta MIDI, Mastering y Export.",
             },
         }
 
