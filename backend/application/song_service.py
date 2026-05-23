@@ -873,6 +873,11 @@ class SongService:
         if safe_extension not in {"mp3", "wav"}:
             raise ValueError("Formato de descarga no soportado. Usa mp3 o wav.")
 
+        professional_file = self._latest_professional_audio_export_file(safe_extension)
+        if professional_file is not None:
+            path, filename, _media_type = professional_file
+            return path, filename
+
         latest_song = self.storage.get_latest_song()
         if latest_song is None:
             raise ValueError("No hay cancion completa para descargar.")
@@ -897,6 +902,15 @@ class SongService:
         project_name = str(song_set.get("project_name", latest_song["song_id"])) if song_set else str(latest_song["song_id"])
         filename = f"{self._safe_download_name(project_name)}.{safe_extension}"
         return export_path, filename
+
+    def _latest_professional_audio_export_file(self, extension: str) -> tuple[Path, str, str] | None:
+        artifact_type = f"final_song_{extension}"
+        for project in self.storage.list_song_projects():
+            try:
+                return self.professional_songs.artifact_download_file(str(project["id"]), artifact_type)
+            except ValueError:
+                continue
+        return None
 
     def save_template(self) -> dict[str, str]:
         return self.path_response(self.template_builder.save_latest_set_template())

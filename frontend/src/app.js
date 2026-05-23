@@ -1170,6 +1170,11 @@ createApp({
     },
     async saveLatestMp3() {
       this.downloadStatus = "Preparando descarga...";
+      const mp3Artifact = this.exportables.find((item) => item.type === "final_song_mp3" && item.url);
+      if (mp3Artifact) {
+        await this.downloadArtifact(mp3Artifact);
+        return;
+      }
       const response = await fetch(apiUrl("/api/audio-exports/latest/download?format=mp3"));
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
