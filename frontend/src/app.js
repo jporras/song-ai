@@ -256,6 +256,10 @@ createApp({
       systemStatus: { components: [], bootstrap: {} },
       resourceStatus: { snapshot: {}, readiness: { recommendations: [] }, settings: {} },
       resourceHistory: { snapshots: [] },
+      resourceRefreshing: false,
+      resourceAutoRefresh: true,
+      resourceLastUpdated: "",
+      resourceRefreshTimer: null,
       localFinalJob: { status: "idle", message: "Generacion final local no iniciada.", result: {} },
       localFinalPollTimer: null,
       projectPhases: { phases: [] },
@@ -493,6 +497,23 @@ createApp({
     resourceRecommendations() {
       return this.resourceStatus?.readiness?.recommendations || [];
     },
+    resourceDecisionClass() {
+      const decision = String(this.resourceStatus?.readiness?.decision || "");
+      if (this.resourceStatus?.readiness?.ready === false) return "blocked";
+      if (decision.startsWith("warning")) return "warning";
+      return "ready";
+    },
+    resourceHistoryRows() {
+      return (this.resourceHistory.snapshots || []).slice(0, 8).map((snapshot) => ({
+        id: snapshot.id,
+        time: this.formatResourceTime(snapshot.created_at),
+        phase: snapshot.phase,
+        ram: `${Math.round(snapshot.ram_available_mb || 0)} MB`,
+        swap: `${Math.round(snapshot.swap_free_mb || 0)} MB`,
+        cpu: `${Math.round(snapshot.cpu_percent || 0)}%`,
+        decision: snapshot.decision || "observed",
+      }));
+    },
   },
   async mounted() {
     this.restoreLocalUiState();
@@ -507,6 +528,10 @@ createApp({
     await this.loadLocalFinalJob();
     await this.loadOrchestration();
     await this.loadJsonConfigs();
+    this.startResourceAutoRefresh();
+  },
+  beforeUnmount() {
+    this.stopResourceAutoRefresh();
   },
   methods: {
     addMessage(text) {
@@ -533,6 +558,7 @@ createApp({
       const tab = TAB_BY_ROUTE[path] || "library";
       this.activeTab = tab;
       if (push) window.history.pushState({}, "", ROUTE_BY_TAB[tab]);
+      if (tab === "production") this.loadResources({ silent: true });
     },
     requestNavigation(tab) {
       if (tab === this.activeTab) return;
@@ -612,23 +638,51 @@ createApp({
       this.systemStatus = (await this.readApiPayload(systemResponse, {})).data;
       this.projectPhases = (await this.readApiPayload(phasesResponse, { phases: [] })).data;
     },
-    async loadResources() {
-      const [statusResponse, historyResponse] = await Promise.all([
-        fetch(apiUrl("/api/resources/status")),
-        fetch(apiUrl("/api/resources/history?limit=25")),
-      ]);
-      this.resourceStatus = (await this.readApiPayload(statusResponse, this.resourceStatus)).data;
-      this.resourceHistory = (await this.readApiPayload(historyResponse, { snapshots: [] })).data;
+    async loadResources(options = {}) {
+      if (this.resourceRefreshing && !options.force) return;
+      this.resourceRefreshing = true;
+      try {
+        const [statusResponse, historyResponse] = await Promise.all([
+          fetch(apiUrl("/api/resources/status")),
+          fetch(apiUrl("/api/resources/history?limit=25")),
+        ]);
+        this.resourceStatus = (await this.readApiPayload(statusResponse, this.resourceStatus)).data;
+        this.resourceHistory = (await this.readApiPayload(historyResponse, { snapshots: [] })).data;
+        this.resourceLastUpdated = nowLabel();
+      } finally {
+        this.resourceRefreshing = false;
+      }
     },
     async checkAudioReadiness() {
+      this.resourceRefreshing = true;
       const response = await fetch(apiUrl("/api/resources/check-audio-readiness"), { method: "POST" });
       const payload = await this.readApiPayload(response, {});
       if (!payload.ok) {
+        this.resourceRefreshing = false;
         this.addMessage(payload.detail || "No se pudo revisar recursos.");
         return;
       }
-      await this.loadResources();
+      await this.loadResources({ force: true });
       this.addMessage(payload.data.readiness?.message || "Recursos revisados.");
+    },
+    startResourceAutoRefresh() {
+      this.stopResourceAutoRefresh();
+      this.resourceRefreshTimer = setInterval(() => {
+        if (!this.resourceAutoRefresh || this.activeTab !== "production" || document.hidden) return;
+        this.loadResources({ silent: true });
+      }, 10000);
+    },
+    stopResourceAutoRefresh() {
+      if (!this.resourceRefreshTimer) return;
+      clearInterval(this.resourceRefreshTimer);
+      this.resourceRefreshTimer = null;
+    },
+    toggleResourceAutoRefresh() {
+      this.resourceAutoRefresh = !this.resourceAutoRefresh;
+      if (this.resourceAutoRefresh) {
+        this.loadResources({ silent: true });
+        this.startResourceAutoRefresh();
+      }
     },
     async loadLocalFinalJob() {
       const response = await fetch(apiUrl("/api/local-final-song/status"));
@@ -1345,6 +1399,19 @@ createApp({
       if (bytes < 1024) return `${bytes} B`;
       if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
       return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    },
+    formatResourceTime(value) {
+      if (!value) return "--";
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return String(value).replace("T", " ").slice(0, 19);
+      return parsed.toLocaleString("es-CO", {
+        hour12: false,
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
     },
   },
 }).mount("#app");

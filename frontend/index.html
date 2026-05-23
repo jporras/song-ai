@@ -747,9 +747,16 @@
               <div>
                 <h2>Preparacion para voz cantada</h2>
                 <p>{{ resourceStatus.readiness?.message || 'Sin lectura de recursos.' }}</p>
+                <small v-if="resourceLastUpdated">Ultima lectura: {{ resourceLastUpdated }}</small>
               </div>
-              <div class="actions">
-                <button @click="checkAudioReadiness">Revisar recursos</button>
+              <div class="actions resource-actions">
+                <button @click="loadResources({ force: true })" :disabled="resourceRefreshing">
+                  {{ resourceRefreshing ? 'Actualizando...' : 'Actualizar ahora' }}
+                </button>
+                <button @click="checkAudioReadiness" :disabled="resourceRefreshing">Revisar recursos</button>
+                <button :class="{ active: resourceAutoRefresh }" @click="toggleResourceAutoRefresh">
+                  Auto 10s {{ resourceAutoRefresh ? 'ON' : 'OFF' }}
+                </button>
               </div>
             </div>
             <div class="resource-grid">
@@ -778,17 +785,26 @@
                 <small>Disco modelos</small>
               </article>
             </div>
-            <div :class="['resource-decision', resourceStatus.readiness?.ready === false ? 'blocked' : String(resourceStatus.readiness?.decision || '').startsWith('warning') ? 'warning' : 'ready']">
+            <div :class="['resource-decision', resourceDecisionClass]">
               {{ resourceStatus.readiness?.decision || 'observed' }}
             </div>
             <div class="recommendation-list">
               <span v-for="item in resourceRecommendations" :key="item">{{ item }}</span>
             </div>
             <div class="snapshot-list">
-              <article v-for="snapshot in (resourceHistory.snapshots || []).slice(0, 6)" :key="snapshot.id">
-                <time>{{ snapshot.created_at }}</time>
+              <div class="snapshot-header">
+                <span>Hora</span>
+                <span>Fase</span>
+                <span>RAM</span>
+                <span>Swap</span>
+                <span>CPU</span>
+              </div>
+              <article v-for="snapshot in resourceHistoryRows" :key="snapshot.id">
+                <time>{{ snapshot.time }}</time>
                 <span>{{ snapshot.phase }}</span>
-                <small>{{ Math.round(snapshot.ram_available_mb) }} MB RAM / {{ Math.round(snapshot.swap_free_mb || 0) }} MB swap / {{ Math.round(snapshot.cpu_percent) }}% CPU</small>
+                <strong>{{ snapshot.ram }}</strong>
+                <small>{{ snapshot.swap }}</small>
+                <small>{{ snapshot.cpu }}</small>
               </article>
             </div>
           </section>

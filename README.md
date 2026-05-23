@@ -365,6 +365,8 @@ En Docker Compose, la app monta `/var/run/docker.sock` y usa `tools/manage_llm_c
 
 Nota de sprint: ACE-Step dentro de Docker necesita `torchcodec`/`pytorchcodec` para guardar WAV con versiones recientes de `torchaudio`. `backend/requirements-local-audio.txt` lo declara y el bootstrap lo valida como dependencia persistente en `/app/provider-cache/python`. Si falta, la app muestra: `Falta pytorchcodec. Instala la dependencia antes de generar con ACE-Step.`
 
+UX ResourceMonitor: Production incluye refresco manual, revision explicita de recursos, auto-actualizacion cada 10 segundos mientras la vista esta activa, timestamp de ultima lectura e historial compacto con RAM, swap y CPU.
+
 Swap recomendado en Linux: no bloquea la generacion, pero mejora estabilidad con ACE-Step. Ejemplo:
 
 ```bash

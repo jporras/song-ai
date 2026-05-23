@@ -1053,6 +1053,12 @@ summary span {
   margin-top: 14px;
 }
 
+.resource-actions button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(124, 140, 255, 0.16), 0 0 22px rgba(124, 140, 255, 0.1);
+}
+
 .resource-grid article,
 .snapshot-list article {
   display: grid;
@@ -1108,9 +1114,34 @@ summary span {
   margin-top: 12px;
 }
 
+.snapshot-header,
 .snapshot-list article {
-  grid-template-columns: 180px 1fr auto;
+  grid-template-columns: 130px minmax(140px, 1fr) 110px 110px 80px;
   align-items: center;
+}
+
+.snapshot-header {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 0 14px;
+}
+
+.snapshot-list article {
+  min-height: 54px;
+}
+
+.snapshot-list time,
+.snapshot-list strong,
+.snapshot-list small {
+  font-variant-numeric: tabular-nums;
+}
+
+.snapshot-list time {
+  color: var(--accent);
+}
+
+.snapshot-list strong {
+  color: var(--text);
 }
 
 .gemma-footer {
