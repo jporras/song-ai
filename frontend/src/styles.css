@@ -171,6 +171,20 @@ small {
   box-shadow: var(--soft-shadow);
 }
 
+.active-project-card {
+  gap: 6px;
+  padding-block: 12px;
+}
+
+.active-project-card strong {
+  color: var(--text);
+  line-height: 1.25;
+}
+
+.active-project-card small {
+  margin-top: 0;
+}
+
 .side-title,
 .section-head,
 .project-header-panel {

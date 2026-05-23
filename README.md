@@ -377,6 +377,8 @@ Sprint flujo por fases: Intent, Lyrics, Music Plan, MIDI, Instrumental y Voice t
 
 UX sidebar: la barra lateral usa `--sidebar-width: 300px` para dar mas aire a proyecto activo y fases, y el footer de Gemma se alinea con ese ancho.
 
+UX sidebar compacto: el proyecto activo se muestra en una sola linea con prefijo `>` para reducir espacio vertical sin perder contexto.
+
 Swap recomendado en Linux: no bloquea la generacion, pero mejora estabilidad con ACE-Step. Ejemplo:
 
 ```bash
