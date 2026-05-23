@@ -254,6 +254,7 @@ createApp({
       studioStatus: {},
       localPipeline: {},
       systemStatus: { components: [], bootstrap: {} },
+      showAdvancedSystem: false,
       resourceStatus: { snapshot: {}, readiness: { recommendations: [] }, settings: {} },
       resourceHistory: { snapshots: [] },
       resourceRefreshing: false,
@@ -513,6 +514,55 @@ createApp({
         cpu: `${Math.round(snapshot.cpu_percent || 0)}%`,
         decision: snapshot.decision || "observed",
       }));
+    },
+    systemComponentMap() {
+      return (this.systemStatus.components || []).reduce((items, component) => {
+        items[component.id] = component;
+        return items;
+      }, {});
+    },
+    essentialSystemItems() {
+      const components = this.systemComponentMap;
+      const gemma = components.llm_gemma || {};
+      const qwen = components.llm_qwen || {};
+      const fullSong = components.full_song || {};
+      const ffmpeg = components.ffmpeg || {};
+      const models = components.song_ai_model_root || {};
+      const cache = components.song_ai_provider_cache || {};
+      const bootstrap = components.bootstrap || {};
+      const textReady = gemma.status === "ready" && qwen.status === "ready";
+      const audioReady = fullSong.status === "ready" && ffmpeg.status === "ready";
+      const storageReady = models.status === "ready" && cache.status === "ready";
+      return [
+        {
+          id: "text_models",
+          label: "Modelos de texto",
+          status: textReady ? "ready" : "missing",
+          detail: textReady ? "Gemma y Qwen disponibles para la charla creativa." : "Falta Gemma o Qwen; usa Preparar/reiniciar o Recrear modelos.",
+        },
+        {
+          id: "audio_engine",
+          label: "Audio local",
+          status: audioReady ? "ready" : "missing",
+          detail: audioReady ? "ACE-Step y ffmpeg listos para generar y exportar canción final." : fullSong.detail || "Falta preparar ACE-Step o ffmpeg.",
+        },
+        {
+          id: "storage",
+          label: "Almacenamiento Docker",
+          status: storageReady ? "ready" : "missing",
+          detail: storageReady ? "Modelos y cache persistentes en volúmenes Docker." : "Revisa volúmenes de modelos/cache.",
+        },
+        {
+          id: "bootstrap",
+          label: "Preparación",
+          status: bootstrap.status === "running" ? "running" : "ready",
+          detail: bootstrap.detail || "Dependencias y modelos se preparan dentro del contenedor.",
+        },
+      ];
+    },
+    advancedSystemComponents() {
+      const hidden = new Set(["sqlite", "ffmpeg", "bootstrap", "llm_gemma", "llm_qwen", "full_song", "song_ai_model_root", "song_ai_provider_cache"]);
+      return (this.systemStatus.components || []).filter((component) => !hidden.has(component.id));
     },
   },
   async mounted() {

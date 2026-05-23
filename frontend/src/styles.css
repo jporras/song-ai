@@ -990,6 +990,11 @@ summary span {
   gap: 10px;
 }
 
+.component-grid.compact {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin-top: 10px;
+}
+
 .component-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1003,6 +1008,44 @@ summary span {
 .component-card small {
   grid-column: 2;
   overflow-wrap: anywhere;
+}
+
+.system-summary-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.system-summary-row {
+  display: grid;
+  grid-template-columns: auto 180px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(15, 17, 21, 0.38);
+}
+
+.system-summary-row strong {
+  color: var(--text);
+}
+
+.system-summary-row small {
+  color: var(--muted);
+}
+
+.advanced-system {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.advanced-system summary {
+  cursor: pointer;
+  color: var(--accent);
 }
 
 .dot {
@@ -1020,6 +1063,10 @@ summary span {
 .dot.missing,
 .dot.error {
   background: var(--error);
+}
+
+.dot.optional {
+  background: var(--muted);
 }
 
 .dot.running {

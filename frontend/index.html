@@ -811,21 +811,39 @@
 
           <section class="panel">
             <div class="section-head">
-              <h2>Estado local del sistema</h2>
+              <div>
+                <h2>Infraestructura local</h2>
+                <p>Solo lo necesario para saber si la app puede conversar, generar audio y guardar modelos.</p>
+              </div>
               <div class="actions">
                 <button @click="refreshSystemStatus">Consultar</button>
                 <button @click="restartBootstrap" :disabled="bootstrapRunning">Preparar/reiniciar</button>
                 <button @click="upgradeBootstrap" :disabled="bootstrapRunning">Actualizar dependencias</button>
+                <button @click="showAdvancedSystem = !showAdvancedSystem">{{ showAdvancedSystem ? 'Ocultar avanzado' : 'Avanzado' }}</button>
+              </div>
+            </div>
+            <div class="system-summary-list">
+              <article v-for="item in essentialSystemItems" :key="item.id" class="system-summary-row">
+                <span :class="['dot', item.status]"></span>
+                <strong>{{ item.label }}</strong>
+                <small>{{ item.detail }}</small>
+              </article>
+            </div>
+            <div v-if="showAdvancedSystem" class="advanced-system">
+              <div class="actions">
                 <button @click="refreshLlmModel('gemma')" :disabled="bootstrapRunning">Recrear Gemma</button>
                 <button @click="refreshLlmModel('qwen')" :disabled="bootstrapRunning">Recrear Qwen</button>
               </div>
-            </div>
-            <div class="component-grid">
-              <article v-for="component in systemStatus.components" :key="component.id" class="component-card">
-                <span :class="['dot', component.status]"></span>
-                <strong>{{ component.label }}</strong>
-                <small>{{ component.detail }}</small>
-              </article>
+              <details>
+                <summary>Componentes tecnicos</summary>
+                <div class="component-grid compact">
+                  <article v-for="component in advancedSystemComponents" :key="component.id" class="component-card">
+                    <span :class="['dot', component.status]"></span>
+                    <strong>{{ component.label }}</strong>
+                    <small>{{ component.detail }}</small>
+                  </article>
+                </div>
+              </details>
             </div>
           </section>
         </section>

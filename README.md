@@ -367,6 +367,8 @@ Nota de sprint: ACE-Step dentro de Docker necesita `torchcodec`/`pytorchcodec` p
 
 UX ResourceMonitor: Production incluye refresco manual, revision explicita de recursos, auto-actualizacion cada 10 segundos mientras la vista esta activa, timestamp de ultima lectura e historial compacto con RAM, swap y CPU.
 
+UX Infraestructura local: Production muestra un resumen limpio con modelos de texto, audio local, almacenamiento Docker y preparacion. Los componentes tecnicos y acciones de recreacion quedan en modo avanzado.
+
 Swap recomendado en Linux: no bloquea la generacion, pero mejora estabilidad con ACE-Step. Ejemplo:
 
 ```bash
