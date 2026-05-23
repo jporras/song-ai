@@ -102,16 +102,19 @@ class LocalSongPipeline:
 
         if self.settings.full_song_command.strip() and self._full_song_command_available():
             self._prepare_audio_resources("full_song")
-            self._run_template(
-                self.settings.full_song_command,
-                {
-                    "prompt_path": prompt_path,
-                    "lyrics_path": lyrics_path,
-                    "output_path": final_wav_path,
-                    "work_dir": work_dir,
-                    "log_path": command_log_path,
-                },
-            )
+            try:
+                self._run_template(
+                    self.settings.full_song_command,
+                    {
+                        "prompt_path": prompt_path,
+                        "lyrics_path": lyrics_path,
+                        "output_path": final_wav_path,
+                        "work_dir": work_dir,
+                        "log_path": command_log_path,
+                    },
+                )
+            finally:
+                self._restore_text_models()
             self._assert_file(final_wav_path, "El comando local de cancion completa no genero final_mix.wav.")
             self._export_mp3(final_wav_path, final_mp3_path)
             return {
@@ -125,29 +128,32 @@ class LocalSongPipeline:
             }
 
         self._prepare_audio_resources("singing_voice")
-        self._run_template(
-            self.settings.soundtrack_command,
-            {
-                "prompt_path": prompt_path,
-                "lyrics_path": lyrics_path,
-                "output_path": instrumental_path,
-                "work_dir": work_dir,
-                "log_path": command_log_path,
-            },
-        )
-        self._assert_file(instrumental_path, "El comando local de soundtrack no genero instrumental.wav.")
+        try:
+            self._run_template(
+                self.settings.soundtrack_command,
+                {
+                    "prompt_path": prompt_path,
+                    "lyrics_path": lyrics_path,
+                    "output_path": instrumental_path,
+                    "work_dir": work_dir,
+                    "log_path": command_log_path,
+                },
+            )
+            self._assert_file(instrumental_path, "El comando local de soundtrack no genero instrumental.wav.")
 
-        self._run_template(
-            self.settings.singing_voice_command,
-            {
-                "prompt_path": prompt_path,
-                "lyrics_path": lyrics_path,
-                "instrumental_path": instrumental_path,
-                "output_path": vocals_path,
-                "work_dir": work_dir,
-                "log_path": command_log_path,
-            },
-        )
+            self._run_template(
+                self.settings.singing_voice_command,
+                {
+                    "prompt_path": prompt_path,
+                    "lyrics_path": lyrics_path,
+                    "instrumental_path": instrumental_path,
+                    "output_path": vocals_path,
+                    "work_dir": work_dir,
+                    "log_path": command_log_path,
+                },
+            )
+        finally:
+            self._restore_text_models()
         self._assert_file(vocals_path, "El comando local de voz cantada no genero vocals.wav.")
 
         ffmpeg_path = shutil.which("ffmpeg")
@@ -227,6 +233,11 @@ class LocalSongPipeline:
             return
         self.resource_monitor.prepare_for_audio(phase=phase)
 
+    def _restore_text_models(self) -> None:
+        if self.resource_monitor is None:
+            return
+        self.resource_monitor.restore_text_models()
+
     def _full_song_command_available(self) -> bool:
         command = self.settings.full_song_command.strip()
         self._full_song_unavailable_reason = ""
@@ -248,11 +259,8 @@ class LocalSongPipeline:
                 )
                 self._full_song_available_cache = False
                 return False
-            if not self.settings.allow_cpu_full_song and not self._cuda_available():
-                self._full_song_unavailable_reason = (
-                    "ACE-Step esta instalado, pero Docker no tiene GPU CUDA disponible. "
-                    "Activa GPU para Docker o define SONG_AI_ALLOW_CPU_FULL_SONG=true si aceptas una generacion muy lenta por CPU."
-                )
+            if not (provider_path / "torchcodec").exists():
+                self._full_song_unavailable_reason = "Falta pytorchcodec. Instala la dependencia antes de generar con ACE-Step."
                 self._full_song_available_cache = False
                 return False
             self._full_song_available_cache = True

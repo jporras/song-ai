@@ -474,7 +474,7 @@ createApp({
       return this.localFinalJob?.status === "running";
     },
     canGenerateLocalFinalSong() {
-      return Boolean(this.localPipeline.ready) && this.audioResourcesReady && !this.bootstrapRunning && !this.localFinalRunning;
+      return Boolean(this.localPipeline.ready) && !this.bootstrapRunning && !this.localFinalRunning;
     },
     audioResourcesReady() {
       return this.resourceStatus?.readiness?.ready !== false;

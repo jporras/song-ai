@@ -1083,6 +1083,11 @@ summary span {
   color: var(--error);
 }
 
+.resource-decision.warning {
+  border-color: var(--dirty);
+  color: var(--dirty);
+}
+
 .recommendation-list {
   display: flex;
   flex-wrap: wrap;

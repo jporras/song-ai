@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -72,16 +73,21 @@ class ResourceMonitor:
         before = self.capture(phase="before_audio", persist=True)
         if self.settings.release_llm_before_audio:
             if event_callback is not None:
-                event_callback("Liberando Gemma/Qwen/llama.cpp antes de audio pesado.")
+                event_callback("Liberando memoria: pausando modelos de texto antes de iniciar la generacion de audio.")
             if self.settings.stop_llm_command:
                 subprocess.run(self.settings.stop_llm_command, shell=True, timeout=60, check=False)
             if self.settings.audio_start_delay_seconds > 0:
                 time.sleep(self.settings.audio_start_delay_seconds)
         after = self.capture(phase="after_llm_release", persist=True)
         readiness = self.evaluate(after)
-        if not readiness.ready:
-            raise ValueError(readiness.message)
         return {"snapshot": after, "before": before, "readiness": self._readiness_dict(readiness), "released_llm": True}
+
+    def restore_text_models(self, event_callback=None) -> None:
+        if not self.settings.enabled or not self.settings.start_llm_command:
+            return
+        if event_callback is not None:
+            event_callback("Restaurando modelos de texto despues de la generacion de audio.")
+        subprocess.run(self.settings.start_llm_command, shell=True, timeout=120, check=False)
 
     def capture(
         self,
@@ -97,6 +103,9 @@ class ResourceMonitor:
                 "ram_total_mb": 0,
                 "ram_available_mb": 0,
                 "ram_used_percent": 100,
+                "swap_total_mb": 0,
+                "swap_free_mb": 0,
+                "docker_memory_limit_mb": 0,
                 "cpu_percent": 100,
                 "disk_data_free_mb": 0,
                 "disk_models_free_mb": 0,
@@ -110,12 +119,16 @@ class ResourceMonitor:
             return snapshot
         cpu_percent = psutil.cpu_percent(interval=max(0, self.settings.sample_seconds))
         memory = psutil.virtual_memory()
+        swap = psutil.swap_memory()
         snapshot = {
             "id": f"resource_{uuid4().hex[:12]}",
             "phase": phase,
             "ram_total_mb": self._mb(memory.total),
             "ram_available_mb": self._mb(memory.available),
             "ram_used_percent": float(memory.percent),
+            "swap_total_mb": self._mb(swap.total),
+            "swap_free_mb": self._mb(swap.free),
+            "docker_memory_limit_mb": self._docker_memory_limit_mb(),
             "cpu_percent": float(cpu_percent),
             "disk_data_free_mb": self._disk_free_mb(self.data_path),
             "disk_models_free_mb": self._disk_free_mb(self.models_path),
@@ -141,23 +154,24 @@ class ResourceMonitor:
         ]
         if ram_available < self.settings.min_free_ram_mb_for_audio:
             message = (
-                "No hay RAM suficiente para voz cantada. "
-                f"Disponible {ram_available:.0f} MB, requerido {self.settings.min_free_ram_mb_for_audio} MB."
+                "Advertencia: RAM disponible baja para voz cantada. "
+                f"Disponible {ram_available:.0f} MB, referencia {self.settings.min_free_ram_mb_for_audio} MB. "
+                "Puedes continuar; si ACE-Step falla, revisa este diagnostico."
             )
-            return AudioReadiness(False, "blocked_ram", message, snapshot, recommendations)
+            return AudioReadiness(True, "warning_ram", message, snapshot, recommendations)
         if min(disk_values) < self.settings.min_free_disk_mb_for_audio:
             message = (
-                "No hay disco suficiente para audio pesado. "
-                f"Minimo libre {min(disk_values):.0f} MB, requerido {self.settings.min_free_disk_mb_for_audio} MB."
+                "Advertencia: disco libre bajo para audio pesado. "
+                f"Minimo libre {min(disk_values):.0f} MB, referencia {self.settings.min_free_disk_mb_for_audio} MB."
             )
-            return AudioReadiness(False, "blocked_disk", message, snapshot, recommendations)
+            return AudioReadiness(True, "warning_disk", message, snapshot, recommendations)
         if cpu_percent > self.settings.max_cpu_percent_before_audio:
             message = (
-                "CPU demasiado ocupada para iniciar audio pesado. "
-                f"Actual {cpu_percent:.0f}%, maximo {self.settings.max_cpu_percent_before_audio}%."
+                "Advertencia: CPU ocupada antes de iniciar audio pesado. "
+                f"Actual {cpu_percent:.0f}%, referencia {self.settings.max_cpu_percent_before_audio}%."
             )
-            return AudioReadiness(False, "blocked_cpu", message, snapshot, recommendations)
-        return AudioReadiness(True, "ready", "Recursos suficientes para iniciar audio pesado.", snapshot, recommendations)
+            return AudioReadiness(True, "warning_cpu", message, snapshot, recommendations)
+        return AudioReadiness(True, "ready", "Diagnostico de recursos registrado. Puedes iniciar audio pesado.", snapshot, recommendations)
 
     def recommendations(self, snapshot: dict[str, object]) -> list[str]:
         recommendations: list[str] = []
@@ -168,9 +182,32 @@ class ResourceMonitor:
             recommendations.append("Bajar duracion a 15s")
             recommendations.append("Usar RVC en vez de ACE-Step")
             recommendations.append("Aumentar RAM asignada a Docker")
+        if float(snapshot.get("swap_total_mb", 0)) < 4096:
+            recommendations.append("Se recomienda disponer de al menos 4 GB de swap para mejorar la estabilidad durante la generacion de audio")
         if min(float(snapshot["disk_data_free_mb"]), float(snapshot["disk_models_free_mb"]), float(snapshot["disk_cache_free_mb"])) < self.settings.min_free_disk_mb_for_audio * 1.25:
             recommendations.append("Liberar espacio en disco")
         return recommendations or ["Recursos dentro del rango configurado"]
+
+    def _docker_memory_limit_mb(self) -> float:
+        candidates = [
+            Path("/sys/fs/cgroup/memory.max"),
+            Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"),
+        ]
+        for path in candidates:
+            try:
+                value = path.read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+            if not value or value == "max":
+                continue
+            try:
+                limit = int(value)
+            except ValueError:
+                continue
+            if limit <= 0 or limit > 10**15:
+                continue
+            return self._mb(limit)
+        return self._mb(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")) if hasattr(os, "sysconf") else 0
 
     def _heavy_processes(self) -> list[dict[str, object]]:
         processes: list[dict[str, object]] = []

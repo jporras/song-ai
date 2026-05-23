@@ -766,11 +766,19 @@
                 <small>CPU</small>
               </article>
               <article>
+                <strong>{{ Math.round(resourceSnapshot.swap_free_mb || 0) }} MB</strong>
+                <small>Swap libre</small>
+              </article>
+              <article>
+                <strong>{{ Math.round(resourceSnapshot.docker_memory_limit_mb || 0) }} MB</strong>
+                <small>Limite Docker</small>
+              </article>
+              <article>
                 <strong>{{ Math.round(resourceSnapshot.disk_models_free_mb || 0) }} MB</strong>
                 <small>Disco modelos</small>
               </article>
             </div>
-            <div :class="['resource-decision', resourceStatus.readiness?.ready === false ? 'blocked' : 'ready']">
+            <div :class="['resource-decision', resourceStatus.readiness?.ready === false ? 'blocked' : String(resourceStatus.readiness?.decision || '').startsWith('warning') ? 'warning' : 'ready']">
               {{ resourceStatus.readiness?.decision || 'observed' }}
             </div>
             <div class="recommendation-list">
@@ -780,7 +788,7 @@
               <article v-for="snapshot in (resourceHistory.snapshots || []).slice(0, 6)" :key="snapshot.id">
                 <time>{{ snapshot.created_at }}</time>
                 <span>{{ snapshot.phase }}</span>
-                <small>{{ Math.round(snapshot.ram_available_mb) }} MB RAM / {{ Math.round(snapshot.cpu_percent) }}% CPU</small>
+                <small>{{ Math.round(snapshot.ram_available_mb) }} MB RAM / {{ Math.round(snapshot.swap_free_mb || 0) }} MB swap / {{ Math.round(snapshot.cpu_percent) }}% CPU</small>
               </article>
             </div>
           </section>

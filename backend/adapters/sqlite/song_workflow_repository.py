@@ -98,6 +98,9 @@ class SongWorkflowRepository:
                     ram_total_mb REAL NOT NULL,
                     ram_available_mb REAL NOT NULL,
                     ram_used_percent REAL NOT NULL,
+                    swap_total_mb REAL NOT NULL DEFAULT 0,
+                    swap_free_mb REAL NOT NULL DEFAULT 0,
+                    docker_memory_limit_mb REAL NOT NULL DEFAULT 0,
                     cpu_percent REAL NOT NULL,
                     disk_data_free_mb REAL NOT NULL,
                     disk_models_free_mb REAL NOT NULL,
@@ -108,6 +111,21 @@ class SongWorkflowRepository:
                 )
                 """
             )
+            self._ensure_resource_snapshot_columns(connection)
+
+    def _ensure_resource_snapshot_columns(self, connection: sqlite3.Connection) -> None:
+        columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(resource_snapshots)").fetchall()
+        }
+        additions = {
+            "swap_total_mb": "REAL NOT NULL DEFAULT 0",
+            "swap_free_mb": "REAL NOT NULL DEFAULT 0",
+            "docker_memory_limit_mb": "REAL NOT NULL DEFAULT 0",
+        }
+        for name, definition in additions.items():
+            if name not in columns:
+                connection.execute(f"ALTER TABLE resource_snapshots ADD COLUMN {name} {definition}")
 
     def create_project(self, project: SongProject) -> dict[str, object]:
         with sqlite3.connect(self.db_path) as connection:
@@ -356,6 +374,9 @@ class SongWorkflowRepository:
         ram_total_mb: float,
         ram_available_mb: float,
         ram_used_percent: float,
+        swap_total_mb: float,
+        swap_free_mb: float,
+        docker_memory_limit_mb: float,
         cpu_percent: float,
         disk_data_free_mb: float,
         disk_models_free_mb: float,
@@ -370,11 +391,12 @@ class SongWorkflowRepository:
                 """
                 INSERT INTO resource_snapshots (
                     id, created_at, phase, ram_total_mb, ram_available_mb,
-                    ram_used_percent, cpu_percent, disk_data_free_mb,
+                    ram_used_percent, swap_total_mb, swap_free_mb,
+                    docker_memory_limit_mb, cpu_percent, disk_data_free_mb,
                     disk_models_free_mb, disk_cache_free_mb, heavy_processes_json,
                     decision, message
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     snapshot_id,
@@ -383,6 +405,9 @@ class SongWorkflowRepository:
                     ram_total_mb,
                     ram_available_mb,
                     ram_used_percent,
+                    swap_total_mb,
+                    swap_free_mb,
+                    docker_memory_limit_mb,
                     cpu_percent,
                     disk_data_free_mb,
                     disk_models_free_mb,
@@ -399,6 +424,9 @@ class SongWorkflowRepository:
             "ram_total_mb": ram_total_mb,
             "ram_available_mb": ram_available_mb,
             "ram_used_percent": ram_used_percent,
+            "swap_total_mb": swap_total_mb,
+            "swap_free_mb": swap_free_mb,
+            "docker_memory_limit_mb": docker_memory_limit_mb,
             "cpu_percent": cpu_percent,
             "disk_data_free_mb": disk_data_free_mb,
             "disk_models_free_mb": disk_models_free_mb,
@@ -414,7 +442,8 @@ class SongWorkflowRepository:
             rows = connection.execute(
                 """
                 SELECT id, created_at, phase, ram_total_mb, ram_available_mb,
-                       ram_used_percent, cpu_percent, disk_data_free_mb,
+                       ram_used_percent, swap_total_mb, swap_free_mb,
+                       docker_memory_limit_mb, cpu_percent, disk_data_free_mb,
                        disk_models_free_mb, disk_cache_free_mb, heavy_processes_json,
                        decision, message
                 FROM resource_snapshots
@@ -469,6 +498,9 @@ class SongWorkflowRepository:
             "ram_total_mb": float(row["ram_total_mb"]),
             "ram_available_mb": float(row["ram_available_mb"]),
             "ram_used_percent": float(row["ram_used_percent"]),
+            "swap_total_mb": float(row["swap_total_mb"]),
+            "swap_free_mb": float(row["swap_free_mb"]),
+            "docker_memory_limit_mb": float(row["docker_memory_limit_mb"]),
             "cpu_percent": float(row["cpu_percent"]),
             "disk_data_free_mb": float(row["disk_data_free_mb"]),
             "disk_models_free_mb": float(row["disk_models_free_mb"]),

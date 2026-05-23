@@ -14,6 +14,7 @@ class ResourceMonitorSettings:
     audio_start_delay_seconds: int
     release_llm_before_audio: bool
     stop_llm_command: str
+    start_llm_command: str
 
     @classmethod
     def load(cls) -> "ResourceMonitorSettings":
@@ -23,9 +24,10 @@ class ResourceMonitorSettings:
             min_free_ram_mb_for_audio=int(os.getenv("SONG_AI_MIN_FREE_RAM_MB_FOR_AUDIO", "6000")),
             min_free_disk_mb_for_audio=int(os.getenv("SONG_AI_MIN_FREE_DISK_MB_FOR_AUDIO", "15000")),
             max_cpu_percent_before_audio=int(os.getenv("SONG_AI_MAX_CPU_PERCENT_BEFORE_AUDIO", "85")),
-            audio_start_delay_seconds=int(os.getenv("SONG_AI_AUDIO_START_DELAY_SECONDS", "90")),
+            audio_start_delay_seconds=int(os.getenv("SONG_AI_AUDIO_START_DELAY_SECONDS", "45")),
             release_llm_before_audio=os.getenv("SONG_AI_RELEASE_LLM_BEFORE_AUDIO", "true").lower() == "true",
             stop_llm_command=os.getenv("SONG_AI_STOP_LLM_COMMAND", "").strip(),
+            start_llm_command=os.getenv("SONG_AI_START_LLM_COMMAND", "").strip(),
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -38,4 +40,5 @@ class ResourceMonitorSettings:
             "audio_start_delay_seconds": self.audio_start_delay_seconds,
             "release_llm_before_audio": self.release_llm_before_audio,
             "stop_llm_command_configured": bool(self.stop_llm_command),
+            "start_llm_command_configured": bool(self.start_llm_command),
         }

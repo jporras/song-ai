@@ -44,14 +44,16 @@ services:
       SONG_AI_MIN_FREE_RAM_MB_FOR_AUDIO: ${SONG_AI_MIN_FREE_RAM_MB_FOR_AUDIO:-6000}
       SONG_AI_MIN_FREE_DISK_MB_FOR_AUDIO: ${SONG_AI_MIN_FREE_DISK_MB_FOR_AUDIO:-15000}
       SONG_AI_MAX_CPU_PERCENT_BEFORE_AUDIO: ${SONG_AI_MAX_CPU_PERCENT_BEFORE_AUDIO:-85}
-      SONG_AI_AUDIO_START_DELAY_SECONDS: ${SONG_AI_AUDIO_START_DELAY_SECONDS:-90}
+      SONG_AI_AUDIO_START_DELAY_SECONDS: ${SONG_AI_AUDIO_START_DELAY_SECONDS:-45}
       SONG_AI_RELEASE_LLM_BEFORE_AUDIO: ${SONG_AI_RELEASE_LLM_BEFORE_AUDIO:-true}
-      SONG_AI_STOP_LLM_COMMAND: ${SONG_AI_STOP_LLM_COMMAND:-}
+      SONG_AI_STOP_LLM_COMMAND: ${SONG_AI_STOP_LLM_COMMAND:-python tools/manage_llm_containers.py stop}
+      SONG_AI_START_LLM_COMMAND: ${SONG_AI_START_LLM_COMMAND:-python tools/manage_llm_containers.py start}
     volumes:
       - song_ai_data:/app/data
       - song_ai_models:/app/models
       - song_ai_providers:/app/providers
       - song_ai_provider_cache:/app/provider-cache
+      - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   song_ai_data:

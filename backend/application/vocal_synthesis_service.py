@@ -142,38 +142,55 @@ class VocalSynthesisService:
         with log_path.open("w", encoding="utf-8") as log_file:
             log_file.write(f"$ {command}\n\nRESOURCE_READINESS: {prep['readiness']}\n\n")
             log_file.flush()
-            process = subprocess.Popen(command, shell=True, stdout=log_file, stderr=subprocess.STDOUT, text=True)
+            process = None
+            return_code = 1
             started_at = time.monotonic()
             snapshots: list[dict[str, object]] = []
-            while True:
-                return_code = process.poll()
-                if return_code is not None:
-                    break
-                if time.monotonic() - started_at > self.timeout_seconds:
-                    process.kill()
-                    log_file.write(f"\nTIMEOUT despues de {self.timeout_seconds} segundos.\n")
-                    raise ValueError(f"El provider local de voz cantada tardo demasiado. Timeout: {self.timeout_seconds} segundos.")
-                snapshot = self.resource_monitor.capture(phase="audio_generation", persist=True)
-                snapshots.append(snapshot)
-                log_file.write(
-                    "RESOURCE_SAMPLE: "
-                    f"ram_available_mb={snapshot['ram_available_mb']} "
-                    f"ram_used_percent={snapshot['ram_used_percent']} "
-                    f"cpu_percent={snapshot['cpu_percent']}\n"
+            try:
+                process = subprocess.Popen(command, shell=True, stdout=log_file, stderr=subprocess.STDOUT, text=True)
+                while True:
+                    return_code = process.poll()
+                    if return_code is not None:
+                        break
+                    if time.monotonic() - started_at > self.timeout_seconds:
+                        process.kill()
+                        log_file.write(f"\nTIMEOUT despues de {self.timeout_seconds} segundos.\n")
+                        raise ValueError(f"El provider local de voz cantada tardo demasiado. Timeout: {self.timeout_seconds} segundos.")
+                    snapshot = self.resource_monitor.capture(phase="audio_generation", persist=True)
+                    snapshots.append(snapshot)
+                    log_file.write(
+                        "RESOURCE_SAMPLE: "
+                        f"ram_available_mb={snapshot['ram_available_mb']} "
+                        f"ram_used_percent={snapshot['ram_used_percent']} "
+                        f"swap_free_mb={snapshot.get('swap_free_mb', 0)} "
+                        f"cpu_percent={snapshot['cpu_percent']}\n"
+                    )
+                    log_file.flush()
+            finally:
+                self.resource_monitor.restore_text_models(
+                    event_callback=lambda message: self.storage.create_song_event(
+                        song_id=song_id,
+                        phase=SongPhase.VOCAL_SYNTHESIS.value,
+                        status=SongPhaseStatus.RUNNING.value,
+                        progress=80,
+                        message=message,
+                        active_model="resource-monitor",
+                        payload={},
+                    )
                 )
-                log_file.flush()
             if snapshots:
                 duration = time.monotonic() - started_at
                 min_ram = min(float(item["ram_available_mb"]) for item in snapshots)
+                min_swap = min(float(item.get("swap_free_mb", 0)) for item in snapshots)
                 avg_cpu = sum(float(item["cpu_percent"]) for item in snapshots) / len(snapshots)
                 self.storage.create_song_event(
                     song_id=song_id,
                     phase=SongPhase.VOCAL_SYNTHESIS.value,
                     status=SongPhaseStatus.RUNNING.value,
                     progress=75,
-                    message=f"ResourceMonitor voz: RAM minima {min_ram:.0f} MB, CPU promedio {avg_cpu:.0f}%, duracion {duration:.0f}s.",
+                    message=f"ResourceMonitor voz: RAM minima {min_ram:.0f} MB, swap libre minimo {min_swap:.0f} MB, CPU promedio {avg_cpu:.0f}%, duracion {duration:.0f}s.",
                     active_model="resource-monitor",
-                    payload={"duration_seconds": duration, "min_ram_available_mb": min_ram, "avg_cpu_percent": avg_cpu},
+                    payload={"duration_seconds": duration, "min_ram_available_mb": min_ram, "min_swap_free_mb": min_swap, "avg_cpu_percent": avg_cpu},
                 )
         if return_code != 0:
             detail = log_path.read_text(encoding="utf-8")[-4000:].strip()

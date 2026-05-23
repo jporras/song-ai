@@ -345,9 +345,10 @@ SONG_AI_RESOURCE_SAMPLE_SECONDS=2
 SONG_AI_MIN_FREE_RAM_MB_FOR_AUDIO=6000
 SONG_AI_MIN_FREE_DISK_MB_FOR_AUDIO=15000
 SONG_AI_MAX_CPU_PERCENT_BEFORE_AUDIO=85
-SONG_AI_AUDIO_START_DELAY_SECONDS=90
+SONG_AI_AUDIO_START_DELAY_SECONDS=45
 SONG_AI_RELEASE_LLM_BEFORE_AUDIO=true
-SONG_AI_STOP_LLM_COMMAND=
+SONG_AI_STOP_LLM_COMMAND=python tools/manage_llm_containers.py stop
+SONG_AI_START_LLM_COMMAND=python tools/manage_llm_containers.py start
 ```
 
 Endpoints:
@@ -358,9 +359,20 @@ GET  /api/resources/history
 POST /api/resources/check-audio-readiness
 ```
 
-Antes de ejecutar `SONG_AI_FULL_SONG_COMMAND` o `SONG_AI_SINGING_VOICE_COMMAND`, el backend registra `before_audio`, opcionalmente ejecuta `SONG_AI_STOP_LLM_COMMAND`, espera `SONG_AI_AUDIO_START_DELAY_SECONDS`, registra `after_llm_release` y bloquea si falta RAM, disco o CPU disponible. Durante la generacion escribe muestras en SQLite y en el log del provider.
+Antes de ejecutar `SONG_AI_FULL_SONG_COMMAND` o `SONG_AI_SINGING_VOICE_COMMAND`, el backend registra `before_audio`, opcionalmente ejecuta `SONG_AI_STOP_LLM_COMMAND`, espera `SONG_AI_AUDIO_START_DELAY_SECONDS`, registra `after_llm_release` y muestra RAM, CPU, swap, disco y limite de memoria Docker como diagnostico. RAM/CPU/swap son advertencias, no bloqueos preventivos. La generacion solo se detiene por errores reales: dependencia obligatoria faltante, archivo de entrada ausente, ruta/permisos invalidos o error del provider.
 
-Nota de sprint: ACE-Step dentro de Docker necesita `torchcodec` para guardar WAV con versiones recientes de `torchaudio`. `backend/requirements-local-audio.txt` lo declara y el bootstrap lo valida como dependencia persistente en `/app/provider-cache/python`.
+En Docker Compose, la app monta `/var/run/docker.sock` y usa `tools/manage_llm_containers.py` para detener temporalmente `song-ai-llama-gemma` y `song-ai-llama-qwen` antes de ACE-Step. Al terminar, ejecuta `SONG_AI_START_LLM_COMMAND` para dejarlos disponibles de nuevo. Si el socket Docker no esta disponible, el helper lo reporta y la generacion continua.
+
+Nota de sprint: ACE-Step dentro de Docker necesita `torchcodec`/`pytorchcodec` para guardar WAV con versiones recientes de `torchaudio`. `backend/requirements-local-audio.txt` lo declara y el bootstrap lo valida como dependencia persistente en `/app/provider-cache/python`. Si falta, la app muestra: `Falta pytorchcodec. Instala la dependencia antes de generar con ACE-Step.`
+
+Swap recomendado en Linux: no bloquea la generacion, pero mejora estabilidad con ACE-Step. Ejemplo:
+
+```bash
+sudo fallocate -l 4G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+```
 
 ## Como Generar Una Cancion
 

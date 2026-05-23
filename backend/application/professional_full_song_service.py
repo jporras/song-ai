@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import importlib.machinery
 import shutil
 import subprocess
+import sys
 import time
 
 from audio.resource_monitor import ResourceMonitor
@@ -46,6 +48,7 @@ class ProfessionalFullSongService:
 
         if not lyrics_path.exists():
             raise ValueError("La letra editable lyrics.md debe existir antes de generar la cancion completa.")
+        self._assert_required_dependencies()
 
         prompt_path.write_text(self._build_prompt(project), encoding="utf-8")
         self._run_command(project, project_dir, prompt_path, lyrics_path, final_wav_path, log_path)
@@ -146,43 +149,61 @@ class ProfessionalFullSongService:
             log_file.write(f"$ {command}\n\n")
             log_file.write(f"RESOURCE_READINESS: {prep['readiness']}\n\n")
             log_file.flush()
-            process = subprocess.Popen(
-                command,
-                shell=True,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                text=True,
-                env=self._command_env(),
-            )
-            started_at = time.monotonic()
+            process = None
+            return_code = 1
             snapshots: list[dict[str, object]] = []
-            while True:
-                return_code = process.poll()
-                if return_code is not None:
-                    break
-                if time.monotonic() - started_at > self.timeout_seconds:
-                    process.kill()
-                    log_file.write(f"\nTIMEOUT despues de {self.timeout_seconds} segundos.\n")
-                    log_file.flush()
-                    raise ValueError(f"El provider full-song tardo demasiado. Timeout: {self.timeout_seconds} segundos.")
-                snapshot = self.resource_monitor.capture(phase="audio_generation", persist=True)
-                snapshots.append(snapshot)
-                log_file.write(
-                    "RESOURCE_SAMPLE: "
-                    f"ram_available_mb={snapshot['ram_available_mb']} "
-                    f"ram_used_percent={snapshot['ram_used_percent']} "
-                    f"cpu_percent={snapshot['cpu_percent']}\n"
+            started_at = time.monotonic()
+            try:
+                process = subprocess.Popen(
+                    command,
+                    shell=True,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    env=self._command_env(),
                 )
-                log_file.flush()
+                while True:
+                    return_code = process.poll()
+                    if return_code is not None:
+                        break
+                    if time.monotonic() - started_at > self.timeout_seconds:
+                        process.kill()
+                        log_file.write(f"\nTIMEOUT despues de {self.timeout_seconds} segundos.\n")
+                        log_file.flush()
+                        raise ValueError(f"El provider full-song tardo demasiado. Timeout: {self.timeout_seconds} segundos.")
+                    snapshot = self.resource_monitor.capture(phase="audio_generation", persist=True)
+                    snapshots.append(snapshot)
+                    log_file.write(
+                        "RESOURCE_SAMPLE: "
+                        f"ram_available_mb={snapshot['ram_available_mb']} "
+                        f"ram_used_percent={snapshot['ram_used_percent']} "
+                        f"swap_free_mb={snapshot.get('swap_free_mb', 0)} "
+                        f"cpu_percent={snapshot['cpu_percent']}\n"
+                    )
+                    log_file.flush()
+            finally:
+                self.resource_monitor.restore_text_models(
+                    event_callback=lambda message: self.storage.create_song_event(
+                        song_id=str(project["id"]),
+                        phase=SongPhase.MASTERING.value,
+                        status=SongPhaseStatus.RUNNING.value,
+                        progress=80,
+                        message=message,
+                        active_model="resource-monitor",
+                        payload={},
+                    )
+                )
             duration = time.monotonic() - started_at
             if snapshots:
                 min_ram = min(float(item["ram_available_mb"]) for item in snapshots)
                 peak_ram_percent = max(float(item["ram_used_percent"]) for item in snapshots)
+                min_swap = min(float(item.get("swap_free_mb", 0)) for item in snapshots)
                 avg_cpu = sum(float(item["cpu_percent"]) for item in snapshots) / len(snapshots)
                 log_file.write(
                     "\nRESOURCE_SUMMARY: "
                     f"duration_seconds={duration:.1f} "
                     f"min_ram_available_mb={min_ram:.0f} "
+                    f"min_swap_free_mb={min_swap:.0f} "
                     f"peak_ram_used_percent={peak_ram_percent:.1f} "
                     f"avg_cpu_percent={avg_cpu:.1f}\n"
                 )
@@ -193,12 +214,14 @@ class ProfessionalFullSongService:
                     progress=75,
                     message=(
                         "ResourceMonitor audio: "
-                        f"RAM minima {min_ram:.0f} MB, CPU promedio {avg_cpu:.0f}%, duracion {duration:.0f}s."
+                        f"RAM minima {min_ram:.0f} MB, swap libre minimo {min_swap:.0f} MB, "
+                        f"CPU promedio {avg_cpu:.0f}%, duracion {duration:.0f}s."
                     ),
                     active_model="resource-monitor",
                     payload={
                         "duration_seconds": duration,
                         "min_ram_available_mb": min_ram,
+                        "min_swap_free_mb": min_swap,
                         "peak_ram_used_percent": peak_ram_percent,
                         "avg_cpu_percent": avg_cpu,
                     },
@@ -242,6 +265,15 @@ class ProfessionalFullSongService:
         existing_pythonpath = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = provider_path + (os.pathsep + existing_pythonpath if existing_pythonpath else "")
         return env
+
+    def _assert_required_dependencies(self) -> None:
+        if "acestep_generate.py" not in self.command_template and "ace-step" not in self.command_template.lower():
+            return
+        provider_cache = os.getenv("SONG_AI_PROVIDER_CACHE", "/app/provider-cache")
+        provider_path = Path(provider_cache) / "python"
+        search_paths = [str(provider_path), *sys.path]
+        if importlib.machinery.PathFinder.find_spec("torchcodec", search_paths) is None:
+            raise ValueError("Falta pytorchcodec. Instala la dependencia antes de generar con ACE-Step.")
 
     def _assert_audio(self, path: Path) -> None:
         if not path.exists() or path.stat().st_size == 0:
