@@ -103,7 +103,7 @@ def install_local_audio_deps(upgrade: bool = False) -> bool:
     if not requirements.exists():
         raise RuntimeError(f"No existe {requirements}")
     marker_content = requirements.read_text(encoding="utf-8")
-    required_modules = ["huggingface_hub", "transformers", "scipy", "torch"]
+    required_modules = ["huggingface_hub", "transformers", "scipy", "torch", "torchcodec"]
     ready = local_audio_deps_ready()
     if marker_current(LOCAL_AUDIO_MARKER, marker_content, upgrade) and ready:
         return False

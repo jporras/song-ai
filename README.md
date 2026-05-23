@@ -360,6 +360,8 @@ POST /api/resources/check-audio-readiness
 
 Antes de ejecutar `SONG_AI_FULL_SONG_COMMAND` o `SONG_AI_SINGING_VOICE_COMMAND`, el backend registra `before_audio`, opcionalmente ejecuta `SONG_AI_STOP_LLM_COMMAND`, espera `SONG_AI_AUDIO_START_DELAY_SECONDS`, registra `after_llm_release` y bloquea si falta RAM, disco o CPU disponible. Durante la generacion escribe muestras en SQLite y en el log del provider.
 
+Nota de sprint: ACE-Step dentro de Docker necesita `torchcodec` para guardar WAV con versiones recientes de `torchaudio`. `backend/requirements-local-audio.txt` lo declara y el bootstrap lo valida como dependencia persistente en `/app/provider-cache/python`.
+
 ## Como Generar Una Cancion
 
 1. Abre `http://localhost:8000`.
