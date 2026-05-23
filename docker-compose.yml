@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: song-ai-app
+    init: true
     ports:
       - "8000:8000"
     environment:
@@ -32,7 +33,7 @@ services:
       SONG_AI_QWEN_GGUF_URL: ${SONG_AI_QWEN_GGUF_URL:-https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf}
       SONG_AI_VOICE_MODEL_URL: ${SONG_AI_VOICE_MODEL_URL:-}
       SONG_AI_PROVIDER_REPOS: ${SONG_AI_PROVIDER_REPOS:-}
-      SONG_AI_FULL_SONG_COMMAND: ${SONG_AI_FULL_SONG_COMMAND:-python tools/acestep_generate.py --prompt {prompt_path} --lyrics {lyrics_path} --output {output_path} --checkpoint-path /app/models/music/ace-step --duration 60 --cpu-offload true --overlapped-decode true}
+      SONG_AI_FULL_SONG_COMMAND: ${SONG_AI_FULL_SONG_COMMAND:-python tools/acestep_generate.py --prompt {prompt_path} --lyrics {lyrics_path} --output {output_path} --checkpoint-path /app/models/music/ace-step --duration {duration_seconds} --infer-step 4 --oss-steps 16,96,172,200 --cpu-offload true --overlapped-decode true}
       SONG_AI_SOUNDTRACK_COMMAND: ${SONG_AI_SOUNDTRACK_COMMAND:-}
       SONG_AI_SINGING_VOICE_COMMAND: ${SONG_AI_SINGING_VOICE_COMMAND:-}
       SONG_AI_VOICE_CONVERSION_COMMAND: ${SONG_AI_VOICE_CONVERSION_COMMAND:-}

@@ -17,6 +17,7 @@ Estado esperado en Docker cuando ACE-Step esta importable:
 
 ```text
 full_song: ready
+runtime: gpu_ready | cpu_extremely_slow
 soundtrack: optional
 singing_voice: optional
 mix_and_export: ready
@@ -222,6 +223,10 @@ docker compose exec -T app sh -lc "ls -la /dev/dri 2>/dev/null || true"
 
 Importante: en Docker Desktop sobre Windows, una Intel iGPU puede existir en el sistema, pero normalmente no queda disponible para PyTorch/ACE-Step dentro del contenedor Linux. Si dentro del contenedor no aparecen `/dev/dri`, `/dev/dxg` ni `/dev/nvidia*`, la generacion real solo puede correr por CPU o con una GPU NVIDIA correctamente expuesta.
 
+Nota de rendimiento: ACE-Step en CPU es funcional pero extremadamente lento. En una prueba real dentro de Docker, el modelo cargo correctamente y descargo checkpoints a `/app/models/music/ace-step`, pero 60 segundos con 10 pasos no completo en 3600 segundos. Por eso el comando local usa `{duration_seconds}` y pocos `--oss-steps` para validar flujo en CPU; para calidad final usa GPU y mas pasos.
+
+Verificacion adicional: una prueba de 5 segundos con 4 `oss_steps` cargo el modelo en 810 segundos y siguio siendo demasiado lenta para uso interactivo por CPU. La app ahora reporta `runtime=cpu_extremely_slow` y escribe `full_song_generation.log` en vivo mientras ACE-Step corre.
+
 ## Variables Principales
 
 Archivo base:
@@ -233,7 +238,7 @@ Archivo base:
 Full Song local con ACE-Step:
 
 ```text
-SONG_AI_FULL_SONG_COMMAND=python tools/acestep_generate.py --prompt {prompt_path} --lyrics {lyrics_path} --output {output_path} --checkpoint-path /app/models/music/ace-step --duration 60 --cpu-offload true --overlapped-decode true
+SONG_AI_FULL_SONG_COMMAND=python tools/acestep_generate.py --prompt {prompt_path} --lyrics {lyrics_path} --output {output_path} --checkpoint-path /app/models/music/ace-step --duration {duration_seconds} --infer-step 4 --oss-steps 16,96,172,200 --cpu-offload true --overlapped-decode true
 SONG_AI_INSTALL_ACE_STEP=true
 SONG_AI_ALLOW_CPU_FULL_SONG=true
 SONG_AI_IGPU_EXPERIMENTAL=false

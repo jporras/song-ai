@@ -12,6 +12,11 @@ def main() -> int:
     parser.add_argument("--checkpoint-path", default="/app/models/music/ace-step", help="Volumen/ruta de checkpoints ACE-Step.")
     parser.add_argument("--duration", type=float, default=60.0, help="Duracion en segundos.")
     parser.add_argument("--infer-step", type=int, default=27)
+    parser.add_argument(
+        "--oss-steps",
+        default="16, 96, 172, 200",
+        help="Pasos OSS usados por ACE-Step. En CPU conviene usar pocos pasos para validar flujo.",
+    )
     parser.add_argument("--guidance-scale", type=float, default=15.0)
     parser.add_argument("--scheduler-type", default="euler")
     parser.add_argument("--cfg-type", default="apg")
@@ -36,6 +41,8 @@ def main() -> int:
     output_path = Path(args.output)
     checkpoint_path = Path(args.checkpoint_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.exists():
+        output_path.unlink()
     checkpoint_path.mkdir(parents=True, exist_ok=True)
 
     import os
@@ -64,7 +71,7 @@ def main() -> int:
         use_erg_tag=True,
         use_erg_lyric=True,
         use_erg_diffusion=True,
-        oss_steps="16, 29, 52, 96, 129, 158, 172, 183, 189, 200",
+        oss_steps=args.oss_steps,
         guidance_scale_text=0.0,
         guidance_scale_lyric=0.0,
         save_path=str(output_path),

@@ -38,7 +38,7 @@ class ProfessionalFullSongService:
             raise ValueError("La letra editable lyrics.md debe existir antes de generar la cancion completa.")
 
         prompt_path.write_text(self._build_prompt(project), encoding="utf-8")
-        self._run_command(project_dir, prompt_path, lyrics_path, final_wav_path, log_path)
+        self._run_command(project, project_dir, prompt_path, lyrics_path, final_wav_path, log_path)
         self._assert_audio(final_wav_path)
         self._export_mp3(final_wav_path, final_mp3_path)
         self._export_flac(final_wav_path, final_flac_path)
@@ -103,6 +103,7 @@ class ProfessionalFullSongService:
 
     def _run_command(
         self,
+        project: dict[str, object],
         project_dir: Path,
         prompt_path: Path,
         lyrics_path: Path,
@@ -115,30 +116,29 @@ class ProfessionalFullSongService:
             output_path=str(output_path),
             work_dir=str(project_dir),
             log_path=str(log_path),
+            duration_seconds=self._duration_seconds(project),
         )
-        try:
-            result = subprocess.run(
+        with log_path.open("w", encoding="utf-8") as log_file:
+            log_file.write(f"$ {command}\n\n")
+            log_file.flush()
+            process = subprocess.Popen(
                 command,
                 shell=True,
-                capture_output=True,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
                 text=True,
                 env=self._command_env(),
-                timeout=self.timeout_seconds,
             )
-        except subprocess.TimeoutExpired as error:
-            log_path.write_text(
-                f"$ {command}\nTIMEOUT despues de {self.timeout_seconds} segundos.\n"
-                f"{error.stdout or ''}\n{error.stderr or ''}",
-                encoding="utf-8",
-            )
-            raise ValueError(f"El provider full-song tardo demasiado. Timeout: {self.timeout_seconds} segundos.") from error
+            try:
+                return_code = process.wait(timeout=self.timeout_seconds)
+            except subprocess.TimeoutExpired as error:
+                process.kill()
+                log_file.write(f"\nTIMEOUT despues de {self.timeout_seconds} segundos.\n")
+                log_file.flush()
+                raise ValueError(f"El provider full-song tardo demasiado. Timeout: {self.timeout_seconds} segundos.") from error
 
-        log_path.write_text(
-            f"$ {command}\n\nSTDOUT:\n{result.stdout or ''}\n\nSTDERR:\n{result.stderr or ''}",
-            encoding="utf-8",
-        )
-        if result.returncode != 0:
-            detail = (result.stderr or result.stdout or command).strip()
+        if return_code != 0:
+            detail = log_path.read_text(encoding="utf-8")[-4000:].strip()
             raise ValueError(f"El provider full-song fallo: {detail}")
 
     def _build_prompt(self, project: dict[str, object]) -> str:
@@ -159,6 +159,14 @@ class ProfessionalFullSongService:
                 "Goal: complete finished song with coherent instrumental, sung vocals, melody, lyrics and final mix.",
             ]
         )
+
+    def _duration_seconds(self, project: dict[str, object]) -> int:
+        spec = dict(dict(project.get("spec") or {}).get("json_spec", {}))
+        try:
+            duration = int(float(spec.get("duration_seconds", 60)))
+        except (TypeError, ValueError):
+            duration = 60
+        return max(5, min(duration, 240))
 
     def _command_env(self) -> dict[str, str]:
         env = os.environ.copy()

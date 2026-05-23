@@ -33,6 +33,7 @@ class LocalSongPipeline:
                 "configured": full_song_configured and full_song_available,
                 "detail": self._full_song_detail(full_song_configured, full_song_available),
                 "path": "preferred",
+                "runtime": self._full_song_runtime_status(full_song_configured and full_song_available),
             },
             {
                 "role": "soundtrack",
@@ -225,29 +226,27 @@ class LocalSongPipeline:
         if "acestep_generate.py" in command:
             if self._full_song_available_cache is True:
                 return self._full_song_available_cache
-            try:
-                result = subprocess.run(
-                    ["python", "-c", "from acestep.pipeline_ace_step import ACEStepPipeline"],
-                    capture_output=True,
-                    text=True,
-                    env=self._command_env(),
-                    timeout=180,
+            provider_path = Path(self._provider_python_path())
+            if not provider_path.exists():
+                self._full_song_unavailable_reason = (
+                    f"ACE-Step no esta instalado en el cache de providers: {provider_path}."
                 )
-                if result.returncode != 0:
-                    self._full_song_unavailable_reason = (result.stderr or result.stdout or "").strip()
-                    self._full_song_available_cache = False
-                    return False
-                if not self.settings.allow_cpu_full_song and not self._cuda_available():
-                    self._full_song_unavailable_reason = (
-                        "ACE-Step importa correctamente, pero Docker no tiene GPU CUDA disponible. "
-                        "Activa GPU para Docker o define SONG_AI_ALLOW_CPU_FULL_SONG=true si aceptas una generacion muy lenta por CPU."
-                    )
-                    self._full_song_available_cache = False
-                    return False
-                self._full_song_available_cache = True
-            except subprocess.TimeoutExpired:
-                self._full_song_unavailable_reason = "El probe de ACE-Step excedio el tiempo permitido."
+                self._full_song_available_cache = False
                 return False
+            if not (provider_path / "acestep").exists():
+                self._full_song_unavailable_reason = (
+                    f"ACE-Step no aparece instalado en el cache de providers: {provider_path / 'acestep'}."
+                )
+                self._full_song_available_cache = False
+                return False
+            if not self.settings.allow_cpu_full_song and not self._cuda_available():
+                self._full_song_unavailable_reason = (
+                    "ACE-Step esta instalado, pero Docker no tiene GPU CUDA disponible. "
+                    "Activa GPU para Docker o define SONG_AI_ALLOW_CPU_FULL_SONG=true si aceptas una generacion muy lenta por CPU."
+                )
+                self._full_song_available_cache = False
+                return False
+            self._full_song_available_cache = True
             return bool(self._full_song_available_cache)
         return True
 
@@ -258,17 +257,24 @@ class LocalSongPipeline:
             if self._full_song_unavailable_reason:
                 return self._full_song_unavailable_reason
             return "ACE-Step esta configurado pero no instalado/importable. Ejecuta Preparar/reiniciar bootstrap o activa SONG_AI_INSTALL_ACE_STEP=true."
+        if self.settings.allow_cpu_full_song and not self._cuda_available():
+            return (
+                "ACE-Step esta importable y puede ejecutarse por CPU, pero es extremadamente lento. "
+                "Usa GPU CUDA para calidad final o duraciones largas."
+            )
         return "Comando local completo disponible para generar final_mix.wav."
 
+    def _full_song_runtime_status(self, available: bool) -> str:
+        if not available:
+            return "unavailable"
+        if self._cuda_available():
+            return "gpu_ready"
+        if self.settings.allow_cpu_full_song:
+            return "cpu_extremely_slow"
+        return "gpu_required"
+
     def _cuda_available(self) -> bool:
-        result = subprocess.run(
-            ["python", "-c", "import torch; raise SystemExit(0 if torch.cuda.is_available() else 1)"],
-            capture_output=True,
-            text=True,
-            env=self._command_env(),
-            timeout=15,
-        )
-        return result.returncode == 0
+        return Path("/dev/nvidia0").exists() or Path("/dev/nvidiactl").exists()
 
     def _command_env(self) -> dict[str, str]:
         env = os.environ.copy()
