@@ -379,6 +379,8 @@ UX sidebar: la barra lateral usa `--sidebar-width: 300px` para dar mas aire a pr
 
 UX sidebar compacto: el proyecto activo se muestra en una sola linea con prefijo `>` para reducir espacio vertical sin perder contexto.
 
+UX procesos: las tarjetas de Production muestran estado visual por fase de ejecucion (`pendiente`, `en curso`, `generado` o `error`). El estado se calcula desde la fase actual del proyecto profesional y los artefactos exportados, para que el usuario vea que procesos ya produjeron resultados.
+
 Swap recomendado en Linux: no bloquea la generacion, pero mejora estabilidad con ACE-Step. Ejemplo:
 
 ```bash

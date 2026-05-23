@@ -699,10 +699,17 @@
               </div>
             </div>
             <div class="pipeline-strip">
-              <article v-for="step in productionPipelineSteps" :key="step.phase" class="pipeline-step">
-                <span>{{ step.label }}</span>
-                <small>{{ step.phase }}</small>
-                <button :disabled="!step.requires" @click="runProductionStep(step)">{{ step.action }}</button>
+              <article v-for="step in productionProcessSteps" :key="step.phase" class="pipeline-step" :class="`pipeline-step--${step.state}`">
+                <header>
+                  <span class="pipeline-state">{{ step.stateIcon }}</span>
+                  <div>
+                    <strong>{{ step.label }}</strong>
+                    <small>{{ step.phase }}</small>
+                  </div>
+                </header>
+                <p>{{ step.stateLabel }}</p>
+                <small>{{ step.stateHint }}</small>
+                <button :disabled="!step.requires" @click="runProductionStep(step)">{{ step.buttonLabel }}</button>
               </article>
             </div>
           </section>

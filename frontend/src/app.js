@@ -449,6 +449,50 @@ createApp({
         { phase: "EXPORT", label: "Export", action: "Preparar export", method: "POST", url: `/api/pro/projects/${songId}/export`, requires: songId },
       ];
     },
+    productionProcessSteps() {
+      const phaseOrder = this.productionPipelineSteps.map((step) => step.phase);
+      const currentPhase = this.activeProfessionalProject?.current_phase || "";
+      const currentIndex = phaseOrder.indexOf(currentPhase);
+      const projectStatus = String(this.activeProfessionalProject?.status || "").toLowerCase();
+      const artifactTypes = new Set((this.exportManifest?.artifacts || []).map((artifact) => artifact.type));
+      const completedByArtifact = {
+        MIDI_GENERATION: ["midi"],
+        INSTRUMENTAL_GENERATION: ["instrumental_wav"],
+        VOCAL_SYNTHESIS: ["vocals_wav"],
+        MIXING: ["mix_wav"],
+        MASTERING: ["final_song_wav", "final_song_mp3", "final_song_flac"],
+        EXPORT: ["project_zip", "export_manifest_json"],
+      };
+      const statusCopy = {
+        disabled: { icon: "○", label: "Sin proyecto", hint: "Selecciona un proyecto en Biblioteca." },
+        pending: { icon: "○", label: "Pendiente", hint: "Aun no se ha ejecutado." },
+        current: { icon: "⟳", label: "En curso", hint: "Fase actual del pipeline." },
+        complete: { icon: "✓", label: "Generado", hint: "Resultado disponible o fase ya superada." },
+        error: { icon: "✕", label: "Error", hint: "Revisa Actividad y vuelve a intentar." },
+      };
+      return this.productionPipelineSteps.map((step, index) => {
+        const hasArtifact = (completedByArtifact[step.phase] || []).some((type) => artifactTypes.has(type));
+        let state = "pending";
+        if (!step.requires) {
+          state = "disabled";
+        } else if (projectStatus.includes("failed") && currentPhase === step.phase) {
+          state = "error";
+        } else if (hasArtifact || projectStatus === "completed" || (currentIndex > -1 && index < currentIndex)) {
+          state = "complete";
+        } else if (currentPhase === step.phase) {
+          state = projectStatus.includes("running") ? "current" : "complete";
+        }
+        const copy = statusCopy[state] || statusCopy.pending;
+        return {
+          ...step,
+          state,
+          stateIcon: copy.icon,
+          stateLabel: copy.label,
+          stateHint: copy.hint,
+          buttonLabel: state === "complete" ? "Rehacer" : step.action,
+        };
+      });
+    },
     productionFlowSteps() {
       const byPhase = Object.fromEntries(this.productionPipelineSteps.map((step) => [step.phase, step]));
       return [
