@@ -125,6 +125,14 @@ class SetRepository:
             return None
         return self._row_to_dict(row)
 
+    def update_description(self, set_id: str, description: str) -> dict[str, object] | None:
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                "UPDATE song_sets SET description = ? WHERE set_id = ?",
+                (description, set_id),
+            )
+        return self.get_set(set_id)
+
     def _row_to_dict(self, row: sqlite3.Row) -> dict[str, object]:
         return {
             "set_id": str(row["set_id"]),

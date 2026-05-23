@@ -787,18 +787,6 @@ summary span {
   min-width: min(360px, 100%);
 }
 
-.production-metadata-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr);
-  gap: 16px;
-  align-items: start;
-}
-
-.production-metadata-grid label {
-  display: grid;
-  gap: 8px;
-}
-
 .flow-guide {
   display: grid;
   gap: 10px;
@@ -1366,7 +1354,6 @@ summary span {
   .hero-strip,
   .creation-panel,
   .project-header-panel,
-  .production-metadata-grid,
   .flow-step,
   .preview-strip {
     grid-template-columns: 1fr;

@@ -663,32 +663,16 @@
             <div class="section-head">
               <div>
                 <span class="eyebrow">1. Proyecto activo</span>
-                <h2 v-if="!productionMetadata.editingName" @dblclick="productionMetadata.editingName = true">{{ activeProjectTitle }}</h2>
-                <input v-else v-model="projectSet.project_name" @keyup.enter="productionMetadata.editingName = false; markDirty('production')" @blur="productionMetadata.editingName = false" />
-                <p>{{ activeProjectDescription }}</p>
+                <h2>{{ activeProjectTitle }}</h2>
+                <p>El proyecto activo se selecciona en Biblioteca. En Production solo ajustas la descripcion antes de generar y exportar.</p>
               </div>
               <div class="actions">
-                <select v-model="productionProjectId" @change="loadProfessionalExport(productionProjectId)">
-                  <option value="">Seleccionar proyecto pro</option>
-                  <option v-for="project in professionalProjects" :key="project.id" :value="project.id">
-                    {{ project.title }} / {{ project.current_phase }}
-                  </option>
-                </select>
-                <button @click="createProfessionalProjectFromProduction">Crear proyecto</button>
-                <button class="primary" :disabled="!dirty" @click="saveProductionMetadata">Guardar</button>
+                <button class="primary" :disabled="!dirty || !activeProjectId" @click="saveProductionMetadata">Guardar descripcion</button>
               </div>
             </div>
-            <div class="production-metadata-grid">
-              <label>Descripcion
-                <textarea class="compact-textarea" v-model="projectSet.description" @input="markDirty('production')"></textarea>
-              </label>
-              <label>Tags
-                <input v-model="productionMetadata.tagsInput" @input="markDirty('production')" />
-                <span class="tag-rail">
-                  <button v-for="tag in productionTags" :key="tag" class="tag">{{ tag }}</button>
-                </span>
-              </label>
-            </div>
+            <label>Descripcion del proyecto activo
+              <textarea class="compact-textarea" v-model="projectSet.description" @input="markDirty('production')"></textarea>
+            </label>
           </section>
 
           <section class="panel production-flow-panel">

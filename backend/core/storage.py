@@ -318,6 +318,16 @@ class StorageManager:
     def get_indexed_set(self, set_id: str) -> dict[str, object] | None:
         return self.set_repository.get_set(set_id)
 
+    def update_indexed_set_description(self, set_id: str, description: str) -> dict[str, object] | None:
+        updated = self.set_repository.update_description(set_id, description)
+        if updated is None:
+            return None
+        export_path = Path(str(updated.get("json_path") or self.data_dir / "sets" / set_id / "set.json"))
+        if not export_path.is_absolute():
+            export_path = self.data_dir / "sets" / set_id / "set.json"
+        self.write_json(export_path, self.serialize_indexed_set(updated))
+        return updated
+
     def export_indexed_sets_to_json(self) -> dict[str, object]:
         exported_paths: list[str] = []
         for song_set in self.list_indexed_sets():

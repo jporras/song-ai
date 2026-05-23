@@ -229,10 +229,6 @@ createApp({
         project_name: "Cancion de cuna para Isabella",
         description: "Cancion de cuna completa, tierna y poetica con soundtrack suave y voz cantada.",
       },
-      productionMetadata: {
-        editingName: false,
-        tagsInput: "suave, warm, piano, cinematografico",
-      },
       productionSummaryOpen: false,
       drafts: [],
       sets: [],
@@ -282,7 +278,7 @@ createApp({
       return this.activeProject?.project?.project_name || this.selectedSet?.project_name || this.projectSet.project_name || "Sin proyecto activo";
     },
     activeProjectDescription() {
-      return this.activeProject?.project?.description || this.selectedSet?.description || this.projectSet.description || "";
+      return this.projectSet.description || this.activeProject?.project?.description || this.selectedSet?.description || "";
     },
     activeProjectId() {
       return this.activeProject?.set?.set_id || this.selectedSet?.set_id || "";
@@ -295,12 +291,6 @@ createApp({
       if (this.activeProfessionalProject?.current_phase) return `${this.activeProfessionalProject.current_phase} / ${this.activeProfessionalProject.status}`;
       if (this.activeProjectId) return "Set cargado, pendiente de proyecto profesional";
       return "Sin proyecto activo";
-    },
-    productionTags() {
-      return this.productionMetadata.tagsInput
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean);
     },
     inspirationCatalog() {
       return INSPIRATION_CATALOG;
@@ -689,7 +679,7 @@ createApp({
       if (this.activeTab === "lyrics" && this.lyricsEditor.selectedAssetId) {
         await this.saveLyricsDraft();
       } else if (this.activeTab === "production") {
-        this.saveProductionMetadata();
+        await this.saveProductionMetadata();
       } else {
         this.dirty = false;
         this.dirtyPhase = "";
@@ -1141,12 +1131,6 @@ createApp({
       this.markDirty("lyrics");
       this.addMessage(`Plantilla cargada: ${template.name}`);
     },
-    addTag(tag) {
-      const tags = new Set(this.productionTags);
-      tags.add(tag);
-      this.productionMetadata.tagsInput = [...tags].join(", ");
-      this.markDirty("production");
-    },
     toggleFavorite(setId) {
       if (this.favoriteProjects[setId]) {
         const next = { ...this.favoriteProjects };
@@ -1190,30 +1174,27 @@ createApp({
         .filter((token) => token.length > 3 && !stopWords.has(token))
         .slice(0, 6);
     },
-    saveProductionMetadata() {
-      this.projectSet.project_name = this.activeProjectTitle;
-      this.projectSet.description = this.activeProjectDescription;
-      this.dirty = false;
-      this.dirtyPhase = "";
-      this.addMessage("Metadata de production guardada localmente.");
-    },
-    async createProfessionalProjectFromProduction() {
-      const response = await fetch(apiUrl("/api/pro/projects"), {
-        method: "POST",
+    async saveProductionMetadata() {
+      if (!this.activeProjectId) {
+        this.addMessage("Selecciona un proyecto desde Biblioteca antes de guardar la descripcion.");
+        return;
+      }
+      const response = await fetch(apiUrl(`/api/projects/${this.activeProjectId}/description`), {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: this.projectSet.project_name || this.activeProjectTitle,
-          description: this.projectSet.description || this.activeProjectDescription,
-        }),
+        body: JSON.stringify({ description: this.projectSet.description }),
       });
       const payload = await this.readApiPayload(response, {});
       if (!payload.ok) {
-        this.addMessage(payload.detail || "No se pudo crear el proyecto profesional.");
+        this.addMessage(payload.detail || "No se pudo guardar la descripcion.");
         return;
       }
-      this.productionProjectId = payload.data.project.id;
-      await this.loadProfessionalProjects();
-      this.addMessage(`Proyecto profesional creado: ${this.productionProjectId}`);
+      this.activeProject = payload.data;
+      this.selectedSet = payload.data.set;
+      await this.loadSets();
+      this.dirty = false;
+      this.dirtyPhase = "";
+      this.addMessage("Descripcion del proyecto activo guardada.");
     },
     async runProductionStep(step) {
       if (!step.requires) {

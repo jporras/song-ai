@@ -340,6 +340,14 @@ class SongService:
             },
         }
 
+    def update_project_description(self, set_id: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+        payload = payload or {}
+        description = str(payload.get("description", "")).strip()
+        updated = self.storage.update_indexed_set_description(set_id, description)
+        if updated is None:
+            raise ValueError("Set no encontrado.")
+        return self.get_project(set_id)
+
     def gemma_assistant(self, payload: dict[str, object] | None = None) -> dict[str, object]:
         payload = payload or {}
         set_id = str(payload.get("set_id", "")).strip()

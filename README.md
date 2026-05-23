@@ -371,6 +371,8 @@ UX Infraestructura local: Production muestra un resumen limpio con modelos de te
 
 UX Production: la vista principal se ordena como Proyecto activo -> Orden logico -> Exportables. Recursos e infraestructura quedan como diagnosticos colapsables para no distraer del flujo de generacion.
 
+UX Production alcance: crear proyectos y cambiar el proyecto activo pertenece a Biblioteca. Production solo permite editar la descripcion del proyecto activo y cerrar el pipeline con generacion/exportables.
+
 Swap recomendado en Linux: no bloquea la generacion, pero mejora estabilidad con ACE-Step. Ejemplo:
 
 ```bash

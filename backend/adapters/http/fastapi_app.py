@@ -175,6 +175,11 @@ def get_set(set_id: str) -> dict[str, Any]:
     return run_action(lambda: service.get_set(set_id))
 
 
+@app.patch("/api/projects/{set_id}/description")
+def update_project_description(set_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.update_project_description(set_id, payload))
+
+
 @app.get("/api/favorites")
 def get_favorites() -> dict[str, Any]:
     return ok(service.list_favorites())
