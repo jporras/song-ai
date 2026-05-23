@@ -42,6 +42,14 @@ Flujo conceptual:
 Usuario -> Gemma -> Qwen -> Gemma -> Usuario
 ```
 
+Estado verificado en Docker:
+
+- Gemma corre como provider creativo en `llama-gemma:8080`.
+- Qwen corre como provider tecnico en `llama-qwen:8080`.
+- El endpoint de Gemma registra un handoff tecnico interno con `provider_handoff` cuando Qwen responde.
+- Qwen usa respuestas cortas y `/no_think` para evitar bloqueos largos por razonamiento interno en CPU.
+- Si Qwen no responde, el handoff queda persistido como fallback local y conserva la causa del error.
+
 ### Backend
 
 - FastAPI sirve API y frontend compilado.
@@ -265,6 +273,9 @@ Endpoints por rol:
 ```text
 SONG_AI_LLAMA_CPP_INTERPRETER_BASE_URL=http://llama-gemma:8080
 SONG_AI_LLAMA_CPP_TECHNICAL_BASE_URL=http://llama-qwen:8080
+SONG_AI_LLAMA_CPP_TIMEOUT_SECONDS=240
+SONG_AI_LLAMA_CPP_INTERPRETER_N_PREDICT=160
+SONG_AI_LLAMA_CPP_TECHNICAL_N_PREDICT=96
 ```
 
 Levantar llama.cpp con los GGUF ya descargados:

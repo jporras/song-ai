@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -13,22 +14,27 @@ class LlamaCppError(RuntimeError):
 
 
 class LlamaCppClient:
-    def __init__(self, settings: LocalModelSettings, base_url: str | None = None) -> None:
+    def __init__(self, settings: LocalModelSettings, base_url: str | None = None, template: str = "gemma") -> None:
         self.settings = settings
         self.base_url = (base_url or settings.llama_cpp_base_url).rstrip("/")
+        self.template = template
 
-    def complete(self, prompt: str, system_prompt: str = "") -> str:
+    def complete(self, prompt: str, system_prompt: str = "", n_predict: int | None = None) -> str:
         payload = {
             "prompt": self._format_prompt(prompt, system_prompt),
-            "n_predict": self.settings.llama_cpp_n_predict,
+            "n_predict": n_predict or self.settings.llama_cpp_n_predict,
             "temperature": self.settings.llama_cpp_temperature,
-            "stop": ["</s>", "<end_of_turn>"],
+            "stop": ["</s>", "<end_of_turn>", "<|im_end|>"],
         }
         data = self._post_json("/completion", payload)
-        content = data.get("content") or data.get("response") or ""
+        content = self._clean_content(str(data.get("content") or data.get("response") or ""))
         if not str(content).strip():
             raise LlamaCppError("llama.cpp respondio sin contenido.")
         return str(content).strip()
+
+    def _clean_content(self, content: str) -> str:
+        cleaned = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL | re.IGNORECASE)
+        return cleaned.strip()
 
     def status(self) -> dict[str, object]:
         try:
@@ -63,6 +69,17 @@ class LlamaCppClient:
             raise LlamaCppError(str(error)) from error
 
     def _format_prompt(self, prompt: str, system_prompt: str) -> str:
+        if self.template == "qwen":
+            qwen_prompt = f"/no_think\n{prompt.strip()}"
+            if system_prompt:
+                return (
+                    "<|im_start|>system\n"
+                    f"{system_prompt.strip()}<|im_end|>\n"
+                    "<|im_start|>user\n"
+                    f"{qwen_prompt}<|im_end|>\n"
+                    "<|im_start|>assistant\n"
+                )
+            return f"<|im_start|>user\n{qwen_prompt}<|im_end|>\n<|im_start|>assistant\n"
         if system_prompt:
             return (
                 "<start_of_turn>user\n"
@@ -75,7 +92,7 @@ class LlamaCppClient:
 class LlamaCppInterpreterProvider(InterpreterProvider):
     def __init__(self, settings: LocalModelSettings) -> None:
         self.settings = settings
-        self.client = LlamaCppClient(settings, settings.llama_cpp_interpreter_base_url)
+        self.client = LlamaCppClient(settings, settings.llama_cpp_interpreter_base_url, template="gemma")
 
     def name(self) -> str:
         return "llamacpp-gemma-interpreter"
@@ -93,7 +110,7 @@ class LlamaCppInterpreterProvider(InterpreterProvider):
             "Eres Gemma dentro de Song AI. Ayudas al usuario a completar una cancion completa "
             "desde proyecto activo hasta MP3 final, preservando intencion instrumental, vocal y lirica."
         )
-        content = self.client.complete(text, system_prompt=system_prompt)
+        content = self.client.complete(text, system_prompt=system_prompt, n_predict=self.settings.llama_cpp_interpreter_n_predict)
         return {
             "target": target,
             "input": text,
@@ -125,7 +142,7 @@ class LlamaCppLyricsProvider(LyricsProvider):
 class LlamaCppTechnicalProvider(InterpreterProvider):
     def __init__(self, settings: LocalModelSettings) -> None:
         self.settings = settings
-        self.client = LlamaCppClient(settings, settings.llama_cpp_technical_base_url)
+        self.client = LlamaCppClient(settings, settings.llama_cpp_technical_base_url, template="qwen")
 
     def name(self) -> str:
         return "llamacpp-qwen-technical"
@@ -144,7 +161,7 @@ class LlamaCppTechnicalProvider(InterpreterProvider):
             "Eres Qwen3 dentro de Song AI. Tu rol es tecnico: codigo, debugging, arquitectura, "
             "workers, ffmpeg, SQLite y pipeline. No reemplazas a Gemma en creatividad musical."
         )
-        content = self.client.complete(text, system_prompt=system_prompt)
+        content = self.client.complete(text, system_prompt=system_prompt, n_predict=self.settings.llama_cpp_technical_n_predict)
         return {
             "target": target,
             "input": text,

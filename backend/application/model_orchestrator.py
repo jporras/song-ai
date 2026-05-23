@@ -2,6 +2,7 @@ from uuid import uuid4
 
 from core.storage import StorageManager
 from providers.registry import ProviderRegistry
+from providers.llamacpp import LlamaCppError
 
 
 class ModelOrchestrator:
@@ -113,13 +114,17 @@ class ModelOrchestrator:
             provider_name=provider["name"],
             model_name=model_name,
             metadata={
-                "mode": "mock_handoff",
+                "mode": "provider_handoff" if self._can_run_provider_handoff(model_role) else "mock_handoff",
                 "capabilities": provider["capabilities"],
                 "assistant_state": "suspended",
             },
         )
 
-        result = self.build_mock_result(model_role, task_type, payload)
+        result = self.build_provider_result(model_role, task_type, payload) or self.build_mock_result(
+            model_role,
+            task_type,
+            payload,
+        )
         completed_task = self.storage.update_task(
             task_id=task_id,
             status="completed",
@@ -131,10 +136,11 @@ class ModelOrchestrator:
             run_id=run_id,
             status="completed",
             metadata={
-                "mode": "mock_handoff",
+                "mode": result.get("mode", "mock_handoff"),
                 "capabilities": provider["capabilities"],
                 "assistant_state": "reactivated",
                 "result_summary": result["summary"],
+                "provider_executed": result.get("provider_executed", False),
             },
         )
         self.record_project_event(
@@ -156,6 +162,63 @@ class ModelOrchestrator:
             "model_run": completed_run,
             "summary": result["summary"],
         }
+
+    def build_provider_result(
+        self,
+        model_role: str,
+        task_type: str,
+        payload: dict[str, object],
+    ) -> dict[str, object] | None:
+        if not self._can_run_provider_handoff(model_role):
+            return None
+        prompt = self._technical_prompt(task_type, payload)
+        try:
+            response = self.provider_registry.technical_with_active_provider(prompt, task_type)
+        except (LlamaCppError, OSError, TimeoutError, ValueError) as error:
+            return {
+                **self.build_mock_result(model_role, task_type, payload),
+                "mode": "mock_handoff_after_provider_error",
+                "provider_executed": False,
+                "provider_error": str(error),
+            }
+        summary = str(response.get("summary", "")).strip()
+        if not summary:
+            return None
+        return {
+            "model_role": model_role,
+            "task_type": task_type,
+            "mode": "provider_handoff",
+            "provider_executed": True,
+            "provider_name": response.get("model", self.DEFAULT_MODELS.get(model_role, "unknown")),
+            "summary": summary,
+            "missing_fields": [],
+            "validation_results": {
+                "status": "provider_validated",
+                "source_of_truth": "sqlite_payload",
+                "provider_mode": response.get("mode", "unknown"),
+            },
+            "song_blueprint": {
+                "goal": "complete_song_with_local_pipeline",
+                "audio_pipeline": ["planning", "midi", "full_song_or_stems", "mastering", "export"],
+            },
+            "next_action": summary,
+        }
+
+    def _can_run_provider_handoff(self, model_role: str) -> bool:
+        return model_role == "technical"
+
+    def _technical_prompt(self, task_type: str, payload: dict[str, object]) -> str:
+        project_name = str(payload.get("project_name", "Proyecto activo"))
+        question = str(payload.get("question", "Revisa el siguiente paso tecnico."))
+        context = payload.get("context", {})
+        return (
+            "Responde en espanol, maximo 5 bullets, sin mostrar razonamiento interno. "
+            "Eres el director tecnico invisible de Song AI. Valida el pipeline y di solo el siguiente paso util.\n\n"
+            f"Tarea: {task_type}\n"
+            f"Proyecto: {project_name}\n"
+            f"Pregunta de Gemma: {question}\n"
+            f"Contexto SQLite/pipeline: {context}"
+        )
 
     def record_project_event(
         self,

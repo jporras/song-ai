@@ -14,6 +14,8 @@ class LocalModelSettings:
     qwen_gguf_path: Path
     llama_cpp_timeout_seconds: int
     llama_cpp_n_predict: int
+    llama_cpp_interpreter_n_predict: int
+    llama_cpp_technical_n_predict: int
     llama_cpp_temperature: float
     interpreter_model: str
     lyrics_model: str
@@ -46,8 +48,14 @@ class LocalModelSettings:
             ),
             gemma_gguf_path=Path(os.getenv("SONG_AI_GEMMA_GGUF_PATH", "/app/models/llm/gemma/gemma.gguf")),
             qwen_gguf_path=Path(os.getenv("SONG_AI_QWEN_GGUF_PATH", "/app/models/llm/qwen/qwen.gguf")),
-            llama_cpp_timeout_seconds=int(os.getenv("SONG_AI_LLAMA_CPP_TIMEOUT_SECONDS", "45")),
+            llama_cpp_timeout_seconds=int(os.getenv("SONG_AI_LLAMA_CPP_TIMEOUT_SECONDS", "240")),
             llama_cpp_n_predict=int(os.getenv("SONG_AI_LLAMA_CPP_N_PREDICT", "512")),
+            llama_cpp_interpreter_n_predict=int(
+                os.getenv("SONG_AI_LLAMA_CPP_INTERPRETER_N_PREDICT", os.getenv("SONG_AI_LLAMA_CPP_N_PREDICT", "160"))
+            ),
+            llama_cpp_technical_n_predict=int(
+                os.getenv("SONG_AI_LLAMA_CPP_TECHNICAL_N_PREDICT", os.getenv("SONG_AI_LLAMA_CPP_N_PREDICT", "96"))
+            ),
             llama_cpp_temperature=float(os.getenv("SONG_AI_LLAMA_CPP_TEMPERATURE", "0.35")),
             interpreter_model=os.getenv("SONG_AI_INTERPRETER_MODEL", "Gemma 2 2B IT GGUF"),
             lyrics_model=os.getenv("SONG_AI_LYRICS_MODEL", "Gemma 2 2B IT GGUF"),
@@ -77,6 +85,8 @@ class LocalModelSettings:
             "qwen_gguf_path": str(self.qwen_gguf_path),
             "llama_cpp_timeout_seconds": self.llama_cpp_timeout_seconds,
             "llama_cpp_n_predict": self.llama_cpp_n_predict,
+            "llama_cpp_interpreter_n_predict": self.llama_cpp_interpreter_n_predict,
+            "llama_cpp_technical_n_predict": self.llama_cpp_technical_n_predict,
             "llama_cpp_temperature": self.llama_cpp_temperature,
             "interpreter_model": self.interpreter_model,
             "lyrics_model": self.lyrics_model,
