@@ -328,6 +328,23 @@ class StorageManager:
         self.write_json(export_path, self.serialize_indexed_set(updated))
         return updated
 
+    def save_project_phase_data(
+        self,
+        set_id: str,
+        phase: str,
+        data: dict[str, object],
+        status: str,
+    ) -> dict[str, object] | None:
+        saved = self.set_repository.save_phase_data(set_id, phase, data, status)
+        if saved is None:
+            return None
+        phase_dir = self.data_dir / "sets" / set_id / "phase_data"
+        self.write_json(phase_dir / f"{phase}.json", dict(saved))
+        return saved
+
+    def list_project_phase_data(self, set_id: str) -> dict[str, object]:
+        return self.set_repository.list_phase_data(set_id)
+
     def export_indexed_sets_to_json(self) -> dict[str, object]:
         exported_paths: list[str] = []
         for song_set in self.list_indexed_sets():

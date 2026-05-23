@@ -268,6 +268,7 @@ createApp({
       jsonConfigs: [],
       messages: [],
       downloadStatus: "",
+      savedPhaseData: {},
     };
   },
   computed: {
@@ -663,6 +664,7 @@ createApp({
     phaseStatus(phaseId) {
       if (this.dirty && this.dirtyPhase === phaseId) return "DIRTY";
       if (this.outdatedPhases.includes(phaseId)) return "OUTDATED";
+      if (this.savedPhaseData?.[phaseId]?.status) return "READY";
       if (phaseId === "intent") return this.activeProjectId || this.intent.description ? "READY" : "EMPTY";
       if (phaseId === "lyrics") return this.lyricSections.length > 0 || this.lyricsEditor.selectedAssetId ? "READY" : "EMPTY";
       if (phaseId === "music-plan") return this.musicPlan.sections.length > 0 && this.musicPlan.progression ? "READY" : "EMPTY";
@@ -676,14 +678,10 @@ createApp({
       return PHASE_STATUS[this.phaseStatus(phaseId)] || PHASE_STATUS.EMPTY;
     },
     async saveCurrentPhase() {
-      if (this.activeTab === "lyrics" && this.lyricsEditor.selectedAssetId) {
-        await this.saveLyricsDraft();
-      } else if (this.activeTab === "production") {
+      if (this.activeTab === "production") {
         await this.saveProductionMetadata();
       } else {
-        this.dirty = false;
-        this.dirtyPhase = "";
-        this.addMessage(`${this.currentTab.label} guardado localmente.`);
+        await this.savePhaseData(this.activeTab);
       }
     },
     async loadOptions() {
@@ -827,8 +825,9 @@ createApp({
         path: lyricsAsset.content_path || "",
       };
       this.parseLyricsToSections();
+      this.applySavedPhaseData(payload.data.phase_data || {});
       this.projectEvents = payload.data.events;
-      this.addMessage(`Proyecto cargado: ${payload.data.project.project_name}`);
+      this.addMessage(`Proyecto cargado con datos guardados: ${payload.data.project.project_name}`);
       await this.loadProviders();
       this.requestNavigation("production");
     },
@@ -900,7 +899,7 @@ createApp({
     },
     async saveLyricsDraft() {
       if (!this.lyricsEditor.selectedAssetId) {
-        await this.createLyrics();
+        await this.savePhaseData("lyrics");
         return;
       }
       this.lyricsEditor.content = this.sectionsToMarkdown();
@@ -916,6 +915,7 @@ createApp({
       }
       this.lyricsEditor.content = payload.data.content;
       this.lyricsEditor.path = payload.data.path;
+      await this.savePhaseData("lyrics", { quiet: true });
       this.dirty = false;
       this.dirtyPhase = "";
       this.addMessage(`Lyrics guardado: ${payload.data.asset_id}`);
@@ -1173,6 +1173,102 @@ createApp({
         .split(/[^a-zA-Z0-9áéíóúñ]+/)
         .filter((token) => token.length > 3 && !stopWords.has(token))
         .slice(0, 6);
+    },
+    phasePayload(phase = this.activeTab) {
+      const payloads = {
+        intent: { intent: { ...this.intent, inspirationInput: "" } },
+        lyrics: {
+          lyrics: { ...this.lyrics },
+          lyricSections: this.lyricSections.map((section) => ({ ...section })),
+          lyricsEditor: {
+            selectedAssetId: this.lyricsEditor.selectedAssetId,
+            content: this.sectionsToMarkdown(),
+            path: this.lyricsEditor.path,
+          },
+        },
+        "music-plan": {
+          musicPlan: {
+            ...this.musicPlan,
+            sections: this.musicPlan.sections.map((section) => ({ ...section })),
+          },
+        },
+        midi: {
+          midiPlan: {
+            ...this.midiPlan,
+            tracks: this.midiPlan.tracks.map((track) => ({ ...track })),
+            notes: this.midiPlan.notes.map((note) => ({ ...note })),
+          },
+        },
+        instrumental: {
+          instrumental: {
+            ...this.instrumental,
+            layers: [...this.instrumental.layers],
+            stems: this.instrumental.stems.map((stem) => ({ ...stem })),
+          },
+        },
+        voice: {
+          voice: {
+            ...this.voice,
+            layers: this.voice.layers.map((layer) => ({ ...layer })),
+            sectionDirection: this.voice.sectionDirection.map((section) => ({ ...section })),
+            sections: { ...this.voice.sections },
+          },
+        },
+      };
+      return payloads[phase] || {};
+    },
+    async savePhaseData(phase = this.activeTab, options = {}) {
+      if (!this.activeProjectId) {
+        this.addMessage("Carga un proyecto desde Biblioteca antes de guardar esta fase.");
+        return;
+      }
+      const response = await fetch(apiUrl(`/api/projects/${this.activeProjectId}/phases/${phase}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: this.phasePayload(phase) }),
+      });
+      const payload = await this.readApiPayload(response, {});
+      if (!payload.ok) {
+        this.addMessage(payload.detail || "No se pudo guardar la fase.");
+        return;
+      }
+      this.activeProject = payload.data.project;
+      this.selectedSet = payload.data.project.set;
+      this.savedPhaseData = payload.data.project.phase_data || {};
+      this.dirty = false;
+      this.dirtyPhase = "";
+      if (!options.quiet) this.addMessage(`${this.phaseLabel(phase)} guardado`);
+    },
+    phaseLabel(phase) {
+      return {
+        intent: "Intent",
+        lyrics: "Letra",
+        "music-plan": "Estilo",
+        midi: "MIDI",
+        instrumental: "Instrumental",
+        voice: "Voz",
+        production: "Production",
+      }[phase] || phase;
+    },
+    applySavedPhaseData(phaseData) {
+      this.savedPhaseData = phaseData;
+      const read = (phase) => phaseData?.[phase]?.data || {};
+      const intentData = read("intent").intent;
+      if (intentData) this.intent = { ...this.intent, ...intentData, inspirationInput: "" };
+      const lyricsData = read("lyrics");
+      if (lyricsData.lyrics) this.lyrics = { ...this.lyrics, ...lyricsData.lyrics };
+      if (Array.isArray(lyricsData.lyricSections)) this.lyricSections = lyricsData.lyricSections.map((section) => ({ ...section }));
+      if (lyricsData.lyricsEditor) this.lyricsEditor = { ...this.lyricsEditor, ...lyricsData.lyricsEditor };
+      const musicPlanData = read("music-plan").musicPlan;
+      if (musicPlanData) this.musicPlan = { ...this.musicPlan, ...musicPlanData, sections: musicPlanData.sections || this.musicPlan.sections };
+      const midiData = read("midi").midiPlan;
+      if (midiData) this.midiPlan = { ...this.midiPlan, ...midiData, tracks: midiData.tracks || this.midiPlan.tracks, notes: midiData.notes || this.midiPlan.notes };
+      const instrumentalData = read("instrumental").instrumental;
+      if (instrumentalData) this.instrumental = { ...this.instrumental, ...instrumentalData, stems: instrumentalData.stems || this.instrumental.stems };
+      const voiceData = read("voice").voice;
+      if (voiceData) this.voice = { ...this.voice, ...voiceData, layers: voiceData.layers || this.voice.layers, sectionDirection: voiceData.sectionDirection || this.voice.sectionDirection };
+      this.dirty = false;
+      this.dirtyPhase = "";
     },
     async saveProductionMetadata() {
       if (!this.activeProjectId) {

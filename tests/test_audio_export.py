@@ -853,6 +853,27 @@ class AudioExportTest(unittest.TestCase):
             self.assertEqual(indexed[0]["set_id"], "set-legacy")
             self.assertEqual(indexed[0]["project_name"], "set-legacy")
 
+    def test_project_phase_data_is_persisted_without_generation(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            service = SongService(storage, Settings.load())
+            service.bootstrap()
+            service.create_instrumental({"genre": "lullaby", "mood": "warm"})
+            service.create_melody({"vocal_style": "soft", "structure": "verse, chorus"})
+            service.create_lyrics({"theme": "sleep", "structure": "verse, chorus"})
+            created = service.create_set({"project_name": "Proyecto fase", "description": "Descripcion inicial"})
+            set_id = str(created["id"])
+
+            saved = service.save_project_phase_data(
+                set_id,
+                "intent",
+                {"data": {"intent": {"recipient": "Isabella", "bpm": 72}}},
+            )
+            loaded = service.get_project(set_id)
+
+            self.assertEqual(saved["saved"]["status"], "intent_saved")
+            self.assertEqual(loaded["phase_data"]["intent"]["data"]["intent"]["recipient"], "Isabella")
+
     def test_audio_export_contains_song_mock_context_and_stems(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             storage = StorageManager(Path(temp_dir))

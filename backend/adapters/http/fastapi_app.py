@@ -180,6 +180,11 @@ def update_project_description(set_id: str, payload: dict[str, Any]) -> dict[str
     return run_action(lambda: service.update_project_description(set_id, payload))
 
 
+@app.put("/api/projects/{set_id}/phases/{phase}")
+def save_project_phase_data(set_id: str, phase: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.save_project_phase_data(set_id, phase, payload))
+
+
 @app.get("/api/favorites")
 def get_favorites() -> dict[str, Any]:
     return ok(service.list_favorites())

@@ -171,7 +171,7 @@
               <h2>{{ intentPreview }}</h2>
               <p>Esta pagina define identidad emocional y musical. La complejidad vocal vive en Voice y los detalles de audio en Instrumental.</p>
             </div>
-            <button class="primary" @click="saveIntentAsDrafts">Crear drafts base</button>
+            <button class="primary" @click="savePhaseData('intent')">Guardar</button>
           </section>
 
           <section class="panel">
@@ -285,7 +285,6 @@
                   <option value="">Seleccionar draft</option>
                   <option v-for="draft in lyricsDrafts" :key="draft.asset_id" :value="draft.asset_id">{{ draft.asset_id }}</option>
                 </select>
-                <button @click="createLyrics">Crear lyrics base</button>
                 <select @change="addLyricSection($event.target.value); $event.target.value = ''">
                   <option value="">Agregar seccion</option>
                   <option>INTRO</option>
@@ -366,7 +365,7 @@
               <h2>{{ musicPlanSummary }}</h2>
               <p>Este plan define la arquitectura musical que despues alimenta MIDI, Instrumental y Voice.</p>
             </div>
-            <button class="primary" @click="runProductionStep(productionPipelineSteps.find((step) => step.phase === 'MUSIC_PLAN_GENERATION'))">Generar plan con IA</button>
+            <button class="primary" @click="savePhaseData('music-plan')">Guardar</button>
           </section>
 
           <section class="panel">
@@ -444,7 +443,7 @@
               <h2>{{ midiSummary }}</h2>
               <p>Base editable para melodia vocal, acordes, timing, velocity y humanizacion.</p>
             </div>
-            <button class="primary" @click="runProductionStep(productionPipelineSteps.find((step) => step.phase === 'MIDI_GENERATION'))">Crear MIDI real</button>
+            <button class="primary" @click="savePhaseData('midi')">Guardar</button>
           </section>
 
           <section class="panel midi-board">
@@ -487,7 +486,6 @@
             </div>
             <div class="preview-strip">
               <span>Melodia guia reutilizable para crear el set.</span>
-              <button class="primary" @click="createMelody">Generar melodia guia</button>
             </div>
           </section>
         </section>
@@ -499,7 +497,7 @@
               <h2>{{ instrumentalSummary }}</h2>
               <p>Convierte MIDI y plan musical en audio real: capas, ambiente, stems y previews.</p>
             </div>
-            <button class="primary" @click="runProductionStep(productionPipelineSteps.find((step) => step.phase === 'INSTRUMENTAL_GENERATION'))">Generar instrumental real</button>
+            <button class="primary" @click="savePhaseData('instrumental')">Guardar</button>
           </section>
 
           <section class="panel">
@@ -545,8 +543,6 @@
             </div>
             <div class="preview-strip">
               <span>Preview instrumental</span>
-              <button>Recrear preview</button>
-              <button class="primary" @click="createInstrumental">Generar instrumental</button>
             </div>
           </section>
         </section>
@@ -558,7 +554,7 @@
               <h2>Direccion de interpretacion vocal</h2>
               <p>{{ voiceSummary }}</p>
             </div>
-            <button class="primary" @click="runProductionStep(productionPipelineSteps.find((step) => step.phase === 'VOCAL_SYNTHESIS'))">Generar voz real</button>
+            <button class="primary" @click="savePhaseData('voice')">Guardar</button>
           </section>
 
           <section class="panel">
@@ -652,8 +648,6 @@
             </div>
             <div class="preview-strip">
               <span>Previews parciales de voz y conversion</span>
-              <button @click="runProductionStep(productionPipelineSteps.find((step) => step.phase === 'VOCAL_SYNTHESIS'))">Generar voz</button>
-              <button class="primary" @click="runProductionStep(productionPipelineSteps.find((step) => step.phase === 'VOICE_CONVERSION'))">Resolver conversion</button>
             </div>
           </section>
         </section>
@@ -693,6 +687,23 @@
                 </div>
                 <button v-if="step.action" :disabled="!step.action.requires" @click="runProductionStep(step.action)">{{ step.actionLabel }}</button>
                 <small v-else class="flow-note">{{ step.actionLabel }}</small>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+              <div>
+                <span class="eyebrow">Procesos</span>
+                <h2>Acciones de produccion</h2>
+                <p>Aqui se ejecuta generacion, MIDI, voz, mezcla, mastering y export. Las fases previas solo guardan configuracion.</p>
+              </div>
+            </div>
+            <div class="pipeline-strip">
+              <article v-for="step in productionPipelineSteps" :key="step.phase" class="pipeline-step">
+                <span>{{ step.label }}</span>
+                <small>{{ step.phase }}</small>
+                <button :disabled="!step.requires" @click="runProductionStep(step)">{{ step.action }}</button>
               </article>
             </div>
           </section>
@@ -796,7 +807,7 @@
           </section>
         </section>
 
-        <section class="activity-log">
+        <section v-if="activeTab === 'production'" class="activity-log">
           <strong>Actividad</strong>
           <p v-for="item in messages" :key="item.id"><time>{{ item.time }}</time><span>{{ item.text }}</span></p>
         </section>

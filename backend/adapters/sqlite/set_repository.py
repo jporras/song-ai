@@ -37,6 +37,18 @@ class SetRepository:
                 connection.execute("ALTER TABLE song_sets ADD COLUMN project_name TEXT NOT NULL DEFAULT ''")
             if "description" not in columns:
                 connection.execute("ALTER TABLE song_sets ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS project_phase_data (
+                    set_id TEXT NOT NULL,
+                    phase TEXT NOT NULL,
+                    data_json TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (set_id, phase)
+                )
+                """
+            )
 
     def save_set(self, song_set: SongSet, json_path: Path) -> None:
         created_at = song_set.created_at or datetime.now(timezone.utc).isoformat()
@@ -133,6 +145,53 @@ class SetRepository:
             )
         return self.get_set(set_id)
 
+    def save_phase_data(self, set_id: str, phase: str, data: dict[str, object], status: str) -> dict[str, object] | None:
+        if self.get_set(set_id) is None:
+            return None
+        updated_at = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO project_phase_data (set_id, phase, data_json, status, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(set_id, phase) DO UPDATE SET
+                    data_json = excluded.data_json,
+                    status = excluded.status,
+                    updated_at = excluded.updated_at
+                """,
+                (set_id, phase, json.dumps(data, ensure_ascii=False), status, updated_at),
+            )
+        return self.get_phase_data(set_id, phase)
+
+    def get_phase_data(self, set_id: str, phase: str) -> dict[str, object] | None:
+        with sqlite3.connect(self.db_path) as connection:
+            connection.row_factory = sqlite3.Row
+            row = connection.execute(
+                """
+                SELECT set_id, phase, data_json, status, updated_at
+                FROM project_phase_data
+                WHERE set_id = ? AND phase = ?
+                """,
+                (set_id, phase),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._phase_row_to_dict(row)
+
+    def list_phase_data(self, set_id: str) -> dict[str, object]:
+        with sqlite3.connect(self.db_path) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """
+                SELECT set_id, phase, data_json, status, updated_at
+                FROM project_phase_data
+                WHERE set_id = ?
+                ORDER BY updated_at ASC
+                """,
+                (set_id,),
+            ).fetchall()
+        return {str(row["phase"]): self._phase_row_to_dict(row) for row in rows}
+
     def _row_to_dict(self, row: sqlite3.Row) -> dict[str, object]:
         return {
             "set_id": str(row["set_id"]),
@@ -144,4 +203,13 @@ class SetRepository:
             "compatibility_data": json.loads(str(row["compatibility_json"])),
             "json_path": str(row["json_path"]),
             "created_at": str(row["created_at"]),
+        }
+
+    def _phase_row_to_dict(self, row: sqlite3.Row) -> dict[str, object]:
+        return {
+            "set_id": str(row["set_id"]),
+            "phase": str(row["phase"]),
+            "data": json.loads(str(row["data_json"])),
+            "status": str(row["status"]),
+            "updated_at": str(row["updated_at"]),
         }

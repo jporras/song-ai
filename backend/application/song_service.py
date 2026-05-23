@@ -331,6 +331,7 @@ class SongService:
             "samples": self.storage.list_samples_for_set(set_id),
             "songs": self.storage.list_songs_for_set(set_id),
             "events": self.storage.list_project_events(str(song_set["project_name"])),
+            "phase_data": self.storage.list_project_phase_data(set_id),
             "source_of_truth": "sqlite",
             "snapshot_files": {
                 "set_json": song_set.get("json_path", ""),
@@ -347,6 +348,25 @@ class SongService:
         if updated is None:
             raise ValueError("Set no encontrado.")
         return self.get_project(set_id)
+
+    def save_project_phase_data(self, set_id: str, phase: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+        payload = payload or {}
+        allowed_phases = {"intent", "lyrics", "music-plan", "midi", "instrumental", "voice", "production"}
+        if phase not in allowed_phases:
+            raise ValueError("Fase no soportada.")
+        phase_status = {
+            "intent": "intent_saved",
+            "lyrics": "lyrics_saved",
+            "music-plan": "style_saved",
+            "midi": "midi_saved",
+            "instrumental": "style_saved",
+            "voice": "voice_saved",
+            "production": "production_saved",
+        }[phase]
+        saved = self.storage.save_project_phase_data(set_id, phase, dict(payload.get("data", {})), phase_status)
+        if saved is None:
+            raise ValueError("Set no encontrado.")
+        return {"saved": saved, "project": self.get_project(set_id)}
 
     def gemma_assistant(self, payload: dict[str, object] | None = None) -> dict[str, object]:
         payload = payload or {}
