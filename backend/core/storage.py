@@ -495,3 +495,22 @@ class StorageManager:
             metadata=metadata,
         )
 
+    def create_resource_snapshot(self, snapshot: dict[str, object]) -> dict[str, object]:
+        return self.song_workflow_repository.create_resource_snapshot(
+            snapshot_id=str(snapshot["id"]),
+            phase=str(snapshot["phase"]),
+            ram_total_mb=float(snapshot["ram_total_mb"]),
+            ram_available_mb=float(snapshot["ram_available_mb"]),
+            ram_used_percent=float(snapshot["ram_used_percent"]),
+            cpu_percent=float(snapshot["cpu_percent"]),
+            disk_data_free_mb=float(snapshot["disk_data_free_mb"]),
+            disk_models_free_mb=float(snapshot["disk_models_free_mb"]),
+            disk_cache_free_mb=float(snapshot["disk_cache_free_mb"]),
+            heavy_processes=[dict(item) for item in list(snapshot.get("heavy_processes", []))],
+            decision=str(snapshot.get("decision", "unknown")),
+            message=str(snapshot.get("message", "")),
+        )
+
+    def list_resource_snapshots(self, limit: int = 100) -> list[dict[str, object]]:
+        return self.song_workflow_repository.list_resource_snapshots(limit)
+

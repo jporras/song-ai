@@ -1046,6 +1046,68 @@ summary span {
   font-variant-numeric: tabular-nums;
 }
 
+.resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.resource-grid article,
+.snapshot-list article {
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(15, 17, 21, 0.44);
+}
+
+.resource-grid strong {
+  font-size: 22px;
+  color: var(--text);
+}
+
+.resource-decision {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--ready);
+  color: var(--ready);
+}
+
+.resource-decision.blocked {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.recommendation-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.recommendation-list span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(124, 140, 255, 0.12);
+  color: var(--text);
+}
+
+.snapshot-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.snapshot-list article {
+  grid-template-columns: 180px 1fr auto;
+  align-items: center;
+}
+
 .gemma-footer {
   position: fixed;
   left: 264px;

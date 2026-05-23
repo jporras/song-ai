@@ -254,6 +254,8 @@ createApp({
       studioStatus: {},
       localPipeline: {},
       systemStatus: { components: [], bootstrap: {} },
+      resourceStatus: { snapshot: {}, readiness: { recommendations: [] }, settings: {} },
+      resourceHistory: { snapshots: [] },
       localFinalJob: { status: "idle", message: "Generacion final local no iniciada.", result: {} },
       localFinalPollTimer: null,
       projectPhases: { phases: [] },
@@ -472,7 +474,10 @@ createApp({
       return this.localFinalJob?.status === "running";
     },
     canGenerateLocalFinalSong() {
-      return Boolean(this.localPipeline.ready) && !this.bootstrapRunning && !this.localFinalRunning;
+      return Boolean(this.localPipeline.ready) && this.audioResourcesReady && !this.bootstrapRunning && !this.localFinalRunning;
+    },
+    audioResourcesReady() {
+      return this.resourceStatus?.readiness?.ready !== false;
     },
     localFinalStatusMessage() {
       if (this.localFinalRunning) return this.localFinalJob.message || "Generando cancion final local en segundo plano.";
@@ -481,6 +486,12 @@ createApp({
       if (this.bootstrapRunning) return "Bootstrap preparando dependencias locales. Consulta estado en unos minutos.";
       if (this.localPipeline.ready) return "Pipeline local listo: Full Song puede generar cancion con voz integrada.";
       return `Falta configurar: ${this.localPipeline.missing?.join(", ") || "requisitos locales"}.`;
+    },
+    resourceSnapshot() {
+      return this.resourceStatus?.snapshot || {};
+    },
+    resourceRecommendations() {
+      return this.resourceStatus?.readiness?.recommendations || [];
     },
   },
   async mounted() {
@@ -492,6 +503,7 @@ createApp({
     await this.loadSets();
     await this.loadProfessionalProjects();
     await this.loadProviders();
+    await this.loadResources();
     await this.loadLocalFinalJob();
     await this.loadOrchestration();
     await this.loadJsonConfigs();
@@ -599,6 +611,24 @@ createApp({
       this.localPipeline = (await this.readApiPayload(localPipelineResponse, {})).data;
       this.systemStatus = (await this.readApiPayload(systemResponse, {})).data;
       this.projectPhases = (await this.readApiPayload(phasesResponse, { phases: [] })).data;
+    },
+    async loadResources() {
+      const [statusResponse, historyResponse] = await Promise.all([
+        fetch(apiUrl("/api/resources/status")),
+        fetch(apiUrl("/api/resources/history?limit=25")),
+      ]);
+      this.resourceStatus = (await this.readApiPayload(statusResponse, this.resourceStatus)).data;
+      this.resourceHistory = (await this.readApiPayload(historyResponse, { snapshots: [] })).data;
+    },
+    async checkAudioReadiness() {
+      const response = await fetch(apiUrl("/api/resources/check-audio-readiness"), { method: "POST" });
+      const payload = await this.readApiPayload(response, {});
+      if (!payload.ok) {
+        this.addMessage(payload.detail || "No se pudo revisar recursos.");
+        return;
+      }
+      await this.loadResources();
+      this.addMessage(payload.data.readiness?.message || "Recursos revisados.");
     },
     async loadLocalFinalJob() {
       const response = await fetch(apiUrl("/api/local-final-song/status"));
@@ -1065,9 +1095,11 @@ createApp({
       const payload = await this.readApiPayload(response, {});
       if (!payload.ok) {
         this.addMessage(payload.detail || `No se pudo ejecutar ${step.label}.`);
+        await this.loadResources();
         return;
       }
       await this.loadProfessionalProjects();
+      await this.loadResources();
       if (step.phase === "EXPORT") await this.loadProfessionalExport(step.requires);
       this.addMessage(`${step.label}: ${payload.data?.project?.current_phase || "completado"}`);
     },
@@ -1097,6 +1129,7 @@ createApp({
       if (!this.canGenerateLocalFinalSong) {
         this.addMessage(this.localFinalStatusMessage);
         await this.loadProviders();
+        await this.loadResources();
         return;
       }
       const response = await fetch(apiUrl("/api/local-final-song"), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
@@ -1109,6 +1142,7 @@ createApp({
       this.addMessage(this.localFinalJob.message || "Generacion final local iniciada.");
       this.scheduleLocalFinalPoll();
       await this.loadProviders();
+      await this.loadResources();
     },
     scheduleLocalFinalPoll() {
       if (this.localFinalPollTimer) clearTimeout(this.localFinalPollTimer);
@@ -1123,6 +1157,7 @@ createApp({
         this.localFinalPollTimer = null;
       }
       await this.loadProviders();
+      await this.loadResources();
       if (previousStatus === "running") {
         this.addMessage(this.localFinalJob.message || "Generacion final local actualizada.");
       }

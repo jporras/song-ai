@@ -5,8 +5,11 @@ import math
 from pathlib import Path
 import re
 import subprocess
+import time
 import wave
 
+from audio.resource_monitor import ResourceMonitor
+from config.resource_settings import ResourceMonitorSettings
 from core.storage import StorageManager
 from models.song_workflow import SongPhase, SongPhaseStatus
 
@@ -15,10 +18,17 @@ class VocalSynthesisService:
     SAMPLE_RATE = 44100
     VOWELS = ("a", "e", "i", "o", "u")
 
-    def __init__(self, storage: StorageManager, command_template: str = "", timeout_seconds: int = 3600) -> None:
+    def __init__(
+        self,
+        storage: StorageManager,
+        command_template: str = "",
+        timeout_seconds: int = 3600,
+        resource_settings: ResourceMonitorSettings | None = None,
+    ) -> None:
         self.storage = storage
         self.command_template = command_template.strip()
         self.timeout_seconds = timeout_seconds
+        self.resource_monitor = ResourceMonitor(storage, resource_settings or ResourceMonitorSettings.load())
 
     def generate(
         self,
@@ -36,7 +46,8 @@ class VocalSynthesisService:
         if self.command_template:
             mode = "local_command"
             quality_status = "final_candidate"
-            self._run_command(project_dir, prompt_path, vocals_path, log_path)
+            self._run_command(song_id, project_dir, prompt_path, vocals_path, log_path)
+            self.resource_monitor.capture(phase="after_audio", persist=True)
         else:
             mode = "procedural_vocal_guide"
             quality_status = "preview_only"
@@ -106,7 +117,7 @@ class VocalSynthesisService:
             "quality_status": str(metadata.get("quality_status", "unknown")),
         }
 
-    def _run_command(self, project_dir: Path, prompt_path: Path, vocals_path: Path, log_path: Path) -> None:
+    def _run_command(self, song_id: str, project_dir: Path, prompt_path: Path, vocals_path: Path, log_path: Path) -> None:
         command = self.command_template.format(
             prompt_path=str(prompt_path),
             lyrics_path=str(project_dir / "lyrics_approved.json"),
@@ -116,19 +127,57 @@ class VocalSynthesisService:
             instrumental_path=str(project_dir / "instrumental.wav"),
             work_dir=str(project_dir),
         )
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=self.timeout_seconds,
+        prep = self.resource_monitor.prepare_for_audio(
+            phase=SongPhase.VOCAL_SYNTHESIS.value,
+            event_callback=lambda message: self.storage.create_song_event(
+                song_id=song_id,
+                phase=SongPhase.VOCAL_SYNTHESIS.value,
+                status=SongPhaseStatus.RUNNING.value,
+                progress=20,
+                message=message,
+                active_model="resource-monitor",
+                payload={},
+            ),
         )
-        log_path.write_text(
-            f"$ {command}\n\nSTDOUT:\n{result.stdout or ''}\n\nSTDERR:\n{result.stderr or ''}",
-            encoding="utf-8",
-        )
-        if result.returncode != 0:
-            raise ValueError(f"El provider local de voz cantada fallo: {(result.stderr or result.stdout).strip()}")
+        with log_path.open("w", encoding="utf-8") as log_file:
+            log_file.write(f"$ {command}\n\nRESOURCE_READINESS: {prep['readiness']}\n\n")
+            log_file.flush()
+            process = subprocess.Popen(command, shell=True, stdout=log_file, stderr=subprocess.STDOUT, text=True)
+            started_at = time.monotonic()
+            snapshots: list[dict[str, object]] = []
+            while True:
+                return_code = process.poll()
+                if return_code is not None:
+                    break
+                if time.monotonic() - started_at > self.timeout_seconds:
+                    process.kill()
+                    log_file.write(f"\nTIMEOUT despues de {self.timeout_seconds} segundos.\n")
+                    raise ValueError(f"El provider local de voz cantada tardo demasiado. Timeout: {self.timeout_seconds} segundos.")
+                snapshot = self.resource_monitor.capture(phase="audio_generation", persist=True)
+                snapshots.append(snapshot)
+                log_file.write(
+                    "RESOURCE_SAMPLE: "
+                    f"ram_available_mb={snapshot['ram_available_mb']} "
+                    f"ram_used_percent={snapshot['ram_used_percent']} "
+                    f"cpu_percent={snapshot['cpu_percent']}\n"
+                )
+                log_file.flush()
+            if snapshots:
+                duration = time.monotonic() - started_at
+                min_ram = min(float(item["ram_available_mb"]) for item in snapshots)
+                avg_cpu = sum(float(item["cpu_percent"]) for item in snapshots) / len(snapshots)
+                self.storage.create_song_event(
+                    song_id=song_id,
+                    phase=SongPhase.VOCAL_SYNTHESIS.value,
+                    status=SongPhaseStatus.RUNNING.value,
+                    progress=75,
+                    message=f"ResourceMonitor voz: RAM minima {min_ram:.0f} MB, CPU promedio {avg_cpu:.0f}%, duracion {duration:.0f}s.",
+                    active_model="resource-monitor",
+                    payload={"duration_seconds": duration, "min_ram_available_mb": min_ram, "avg_cpu_percent": avg_cpu},
+                )
+        if return_code != 0:
+            detail = log_path.read_text(encoding="utf-8")[-4000:].strip()
+            raise ValueError(f"El provider local de voz cantada fallo: {detail}")
         if not vocals_path.exists() or vocals_path.stat().st_size == 0:
             raise ValueError("El provider local de voz cantada no genero vocals.wav.")
 

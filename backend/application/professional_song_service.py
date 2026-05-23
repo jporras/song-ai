@@ -16,6 +16,7 @@ from application.professional_full_song_service import ProfessionalFullSongServi
 from application.technical_director_service import TechnicalDirectorService
 from application.vocal_synthesis_service import VocalSynthesisService
 from application.voice_conversion_service import VoiceConversionService
+from config.resource_settings import ResourceMonitorSettings
 from core.storage import StorageManager
 from models.song_workflow import PHASE_LABELS, PHASE_SEQUENCE, SongPhase, SongPhaseStatus
 
@@ -30,6 +31,7 @@ class ProfessionalSongService:
         singing_voice_command: str = "",
         voice_conversion_command: str = "",
         local_command_timeout_seconds: int = 3600,
+        resource_settings: ResourceMonitorSettings | None = None,
     ) -> None:
         self.storage = storage
         self.creative_agent = CreativeAgentService()
@@ -48,11 +50,13 @@ class ProfessionalSongService:
             storage,
             command_template=singing_voice_command,
             timeout_seconds=local_command_timeout_seconds,
+            resource_settings=resource_settings,
         )
         self.full_song_service = ProfessionalFullSongService(
             storage,
             command_template=full_song_command,
             timeout_seconds=local_command_timeout_seconds,
+            resource_settings=resource_settings,
         )
         self.voice_conversion_service = VoiceConversionService(
             storage,

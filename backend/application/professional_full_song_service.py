@@ -4,16 +4,26 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import time
 
+from audio.resource_monitor import ResourceMonitor
+from config.resource_settings import ResourceMonitorSettings
 from core.storage import StorageManager
 from models.song_workflow import SongPhase, SongPhaseStatus
 
 
 class ProfessionalFullSongService:
-    def __init__(self, storage: StorageManager, command_template: str = "", timeout_seconds: int = 3600) -> None:
+    def __init__(
+        self,
+        storage: StorageManager,
+        command_template: str = "",
+        timeout_seconds: int = 3600,
+        resource_settings: ResourceMonitorSettings | None = None,
+    ) -> None:
         self.storage = storage
         self.command_template = command_template.strip()
         self.timeout_seconds = timeout_seconds
+        self.resource_monitor = ResourceMonitor(storage, resource_settings or ResourceMonitorSettings.load())
 
     def configured(self) -> bool:
         return bool(self.command_template)
@@ -39,6 +49,7 @@ class ProfessionalFullSongService:
 
         prompt_path.write_text(self._build_prompt(project), encoding="utf-8")
         self._run_command(project, project_dir, prompt_path, lyrics_path, final_wav_path, log_path)
+        after_audio = self.resource_monitor.capture(phase="after_audio", persist=True)
         self._assert_audio(final_wav_path)
         self._export_mp3(final_wav_path, final_mp3_path)
         self._export_flac(final_wav_path, final_flac_path)
@@ -49,6 +60,7 @@ class ProfessionalFullSongService:
             "prompt_path": str(prompt_path),
             "lyrics_path": str(lyrics_path),
             "log_path": str(log_path),
+            "after_audio_snapshot": after_audio["id"],
         }
         wav_artifact = self.storage.create_song_artifact(
             artifact_id=f"{song_id}_final_song_wav",
@@ -118,8 +130,21 @@ class ProfessionalFullSongService:
             log_path=str(log_path),
             duration_seconds=self._duration_seconds(project),
         )
+        prep = self.resource_monitor.prepare_for_audio(
+            phase=SongPhase.MASTERING.value,
+            event_callback=lambda message: self.storage.create_song_event(
+                song_id=str(project["id"]),
+                phase=SongPhase.MASTERING.value,
+                status=SongPhaseStatus.RUNNING.value,
+                progress=20,
+                message=message,
+                active_model="resource-monitor",
+                payload={},
+            ),
+        )
         with log_path.open("w", encoding="utf-8") as log_file:
             log_file.write(f"$ {command}\n\n")
+            log_file.write(f"RESOURCE_READINESS: {prep['readiness']}\n\n")
             log_file.flush()
             process = subprocess.Popen(
                 command,
@@ -129,13 +154,55 @@ class ProfessionalFullSongService:
                 text=True,
                 env=self._command_env(),
             )
-            try:
-                return_code = process.wait(timeout=self.timeout_seconds)
-            except subprocess.TimeoutExpired as error:
-                process.kill()
-                log_file.write(f"\nTIMEOUT despues de {self.timeout_seconds} segundos.\n")
+            started_at = time.monotonic()
+            snapshots: list[dict[str, object]] = []
+            while True:
+                return_code = process.poll()
+                if return_code is not None:
+                    break
+                if time.monotonic() - started_at > self.timeout_seconds:
+                    process.kill()
+                    log_file.write(f"\nTIMEOUT despues de {self.timeout_seconds} segundos.\n")
+                    log_file.flush()
+                    raise ValueError(f"El provider full-song tardo demasiado. Timeout: {self.timeout_seconds} segundos.")
+                snapshot = self.resource_monitor.capture(phase="audio_generation", persist=True)
+                snapshots.append(snapshot)
+                log_file.write(
+                    "RESOURCE_SAMPLE: "
+                    f"ram_available_mb={snapshot['ram_available_mb']} "
+                    f"ram_used_percent={snapshot['ram_used_percent']} "
+                    f"cpu_percent={snapshot['cpu_percent']}\n"
+                )
                 log_file.flush()
-                raise ValueError(f"El provider full-song tardo demasiado. Timeout: {self.timeout_seconds} segundos.") from error
+            duration = time.monotonic() - started_at
+            if snapshots:
+                min_ram = min(float(item["ram_available_mb"]) for item in snapshots)
+                peak_ram_percent = max(float(item["ram_used_percent"]) for item in snapshots)
+                avg_cpu = sum(float(item["cpu_percent"]) for item in snapshots) / len(snapshots)
+                log_file.write(
+                    "\nRESOURCE_SUMMARY: "
+                    f"duration_seconds={duration:.1f} "
+                    f"min_ram_available_mb={min_ram:.0f} "
+                    f"peak_ram_used_percent={peak_ram_percent:.1f} "
+                    f"avg_cpu_percent={avg_cpu:.1f}\n"
+                )
+                self.storage.create_song_event(
+                    song_id=str(project["id"]),
+                    phase=SongPhase.MASTERING.value,
+                    status=SongPhaseStatus.RUNNING.value,
+                    progress=75,
+                    message=(
+                        "ResourceMonitor audio: "
+                        f"RAM minima {min_ram:.0f} MB, CPU promedio {avg_cpu:.0f}%, duracion {duration:.0f}s."
+                    ),
+                    active_model="resource-monitor",
+                    payload={
+                        "duration_seconds": duration,
+                        "min_ram_available_mb": min_ram,
+                        "peak_ram_used_percent": peak_ram_percent,
+                        "avg_cpu_percent": avg_cpu,
+                    },
+                )
 
         if return_code != 0:
             detail = log_path.read_text(encoding="utf-8")[-4000:].strip()

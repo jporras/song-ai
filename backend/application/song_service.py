@@ -6,6 +6,7 @@ from typing import Any
 
 from audio.mixer import AudioMixer
 from audio.local_song_pipeline import LocalSongPipeline
+from audio.resource_monitor import ResourceMonitor
 from application.model_orchestrator import ModelOrchestrator
 from application.model_manager_service import ModelManagerService
 from application.professional_song_service import ProfessionalSongService
@@ -59,7 +60,8 @@ class SongService:
         self.full_song_builder = FullSongBuilder(storage)
         self.audio_mixer = AudioMixer(storage)
         self.export_builder = ExportBuilder(storage)
-        self.local_song_pipeline = LocalSongPipeline(settings.local_models) if settings else None
+        self.resource_monitor = ResourceMonitor(storage, settings.resource_monitor) if settings else None
+        self.local_song_pipeline = LocalSongPipeline(settings.local_models, self.resource_monitor) if settings else None
         self.template_builder = TemplateBuilder(storage)
         self.provider_registry = ProviderRegistry(
             settings.hf_models if settings else None,
@@ -76,6 +78,7 @@ class SongService:
             singing_voice_command=settings.local_models.singing_voice_command if settings else "",
             voice_conversion_command=settings.local_models.voice_conversion_command if settings else "",
             local_command_timeout_seconds=settings.local_models.local_command_timeout_seconds if settings else 3600,
+            resource_settings=settings.resource_monitor if settings else None,
         )
 
     def bootstrap(self) -> None:
@@ -100,6 +103,21 @@ class SongService:
 
     def professional_phases(self) -> list[dict[str, object]]:
         return self.professional_songs.phases()
+
+    def resource_status(self) -> dict[str, object]:
+        if self.resource_monitor is None:
+            return {"enabled": False, "reason": "Settings no cargados."}
+        return self.resource_monitor.status()
+
+    def resource_history(self, limit: int = 100) -> dict[str, object]:
+        if self.resource_monitor is None:
+            return {"snapshots": []}
+        return self.resource_monitor.history(limit)
+
+    def check_audio_readiness(self) -> dict[str, object]:
+        if self.resource_monitor is None:
+            return {"ready": False, "message": "Settings no cargados."}
+        return self.resource_monitor.check_audio_readiness()
 
     def create_professional_project(self, payload: dict[str, object]) -> dict[str, object]:
         return self.professional_songs.create_project(payload)

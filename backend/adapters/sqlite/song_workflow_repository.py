@@ -89,6 +89,25 @@ class SongWorkflowRepository:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS resource_snapshots (
+                    id TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL,
+                    phase TEXT NOT NULL,
+                    ram_total_mb REAL NOT NULL,
+                    ram_available_mb REAL NOT NULL,
+                    ram_used_percent REAL NOT NULL,
+                    cpu_percent REAL NOT NULL,
+                    disk_data_free_mb REAL NOT NULL,
+                    disk_models_free_mb REAL NOT NULL,
+                    disk_cache_free_mb REAL NOT NULL,
+                    heavy_processes_json TEXT NOT NULL,
+                    decision TEXT NOT NULL,
+                    message TEXT NOT NULL
+                )
+                """
+            )
 
     def create_project(self, project: SongProject) -> dict[str, object]:
         with sqlite3.connect(self.db_path) as connection:
@@ -330,6 +349,82 @@ class SongWorkflowRepository:
             ).fetchall()
         return [self.artifact_row_to_dict(row) for row in rows]
 
+    def create_resource_snapshot(
+        self,
+        snapshot_id: str,
+        phase: str,
+        ram_total_mb: float,
+        ram_available_mb: float,
+        ram_used_percent: float,
+        cpu_percent: float,
+        disk_data_free_mb: float,
+        disk_models_free_mb: float,
+        disk_cache_free_mb: float,
+        heavy_processes: list[dict[str, object]],
+        decision: str,
+        message: str,
+    ) -> dict[str, object]:
+        created_at = utc_now()
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO resource_snapshots (
+                    id, created_at, phase, ram_total_mb, ram_available_mb,
+                    ram_used_percent, cpu_percent, disk_data_free_mb,
+                    disk_models_free_mb, disk_cache_free_mb, heavy_processes_json,
+                    decision, message
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    snapshot_id,
+                    created_at,
+                    phase,
+                    ram_total_mb,
+                    ram_available_mb,
+                    ram_used_percent,
+                    cpu_percent,
+                    disk_data_free_mb,
+                    disk_models_free_mb,
+                    disk_cache_free_mb,
+                    json.dumps(heavy_processes, ensure_ascii=False),
+                    decision,
+                    message,
+                ),
+            )
+        return {
+            "id": snapshot_id,
+            "created_at": created_at,
+            "phase": phase,
+            "ram_total_mb": ram_total_mb,
+            "ram_available_mb": ram_available_mb,
+            "ram_used_percent": ram_used_percent,
+            "cpu_percent": cpu_percent,
+            "disk_data_free_mb": disk_data_free_mb,
+            "disk_models_free_mb": disk_models_free_mb,
+            "disk_cache_free_mb": disk_cache_free_mb,
+            "heavy_processes": heavy_processes,
+            "decision": decision,
+            "message": message,
+        }
+
+    def list_resource_snapshots(self, limit: int = 100) -> list[dict[str, object]]:
+        with sqlite3.connect(self.db_path) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """
+                SELECT id, created_at, phase, ram_total_mb, ram_available_mb,
+                       ram_used_percent, cpu_percent, disk_data_free_mb,
+                       disk_models_free_mb, disk_cache_free_mb, heavy_processes_json,
+                       decision, message
+                FROM resource_snapshots
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [self.resource_snapshot_row_to_dict(row) for row in rows]
+
     def project_row_to_dict(self, row: sqlite3.Row) -> dict[str, object]:
         return {
             "id": str(row["id"]),
@@ -364,4 +459,21 @@ class SongWorkflowRepository:
             "file_path": str(row["file_path"]),
             "metadata": json.loads(str(row["metadata_json"])),
             "created_at": str(row["created_at"]),
+        }
+
+    def resource_snapshot_row_to_dict(self, row: sqlite3.Row) -> dict[str, object]:
+        return {
+            "id": str(row["id"]),
+            "created_at": str(row["created_at"]),
+            "phase": str(row["phase"]),
+            "ram_total_mb": float(row["ram_total_mb"]),
+            "ram_available_mb": float(row["ram_available_mb"]),
+            "ram_used_percent": float(row["ram_used_percent"]),
+            "cpu_percent": float(row["cpu_percent"]),
+            "disk_data_free_mb": float(row["disk_data_free_mb"]),
+            "disk_models_free_mb": float(row["disk_models_free_mb"]),
+            "disk_cache_free_mb": float(row["disk_cache_free_mb"]),
+            "heavy_processes": json.loads(str(row["heavy_processes_json"])),
+            "decision": str(row["decision"]),
+            "message": str(row["message"]),
         }

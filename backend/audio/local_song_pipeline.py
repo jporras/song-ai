@@ -7,6 +7,7 @@ import shutil
 import subprocess
 
 from audio.mock_song_renderer import MockSongRenderContext
+from audio.resource_monitor import ResourceMonitor
 from config.model_settings import LocalModelSettings
 
 
@@ -18,8 +19,9 @@ class LocalPipelineStatus:
 
 
 class LocalSongPipeline:
-    def __init__(self, settings: LocalModelSettings) -> None:
+    def __init__(self, settings: LocalModelSettings, resource_monitor: ResourceMonitor | None = None) -> None:
         self.settings = settings
+        self.resource_monitor = resource_monitor
         self._full_song_available_cache: bool | None = None
         self._full_song_unavailable_reason = ""
 
@@ -99,6 +101,7 @@ class LocalSongPipeline:
         lyrics_path.write_text(context.lyrics_markdown.rstrip() + "\n", encoding="utf-8")
 
         if self.settings.full_song_command.strip() and self._full_song_command_available():
+            self._prepare_audio_resources("full_song")
             self._run_template(
                 self.settings.full_song_command,
                 {
@@ -121,6 +124,7 @@ class LocalSongPipeline:
                 "note": "Cancion final generada con un comando local completo; no usa modo pro.",
             }
 
+        self._prepare_audio_resources("singing_voice")
         self._run_template(
             self.settings.soundtrack_command,
             {
@@ -217,6 +221,11 @@ class LocalSongPipeline:
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or command).strip()
             raise ValueError(f"El comando local fallo: {detail}")
+
+    def _prepare_audio_resources(self, phase: str) -> None:
+        if self.resource_monitor is None:
+            return
+        self.resource_monitor.prepare_for_audio(phase=phase)
 
     def _full_song_command_available(self) -> bool:
         command = self.settings.full_song_command.strip()

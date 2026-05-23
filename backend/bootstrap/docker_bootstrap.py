@@ -316,7 +316,7 @@ def local_audio_deps_ready() -> bool:
 
 
 def ace_step_ready() -> bool:
-    return provider_python_probe("from acestep.pipeline_ace_step import ACEStepPipeline", timeout=180)
+    return modules_available(["acestep"])
 
 
 @contextmanager

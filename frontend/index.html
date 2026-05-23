@@ -742,6 +742,49 @@
             <small v-if="downloadStatus">{{ downloadStatus }}</small>
           </section>
 
+          <section class="panel resource-panel">
+            <div class="section-head">
+              <div>
+                <h2>Preparacion para voz cantada</h2>
+                <p>{{ resourceStatus.readiness?.message || 'Sin lectura de recursos.' }}</p>
+              </div>
+              <div class="actions">
+                <button @click="checkAudioReadiness">Revisar recursos</button>
+              </div>
+            </div>
+            <div class="resource-grid">
+              <article>
+                <strong>{{ Math.round(resourceSnapshot.ram_available_mb || 0) }} MB</strong>
+                <small>RAM disponible</small>
+              </article>
+              <article>
+                <strong>{{ Math.round(resourceSnapshot.ram_used_percent || 0) }}%</strong>
+                <small>RAM usada</small>
+              </article>
+              <article>
+                <strong>{{ Math.round(resourceSnapshot.cpu_percent || 0) }}%</strong>
+                <small>CPU</small>
+              </article>
+              <article>
+                <strong>{{ Math.round(resourceSnapshot.disk_models_free_mb || 0) }} MB</strong>
+                <small>Disco modelos</small>
+              </article>
+            </div>
+            <div :class="['resource-decision', resourceStatus.readiness?.ready === false ? 'blocked' : 'ready']">
+              {{ resourceStatus.readiness?.decision || 'observed' }}
+            </div>
+            <div class="recommendation-list">
+              <span v-for="item in resourceRecommendations" :key="item">{{ item }}</span>
+            </div>
+            <div class="snapshot-list">
+              <article v-for="snapshot in (resourceHistory.snapshots || []).slice(0, 6)" :key="snapshot.id">
+                <time>{{ snapshot.created_at }}</time>
+                <span>{{ snapshot.phase }}</span>
+                <small>{{ Math.round(snapshot.ram_available_mb) }} MB RAM / {{ Math.round(snapshot.cpu_percent) }}% CPU</small>
+              </article>
+            </div>
+          </section>
+
           <section class="panel">
             <div class="section-head">
               <h2>Estado local del sistema</h2>

@@ -205,6 +205,21 @@ def get_system_status() -> dict[str, Any]:
     return ok(service.system_status(bootstrap_runner.status()))
 
 
+@app.get("/api/resources/status")
+def get_resource_status() -> dict[str, Any]:
+    return ok(service.resource_status())
+
+
+@app.get("/api/resources/history")
+def get_resource_history(limit: int = 100) -> dict[str, Any]:
+    return ok(service.resource_history(limit))
+
+
+@app.post("/api/resources/check-audio-readiness")
+def check_audio_readiness() -> dict[str, Any]:
+    return run_action(service.check_audio_readiness)
+
+
 @app.post("/api/system/bootstrap/restart")
 def restart_bootstrap() -> dict[str, Any]:
     return ok(bootstrap_runner.start())

@@ -333,6 +333,33 @@ POST /api/system/bootstrap/upgrade
 
 La politica por defecto evita reinstalar paquetes pesados si ya son importables y hay marcador compatible en el volumen.
 
+## ResourceMonitor
+
+Song AI mide recursos dentro del contenedor antes, durante y despues de audio pesado como ACE-Step o providers de voz cantada. Los snapshots se guardan en SQLite en `resource_snapshots` y la UI de Production muestra RAM, CPU, disco, decision y recomendaciones.
+
+Variables:
+
+```text
+SONG_AI_RESOURCE_MONITOR_ENABLED=true
+SONG_AI_RESOURCE_SAMPLE_SECONDS=2
+SONG_AI_MIN_FREE_RAM_MB_FOR_AUDIO=6000
+SONG_AI_MIN_FREE_DISK_MB_FOR_AUDIO=15000
+SONG_AI_MAX_CPU_PERCENT_BEFORE_AUDIO=85
+SONG_AI_AUDIO_START_DELAY_SECONDS=90
+SONG_AI_RELEASE_LLM_BEFORE_AUDIO=true
+SONG_AI_STOP_LLM_COMMAND=
+```
+
+Endpoints:
+
+```text
+GET  /api/resources/status
+GET  /api/resources/history
+POST /api/resources/check-audio-readiness
+```
+
+Antes de ejecutar `SONG_AI_FULL_SONG_COMMAND` o `SONG_AI_SINGING_VOICE_COMMAND`, el backend registra `before_audio`, opcionalmente ejecuta `SONG_AI_STOP_LLM_COMMAND`, espera `SONG_AI_AUDIO_START_DELAY_SECONDS`, registra `after_llm_release` y bloquea si falta RAM, disco o CPU disponible. Durante la generacion escribe muestras en SQLite y en el log del provider.
+
 ## Como Generar Una Cancion
 
 1. Abre `http://localhost:8000`.
@@ -374,6 +401,8 @@ GET /api/local-pipeline/status
 GET /api/studio/status
 GET /api/models/status
 GET /api/providers
+GET /api/resources/status
+GET /api/resources/history
 ```
 
 Proyecto profesional:
