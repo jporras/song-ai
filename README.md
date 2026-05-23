@@ -375,6 +375,8 @@ UX Production alcance: crear proyectos y cambiar el proyecto activo pertenece a 
 
 Sprint flujo por fases: Intent, Lyrics, Music Plan, MIDI, Instrumental y Voice tienen guardado explicito por fase en SQLite (`project_phase_data`). Guardar solo persiste configuracion; no ejecuta ACE-Step, MIDI, audio ni exportables. La actividad, logs y botones de ejecucion quedan concentrados en Production.
 
+UX sidebar: la barra lateral usa `--sidebar-width: 300px` para dar mas aire a proyecto activo y fases, y el footer de Gemma se alinea con ese ancho.
+
 Swap recomendado en Linux: no bloquea la generacion, pero mejora estabilidad con ACE-Step. Ejemplo:
 
 ```bash
