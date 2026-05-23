@@ -777,6 +777,94 @@ summary span {
   min-width: min(360px, 100%);
 }
 
+.production-project-panel,
+.production-flow-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.production-project-panel select {
+  min-width: min(360px, 100%);
+}
+
+.production-metadata-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.production-metadata-grid label {
+  display: grid;
+  gap: 8px;
+}
+
+.flow-guide {
+  display: grid;
+  gap: 10px;
+}
+
+.flow-step {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(15, 17, 21, 0.46);
+}
+
+.flow-number {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: rgba(124, 140, 255, 0.14);
+  font-weight: 900;
+}
+
+.flow-step strong {
+  display: block;
+  color: var(--text);
+  font-size: 16px;
+}
+
+.flow-step p {
+  margin: 5px 0 0;
+}
+
+.flow-note {
+  color: var(--muted);
+}
+
+.production-diagnostics {
+  display: grid;
+  gap: 12px;
+}
+
+.production-diagnostics > details.panel {
+  padding: 0;
+}
+
+.production-diagnostics > details.panel > summary {
+  cursor: pointer;
+  padding: 16px;
+  color: var(--text);
+  font-weight: 800;
+}
+
+.production-diagnostics > details.panel[open] {
+  padding: 0 16px 16px;
+}
+
+.production-diagnostics > details.panel[open] > summary {
+  margin: 0 -16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
 .pipeline-strip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
@@ -1278,6 +1366,8 @@ summary span {
   .hero-strip,
   .creation-panel,
   .project-header-panel,
+  .production-metadata-grid,
+  .flow-step,
   .preview-strip {
     grid-template-columns: 1fr;
   }

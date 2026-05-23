@@ -659,34 +659,13 @@
         </section>
 
         <section v-if="activeTab === 'production'" class="view production-view">
-          <section class="panel project-header-panel">
-            <div>
-              <span class="eyebrow">Production</span>
-              <h2 v-if="!productionMetadata.editingName" @dblclick="productionMetadata.editingName = true">{{ activeProjectTitle }}</h2>
-              <input v-else v-model="projectSet.project_name" @keyup.enter="productionMetadata.editingName = false; markDirty('production')" @blur="productionMetadata.editingName = false" />
-              <p>{{ activeProjectDescription }}</p>
-            </div>
-            <button class="primary" :disabled="!dirty" @click="saveProductionMetadata">Guardar metadata</button>
-          </section>
-
-          <section class="panel">
-            <label>Descripcion
-              <textarea class="compact-textarea" v-model="projectSet.description" @input="markDirty('production')"></textarea>
-            </label>
-            <label>Tags
-              <input v-model="productionMetadata.tagsInput" @input="markDirty('production')" />
-            </label>
-            <div class="tag-rail">
-              <button v-for="tag in productionTags" :key="tag" class="tag">{{ tag }}</button>
-            </div>
-          </section>
-
-          <section class="panel production-status-panel">
+          <section class="panel production-project-panel">
             <div class="section-head">
               <div>
-                <span class="eyebrow">Estado global</span>
-                <h2>{{ productionGlobalStatus }}</h2>
-                <p>Production cierra el pipeline: mezcla, mastering, exportables y descarga desde Docker.</p>
+                <span class="eyebrow">1. Proyecto activo</span>
+                <h2 v-if="!productionMetadata.editingName" @dblclick="productionMetadata.editingName = true">{{ activeProjectTitle }}</h2>
+                <input v-else v-model="projectSet.project_name" @keyup.enter="productionMetadata.editingName = false; markDirty('production')" @blur="productionMetadata.editingName = false" />
+                <p>{{ activeProjectDescription }}</p>
               </div>
               <div class="actions">
                 <select v-model="productionProjectId" @change="loadProfessionalExport(productionProjectId)">
@@ -695,37 +674,52 @@
                     {{ project.title }} / {{ project.current_phase }}
                   </option>
                 </select>
-                <button @click="createProfessionalProjectFromProduction">Crear proyecto pro</button>
+                <button @click="createProfessionalProjectFromProduction">Crear proyecto</button>
+                <button class="primary" :disabled="!dirty" @click="saveProductionMetadata">Guardar</button>
               </div>
             </div>
-            <div class="pipeline-strip">
-              <article v-for="step in productionPipelineSteps" :key="step.phase" class="pipeline-step">
-                <span>{{ step.label }}</span>
-                <small>{{ step.phase }}</small>
-                <button :disabled="!step.requires" @click="runProductionStep(step)">{{ step.action }}</button>
+            <div class="production-metadata-grid">
+              <label>Descripcion
+                <textarea class="compact-textarea" v-model="projectSet.description" @input="markDirty('production')"></textarea>
+              </label>
+              <label>Tags
+                <input v-model="productionMetadata.tagsInput" @input="markDirty('production')" />
+                <span class="tag-rail">
+                  <button v-for="tag in productionTags" :key="tag" class="tag">{{ tag }}</button>
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <section class="panel production-flow-panel">
+            <div class="section-head">
+              <div>
+                <span class="eyebrow">2. Orden lógico</span>
+                <h2>{{ productionGlobalStatus }}</h2>
+                <p>Production no es otro editor: aquí se ejecuta el cierre del pipeline y se preparan descargas.</p>
+              </div>
+            </div>
+            <div class="flow-guide">
+              <article v-for="step in productionFlowSteps" :key="step.number" class="flow-step">
+                <span class="flow-number">{{ step.number }}</span>
+                <div>
+                  <strong>{{ step.title }}</strong>
+                  <small>{{ step.phases }}</small>
+                  <p>{{ step.purpose }}</p>
+                </div>
+                <button v-if="step.action" :disabled="!step.action.requires" @click="runProductionStep(step.action)">{{ step.actionLabel }}</button>
+                <small v-else class="flow-note">{{ step.actionLabel }}</small>
               </article>
             </div>
           </section>
 
           <section class="panel">
-            <button class="summary-toggle" @click="productionSummaryOpen = !productionSummaryOpen">Resumen del proyecto</button>
-            <dl v-if="productionSummaryOpen" class="summary-grid">
-              <dt>Tipo</dt><dd>{{ intent.songType }}</dd>
-              <dt>BPM</dt><dd>{{ musicPlan.bpm }}</dd>
-              <dt>Tonalidad</dt><dd>{{ musicPlan.key }}</dd>
-              <dt>Duracion</dt><dd>{{ localPipeline.ready ? 'segun provider local' : 'pendiente' }}</dd>
-              <dt>Estructura</dt><dd>{{ lyrics.structure }}</dd>
-              <dt>Instrumentos</dt><dd>{{ intent.instruments.join(', ') }}</dd>
-              <dt>Voz</dt><dd>{{ voice.mainVoice }}</dd>
-              <dt>Inspiraciones</dt><dd>{{ intent.inspirations.join(', ') }}</dd>
-              <dt>Estado global</dt><dd>{{ localFinalStatusMessage }}</dd>
-              <dt>Proyecto pro</dt><dd>{{ activeProfessionalProject?.id || 'pendiente' }}</dd>
-            </dl>
-          </section>
-
-          <section class="panel">
             <div class="section-head">
-              <h2>Exportables</h2>
+              <div>
+                <span class="eyebrow">3. Exportables</span>
+                <h2>Descargas finales</h2>
+                <p>Usa estos archivos cuando la canción ya fue generada por ACE-Step o exportada.</p>
+              </div>
               <div class="actions">
                 <button @click="generateLocalFinalSong" :disabled="!canGenerateLocalFinalSong">{{ localFinalRunning ? 'Generando...' : 'Generar final local' }}</button>
                 <button @click="loadProfessionalExport(productionProjectId)" :disabled="!productionProjectId">Actualizar export</button>
@@ -742,109 +736,79 @@
             <small v-if="downloadStatus">{{ downloadStatus }}</small>
           </section>
 
-          <section class="panel resource-panel">
-            <div class="section-head">
-              <div>
-                <h2>Preparacion para voz cantada</h2>
-                <p>{{ resourceStatus.readiness?.message || 'Sin lectura de recursos.' }}</p>
-                <small v-if="resourceLastUpdated">Ultima lectura: {{ resourceLastUpdated }}</small>
-              </div>
-              <div class="actions resource-actions">
-                <button @click="loadResources({ force: true })" :disabled="resourceRefreshing">
-                  {{ resourceRefreshing ? 'Actualizando...' : 'Actualizar ahora' }}
-                </button>
-                <button @click="checkAudioReadiness" :disabled="resourceRefreshing">Revisar recursos</button>
-                <button :class="{ active: resourceAutoRefresh }" @click="toggleResourceAutoRefresh">
-                  Auto 10s {{ resourceAutoRefresh ? 'ON' : 'OFF' }}
-                </button>
-              </div>
-            </div>
-            <div class="resource-grid">
-              <article>
-                <strong>{{ Math.round(resourceSnapshot.ram_available_mb || 0) }} MB</strong>
-                <small>RAM disponible</small>
-              </article>
-              <article>
-                <strong>{{ Math.round(resourceSnapshot.ram_used_percent || 0) }}%</strong>
-                <small>RAM usada</small>
-              </article>
-              <article>
-                <strong>{{ Math.round(resourceSnapshot.cpu_percent || 0) }}%</strong>
-                <small>CPU</small>
-              </article>
-              <article>
-                <strong>{{ Math.round(resourceSnapshot.swap_free_mb || 0) }} MB</strong>
-                <small>Swap libre</small>
-              </article>
-              <article>
-                <strong>{{ Math.round(resourceSnapshot.docker_memory_limit_mb || 0) }} MB</strong>
-                <small>Limite Docker</small>
-              </article>
-              <article>
-                <strong>{{ Math.round(resourceSnapshot.disk_models_free_mb || 0) }} MB</strong>
-                <small>Disco modelos</small>
-              </article>
-            </div>
-            <div :class="['resource-decision', resourceDecisionClass]">
-              {{ resourceStatus.readiness?.decision || 'observed' }}
-            </div>
-            <div class="recommendation-list">
-              <span v-for="item in resourceRecommendations" :key="item">{{ item }}</span>
-            </div>
-            <div class="snapshot-list">
-              <div class="snapshot-header">
-                <span>Hora</span>
-                <span>Fase</span>
-                <span>RAM</span>
-                <span>Swap</span>
-                <span>CPU</span>
-              </div>
-              <article v-for="snapshot in resourceHistoryRows" :key="snapshot.id">
-                <time>{{ snapshot.time }}</time>
-                <span>{{ snapshot.phase }}</span>
-                <strong>{{ snapshot.ram }}</strong>
-                <small>{{ snapshot.swap }}</small>
-                <small>{{ snapshot.cpu }}</small>
-              </article>
-            </div>
-          </section>
-
-          <section class="panel">
-            <div class="section-head">
-              <div>
-                <h2>Infraestructura local</h2>
-                <p>Solo lo necesario para saber si la app puede conversar, generar audio y guardar modelos.</p>
-              </div>
-              <div class="actions">
-                <button @click="refreshSystemStatus">Consultar</button>
-                <button @click="restartBootstrap" :disabled="bootstrapRunning">Preparar/reiniciar</button>
-                <button @click="upgradeBootstrap" :disabled="bootstrapRunning">Actualizar dependencias</button>
-                <button @click="showAdvancedSystem = !showAdvancedSystem">{{ showAdvancedSystem ? 'Ocultar avanzado' : 'Avanzado' }}</button>
-              </div>
-            </div>
-            <div class="system-summary-list">
-              <article v-for="item in essentialSystemItems" :key="item.id" class="system-summary-row">
-                <span :class="['dot', item.status]"></span>
-                <strong>{{ item.label }}</strong>
-                <small>{{ item.detail }}</small>
-              </article>
-            </div>
-            <div v-if="showAdvancedSystem" class="advanced-system">
-              <div class="actions">
-                <button @click="refreshLlmModel('gemma')" :disabled="bootstrapRunning">Recrear Gemma</button>
-                <button @click="refreshLlmModel('qwen')" :disabled="bootstrapRunning">Recrear Qwen</button>
-              </div>
-              <details>
-                <summary>Componentes tecnicos</summary>
-                <div class="component-grid compact">
-                  <article v-for="component in advancedSystemComponents" :key="component.id" class="component-card">
-                    <span :class="['dot', component.status]"></span>
-                    <strong>{{ component.label }}</strong>
-                    <small>{{ component.detail }}</small>
-                  </article>
+          <section class="production-diagnostics">
+            <details class="panel resource-panel">
+              <summary>Diagnóstico de recursos</summary>
+              <div class="section-head">
+                <div>
+                  <h2>Preparacion para voz cantada</h2>
+                  <p>{{ resourceStatus.readiness?.message || 'Sin lectura de recursos.' }}</p>
+                  <small v-if="resourceLastUpdated">Ultima lectura: {{ resourceLastUpdated }}</small>
                 </div>
-              </details>
-            </div>
+                <div class="actions resource-actions">
+                  <button @click="loadResources({ force: true })" :disabled="resourceRefreshing">
+                    {{ resourceRefreshing ? 'Actualizando...' : 'Actualizar ahora' }}
+                  </button>
+                  <button @click="checkAudioReadiness" :disabled="resourceRefreshing">Revisar recursos</button>
+                  <button :class="{ active: resourceAutoRefresh }" @click="toggleResourceAutoRefresh">
+                    Auto 10s {{ resourceAutoRefresh ? 'ON' : 'OFF' }}
+                  </button>
+                </div>
+              </div>
+              <div class="resource-grid">
+                <article><strong>{{ Math.round(resourceSnapshot.ram_available_mb || 0) }} MB</strong><small>RAM disponible</small></article>
+                <article><strong>{{ Math.round(resourceSnapshot.ram_used_percent || 0) }}%</strong><small>RAM usada</small></article>
+                <article><strong>{{ Math.round(resourceSnapshot.cpu_percent || 0) }}%</strong><small>CPU</small></article>
+                <article><strong>{{ Math.round(resourceSnapshot.swap_free_mb || 0) }} MB</strong><small>Swap libre</small></article>
+                <article><strong>{{ Math.round(resourceSnapshot.docker_memory_limit_mb || 0) }} MB</strong><small>Limite Docker</small></article>
+                <article><strong>{{ Math.round(resourceSnapshot.disk_models_free_mb || 0) }} MB</strong><small>Disco modelos</small></article>
+              </div>
+              <div :class="['resource-decision', resourceDecisionClass]">{{ resourceStatus.readiness?.decision || 'observed' }}</div>
+              <div class="recommendation-list">
+                <span v-for="item in resourceRecommendations" :key="item">{{ item }}</span>
+              </div>
+              <div class="snapshot-list">
+                <div class="snapshot-header"><span>Hora</span><span>Fase</span><span>RAM</span><span>Swap</span><span>CPU</span></div>
+                <article v-for="snapshot in resourceHistoryRows" :key="snapshot.id">
+                  <time>{{ snapshot.time }}</time><span>{{ snapshot.phase }}</span><strong>{{ snapshot.ram }}</strong><small>{{ snapshot.swap }}</small><small>{{ snapshot.cpu }}</small>
+                </article>
+              </div>
+            </details>
+
+            <details class="panel">
+              <summary>Infraestructura local</summary>
+              <div class="section-head">
+                <div>
+                  <h2>Estado tecnico</h2>
+                  <p>Modelos, audio local y volumenes Docker. Normalmente no necesitas tocar esto.</p>
+                </div>
+                <div class="actions">
+                  <button @click="refreshSystemStatus">Consultar</button>
+                  <button @click="restartBootstrap" :disabled="bootstrapRunning">Preparar/reiniciar</button>
+                  <button @click="upgradeBootstrap" :disabled="bootstrapRunning">Actualizar dependencias</button>
+                  <button @click="showAdvancedSystem = !showAdvancedSystem">{{ showAdvancedSystem ? 'Ocultar avanzado' : 'Avanzado' }}</button>
+                </div>
+              </div>
+              <div class="system-summary-list">
+                <article v-for="item in essentialSystemItems" :key="item.id" class="system-summary-row">
+                  <span :class="['dot', item.status]"></span><strong>{{ item.label }}</strong><small>{{ item.detail }}</small>
+                </article>
+              </div>
+              <div v-if="showAdvancedSystem" class="advanced-system">
+                <div class="actions">
+                  <button @click="refreshLlmModel('gemma')" :disabled="bootstrapRunning">Recrear Gemma</button>
+                  <button @click="refreshLlmModel('qwen')" :disabled="bootstrapRunning">Recrear Qwen</button>
+                </div>
+                <details>
+                  <summary>Componentes tecnicos</summary>
+                  <div class="component-grid compact">
+                    <article v-for="component in advancedSystemComponents" :key="component.id" class="component-card">
+                      <span :class="['dot', component.status]"></span><strong>{{ component.label }}</strong><small>{{ component.detail }}</small>
+                    </article>
+                  </div>
+                </details>
+              </div>
+            </details>
           </section>
         </section>
 

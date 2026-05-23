@@ -369,6 +369,8 @@ UX ResourceMonitor: Production incluye refresco manual, revision explicita de re
 
 UX Infraestructura local: Production muestra un resumen limpio con modelos de texto, audio local, almacenamiento Docker y preparacion. Los componentes tecnicos y acciones de recreacion quedan en modo avanzado.
 
+UX Production: la vista principal se ordena como Proyecto activo -> Orden logico -> Exportables. Recursos e infraestructura quedan como diagnosticos colapsables para no distraer del flujo de generacion.
+
 Swap recomendado en Linux: no bloquea la generacion, pero mejora estabilidad con ACE-Step. Ejemplo:
 
 ```bash

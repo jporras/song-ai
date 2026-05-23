@@ -233,7 +233,7 @@ createApp({
         editingName: false,
         tagsInput: "suave, warm, piano, cinematografico",
       },
-      productionSummaryOpen: true,
+      productionSummaryOpen: false,
       drafts: [],
       sets: [],
       selectedSet: null,
@@ -456,6 +456,35 @@ createApp({
         { phase: "MIXING", label: "Mixing", action: "Mezclar", method: "POST", url: `/api/pro/projects/${songId}/mix`, requires: songId },
         { phase: "MASTERING", label: "Mastering", action: "Masterizar", method: "POST", url: `/api/pro/projects/${songId}/master`, requires: songId },
         { phase: "EXPORT", label: "Export", action: "Preparar export", method: "POST", url: `/api/pro/projects/${songId}/export`, requires: songId },
+      ];
+    },
+    productionFlowSteps() {
+      const byPhase = Object.fromEntries(this.productionPipelineSteps.map((step) => [step.phase, step]));
+      return [
+        {
+          number: "1",
+          title: "Preparar idea",
+          purpose: "Define intención, letra, plan musical y MIDI editable.",
+          phases: "Intent → Lyrics → Music Plan → MIDI",
+          action: null,
+          actionLabel: "Se trabaja en las fases laterales",
+        },
+        {
+          number: "2",
+          title: "Generar canción",
+          purpose: "Ejecuta ACE-Step local para crear una canción completa con voz integrada.",
+          phases: "Mastering / Full Song",
+          action: byPhase.MASTERING,
+          actionLabel: byPhase.MASTERING?.action || "Generar",
+        },
+        {
+          number: "3",
+          title: "Preparar descargas",
+          purpose: "Crea manifest, ZIP y enlaces para MP3, WAV, FLAC y MIDI.",
+          phases: "Export",
+          action: byPhase.EXPORT,
+          actionLabel: byPhase.EXPORT?.action || "Exportar",
+        },
       ];
     },
     productionSpecMessage() {
