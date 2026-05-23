@@ -436,17 +436,17 @@ createApp({
     productionPipelineSteps() {
       const songId = this.activeProfessionalProject?.id || "";
       return [
-        { phase: "SONG_SPEC_COLLECTION", label: "Spec", action: "Enviar intent", method: "POST", url: `/api/pro/projects/${songId}/spec/messages`, requires: songId },
-        { phase: "LYRICS_GENERATION", label: "Lyrics", action: "Generar lyrics", method: "POST", url: `/api/pro/projects/${songId}/lyrics`, requires: songId },
-        { phase: "LYRICS_TECHNICAL_REVIEW", label: "Revision lyrics", action: "Aprobar lyrics", method: "POST", url: `/api/pro/projects/${songId}/lyrics/review`, requires: songId },
-        { phase: "MUSIC_PLAN_GENERATION", label: "Music Plan", action: "Generar plan", method: "POST", url: `/api/pro/projects/${songId}/music-plan`, requires: songId },
-        { phase: "MIDI_GENERATION", label: "MIDI", action: "Crear MIDI", method: "POST", url: `/api/pro/projects/${songId}/midi`, requires: songId },
-        { phase: "INSTRUMENTAL_GENERATION", label: "Instrumental", action: "Generar instrumental", method: "POST", url: `/api/pro/projects/${songId}/instrumental`, requires: songId },
-        { phase: "VOCAL_SYNTHESIS", label: "Voice", action: "Generar voz", method: "POST", url: `/api/pro/projects/${songId}/vocals`, requires: songId },
-        { phase: "VOICE_CONVERSION", label: "Conversion", action: "Resolver conversion", method: "POST", url: `/api/pro/projects/${songId}/voice-conversion`, requires: songId },
-        { phase: "MIXING", label: "Mixing", action: "Mezclar", method: "POST", url: `/api/pro/projects/${songId}/mix`, requires: songId },
-        { phase: "MASTERING", label: "Mastering", action: "Masterizar", method: "POST", url: `/api/pro/projects/${songId}/master`, requires: songId },
-        { phase: "EXPORT", label: "Export", action: "Preparar export", method: "POST", url: `/api/pro/projects/${songId}/export`, requires: songId },
+        { phase: "SONG_SPEC_COLLECTION", label: "Especificacion", summary: "Intent creativo aprobado", action: "Enviar intent", method: "POST", url: `/api/pro/projects/${songId}/spec/messages`, requires: songId },
+        { phase: "LYRICS_GENERATION", label: "Letra", summary: "Letra cantable por secciones", action: "Generar letra", method: "POST", url: `/api/pro/projects/${songId}/lyrics`, requires: songId },
+        { phase: "LYRICS_TECHNICAL_REVIEW", label: "Revision", summary: "Letra validada para duracion y estilo", action: "Aprobar letra", method: "POST", url: `/api/pro/projects/${songId}/lyrics/review`, requires: songId },
+        { phase: "MUSIC_PLAN_GENERATION", label: "Plan musical", summary: "BPM, tonalidad, estructura y dinamica", action: "Generar plan", method: "POST", url: `/api/pro/projects/${songId}/music-plan`, requires: songId },
+        { phase: "MIDI_GENERATION", label: "MIDI", summary: "Melodia guia y base armonica editable", action: "Crear MIDI", method: "POST", url: `/api/pro/projects/${songId}/midi`, requires: songId },
+        { phase: "INSTRUMENTAL_GENERATION", label: "Instrumental", summary: "Audio base desde el plan musical", action: "Generar instrumental", method: "POST", url: `/api/pro/projects/${songId}/instrumental`, requires: songId },
+        { phase: "VOCAL_SYNTHESIS", label: "Voz", summary: "Voz cantada sincronizada con la letra", action: "Generar voz", method: "POST", url: `/api/pro/projects/${songId}/vocals`, requires: songId },
+        { phase: "VOICE_CONVERSION", label: "Conversion", summary: "Color vocal opcional o voz personalizada", action: "Resolver conversion", method: "POST", url: `/api/pro/projects/${songId}/voice-conversion`, requires: songId },
+        { phase: "MIXING", label: "Mezcla", summary: "Balance de instrumental y voz", action: "Mezclar", method: "POST", url: `/api/pro/projects/${songId}/mix`, requires: songId },
+        { phase: "MASTERING", label: "Mastering", summary: "Cancion final con voz integrada", action: "Masterizar", method: "POST", url: `/api/pro/projects/${songId}/master`, requires: songId },
+        { phase: "EXPORT", label: "Export", summary: "MP3, WAV, FLAC, MIDI y ZIP", action: "Preparar export", method: "POST", url: `/api/pro/projects/${songId}/export`, requires: songId },
       ];
     },
     productionProcessSteps() {
@@ -464,11 +464,11 @@ createApp({
         EXPORT: ["project_zip", "export_manifest_json"],
       };
       const statusCopy = {
-        disabled: { icon: "○", label: "Sin proyecto", hint: "Selecciona un proyecto en Biblioteca." },
-        pending: { icon: "○", label: "Pendiente", hint: "Aun no se ha ejecutado." },
-        current: { icon: "⟳", label: "En curso", hint: "Fase actual del pipeline." },
-        complete: { icon: "✓", label: "Generado", hint: "Resultado disponible o fase ya superada." },
-        error: { icon: "✕", label: "Error", hint: "Revisa Actividad y vuelve a intentar." },
+        disabled: { icon: "○", label: "Sin proyecto" },
+        pending: { icon: "○", label: "Pendiente" },
+        current: { icon: "⟳", label: "En curso" },
+        complete: { icon: "✓", label: "Generado" },
+        error: { icon: "✕", label: "Error" },
       };
       return this.productionPipelineSteps.map((step, index) => {
         const hasArtifact = (completedByArtifact[step.phase] || []).some((type) => artifactTypes.has(type));
@@ -488,7 +488,6 @@ createApp({
           state,
           stateIcon: copy.icon,
           stateLabel: copy.label,
-          stateHint: copy.hint,
           buttonLabel: state === "complete" ? "Rehacer" : step.action,
         };
       });

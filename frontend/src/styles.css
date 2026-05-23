@@ -870,18 +870,18 @@ summary span {
 
 .pipeline-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .pipeline-step {
   display: grid;
-  gap: 8px;
-  align-content: start;
-  min-height: 158px;
-  padding: 13px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 14px;
+  align-items: center;
+  min-height: 70px;
+  padding: 12px 14px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 14px;
   background: rgba(15, 17, 21, 0.48);
   transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
@@ -890,28 +890,26 @@ summary span {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
-  align-items: start;
+  align-items: center;
 }
 
 .pipeline-step strong {
   font-weight: 800;
+  line-height: 1.2;
 }
 
 .pipeline-step small {
+  display: block;
+  margin-top: 3px;
   overflow-wrap: anywhere;
-}
-
-.pipeline-step p {
-  margin: 0;
   color: var(--muted);
-  font-size: 0.88rem;
 }
 
 .pipeline-state {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: 999px;
   border: 1px solid var(--border);
   color: var(--muted);
@@ -919,13 +917,26 @@ summary span {
   font-weight: 900;
 }
 
+.pipeline-badge {
+  min-width: 96px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-align: center;
+}
+
 .pipeline-step button {
   align-self: end;
+  min-width: 124px;
 }
 
 .pipeline-step--complete {
-  border-color: rgba(74, 222, 128, 0.44);
-  box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.08);
+  border-color: rgba(74, 222, 128, 0.24);
+  box-shadow: inset 3px 0 0 rgba(74, 222, 128, 0.55);
 }
 
 .pipeline-step--complete .pipeline-state {
@@ -934,8 +945,10 @@ summary span {
   background: rgba(74, 222, 128, 0.12);
 }
 
-.pipeline-step--complete p {
+.pipeline-step--complete .pipeline-badge {
+  border-color: rgba(74, 222, 128, 0.34);
   color: var(--ready);
+  background: rgba(74, 222, 128, 0.08);
 }
 
 .pipeline-step--current {
@@ -949,8 +962,10 @@ summary span {
   background: rgba(96, 165, 250, 0.12);
 }
 
-.pipeline-step--current p {
+.pipeline-step--current .pipeline-badge {
+  border-color: rgba(96, 165, 250, 0.34);
   color: var(--processing);
+  background: rgba(96, 165, 250, 0.08);
 }
 
 .pipeline-step--error {
@@ -963,8 +978,22 @@ summary span {
   background: rgba(248, 113, 113, 0.12);
 }
 
-.pipeline-step--error p {
+.pipeline-step--error .pipeline-badge {
+  border-color: rgba(248, 113, 113, 0.34);
   color: var(--error);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+@media (max-width: 900px) {
+  .pipeline-step {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pipeline-badge,
+  .pipeline-step button {
+    justify-self: stretch;
+    width: 100%;
+  }
 }
 
 .music-timeline {

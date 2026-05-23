@@ -704,11 +704,10 @@
                   <span class="pipeline-state">{{ step.stateIcon }}</span>
                   <div>
                     <strong>{{ step.label }}</strong>
-                    <small>{{ step.phase }}</small>
+                    <small>{{ step.summary }}</small>
                   </div>
                 </header>
-                <p>{{ step.stateLabel }}</p>
-                <small>{{ step.stateHint }}</small>
+                <span class="pipeline-badge">{{ step.stateLabel }}</span>
                 <button :disabled="!step.requires" @click="runProductionStep(step)">{{ step.buttonLabel }}</button>
               </article>
             </div>

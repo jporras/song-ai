@@ -381,6 +381,8 @@ UX sidebar compacto: el proyecto activo se muestra en una sola linea con prefijo
 
 UX procesos: las tarjetas de Production muestran estado visual por fase de ejecucion (`pendiente`, `en curso`, `generado` o `error`). El estado se calcula desde la fase actual del proyecto profesional y los artefactos exportados, para que el usuario vea que procesos ya produjeron resultados.
 
+UX design system: se agrego `docs/DESIGN_SYSTEM.md` como referencia visual del producto. Production muestra procesos como una lista ordenada con nombre humano, resumen corto, badge de estado y accion, evitando codigos tecnicos visibles como contenido principal.
+
 Swap recomendado en Linux: no bloquea la generacion, pero mejora estabilidad con ACE-Step. Ejemplo:
 
 ```bash
