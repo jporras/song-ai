@@ -133,6 +133,9 @@ class ProfessionalExportService:
         matches = [artifact for artifact in artifacts if str(artifact["type"]) == artifact_type]
         if not matches:
             raise ValueError(f"No existe artefacto exportable de tipo {artifact_type}.")
+        verification = self.storage.verify_song_artifact(song_id, artifact_type)
+        if str(verification.get("artifact_status", "")) != "GENERATED":
+            raise ValueError(str(verification.get("message", "El artefacto no esta disponible para descarga.")))
         artifact = matches[-1]
         path = Path(str(artifact["file_path"])).resolve()
         project_dir = (self.storage.data_dir / "projects" / song_id).resolve()

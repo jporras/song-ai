@@ -1,5 +1,6 @@
 ﻿from pathlib import Path
 from datetime import datetime, timezone
+import hashlib
 import json
 
 from adapters.sqlite.json_config_repository import JsonConfigRepository
@@ -334,16 +335,63 @@ class StorageManager:
         phase: str,
         data: dict[str, object],
         status: str,
+        phase_status: str = "COMPLETED",
+        change_source: str = "USER",
+        validation_status: str = "valid",
     ) -> dict[str, object] | None:
-        saved = self.set_repository.save_phase_data(set_id, phase, data, status)
+        saved = self.set_repository.save_phase_data(
+            set_id=set_id,
+            phase=phase,
+            data=data,
+            status=status,
+            phase_status=phase_status,
+            change_source=change_source,
+            validation_status=validation_status,
+        )
         if saved is None:
             return None
         phase_dir = self.data_dir / "sets" / set_id / "phase_data"
         self.write_json(phase_dir / f"{phase}.json", dict(saved))
         return saved
 
+    def initialize_project_phase_data(self, set_id: str, phase: str, defaults: dict[str, object] | None = None) -> dict[str, object] | None:
+        return self.set_repository.initialize_phase_data(set_id, phase, defaults)
+
     def list_project_phase_data(self, set_id: str) -> dict[str, object]:
         return self.set_repository.list_phase_data(set_id)
+
+    def list_project_phase_events(self, set_id: str) -> list[dict[str, object]]:
+        return self.set_repository.list_phase_events(set_id)
+
+    def create_project_phase_event(
+        self,
+        project_id: str,
+        phase_name: str,
+        event_type: str,
+        source: str,
+        before: dict[str, object] | None = None,
+        after: dict[str, object] | None = None,
+        message: str = "",
+        error_code: str = "",
+        error_message: str = "",
+    ) -> dict[str, object]:
+        return self.set_repository.create_phase_event(
+            project_id=project_id,
+            phase_name=phase_name,
+            event_type=event_type,
+            source=source,
+            before=before,
+            after=after,
+            message=message,
+            error_code=error_code,
+            error_message=error_message,
+        )
+
+    def save_project_ui_state(self, set_id: str, last_active_phase: str) -> dict[str, object] | None:
+        return self.set_repository.save_ui_state(set_id, last_active_phase)
+
+    def get_project_ui_state(self, set_id: str) -> dict[str, object]:
+        return self.set_repository.get_ui_state(set_id)
 
     def export_indexed_sets_to_json(self) -> dict[str, object]:
         exported_paths: list[str] = []
@@ -513,14 +561,89 @@ class StorageManager:
         file_path: str,
         metadata: dict[str, object],
     ) -> dict[str, object]:
-        return self.song_workflow_repository.create_artifact(
+        path = Path(file_path)
+        file_size = path.stat().st_size if path.exists() else 0
+        checksum = self.file_checksum(path) if path.exists() and path.is_file() else ""
+        enriched_metadata = {
+            "artifact_status": "GENERATED" if path.exists() else "MISSING",
+            "file_size": file_size,
+            "checksum": checksum,
+            **metadata,
+        }
+        artifact = self.song_workflow_repository.create_artifact(
             artifact_id=artifact_id,
             song_id=song_id,
             phase=phase,
             artifact_type=artifact_type,
             file_path=file_path,
-            metadata=metadata,
+            metadata=enriched_metadata,
         )
+        self.create_song_event(
+            song_id=song_id,
+            phase=phase,
+            status="completed" if path.exists() else "failed",
+            progress=100 if path.exists() else 0,
+            message=f"Artefacto {artifact_type} {'generado' if path.exists() else 'faltante'}: {file_path}",
+            active_model="artifact-registry",
+            payload={
+                "event_type": "ARTIFACT_GENERATED" if path.exists() else "ARTIFACT_MISSING",
+                "artifact_type": artifact_type,
+                "file_path": file_path,
+                "file_size": file_size,
+                "checksum": checksum,
+            },
+            artifact_id=artifact_id,
+        )
+        return artifact
+
+    def file_checksum(self, path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as file:
+            for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def verify_song_artifact(self, song_id: str, artifact_type: str) -> dict[str, object]:
+        project = self.get_song_project(song_id)
+        if project is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        matches = [dict(item) for item in list(project.get("artifacts", [])) if str(item.get("type")) == artifact_type]
+        if not matches:
+            return {"artifact_type": artifact_type, "artifact_status": "NOT_GENERATED", "message": "Artefacto no registrado en SQLite."}
+        artifact = matches[-1]
+        path = Path(str(artifact["file_path"]))
+        metadata = dict(artifact.get("metadata", {}))
+        if not path.exists():
+            status = "MISSING"
+            event_type = "ARTIFACT_MISSING"
+            message = "El archivo registrado no existe en disco."
+        else:
+            checksum = self.file_checksum(path)
+            expected = str(metadata.get("checksum", ""))
+            if expected and checksum != expected:
+                status = "CORRUPTED"
+                event_type = "ARTIFACT_CORRUPTED"
+                message = "El checksum del archivo no coincide con SQLite."
+            else:
+                status = "GENERATED"
+                event_type = "ARTIFACT_GENERATED"
+                message = "Artefacto verificado correctamente."
+            metadata["file_size"] = path.stat().st_size
+            metadata["checksum"] = checksum
+        metadata["artifact_status"] = status
+        self.song_workflow_repository.update_artifact_metadata(str(artifact["artifact_id"]), metadata)
+        if status != "GENERATED":
+            self.create_song_event(
+                song_id=song_id,
+                phase=str(artifact["phase"]),
+                status="failed",
+                progress=0,
+                message=message,
+                active_model="artifact-verifier",
+                payload={"event_type": event_type, "artifact_type": artifact_type, "artifact_status": status},
+                artifact_id=str(artifact["artifact_id"]),
+            )
+        return {**artifact, "metadata": metadata, "artifact_status": status, "message": message}
 
     def create_resource_snapshot(self, snapshot: dict[str, object]) -> dict[str, object]:
         return self.song_workflow_repository.create_resource_snapshot(
@@ -531,8 +654,12 @@ class StorageManager:
             ram_used_percent=float(snapshot["ram_used_percent"]),
             swap_total_mb=float(snapshot.get("swap_total_mb", 0)),
             swap_free_mb=float(snapshot.get("swap_free_mb", 0)),
-            docker_memory_limit_mb=float(snapshot.get("docker_memory_limit_mb", 0)),
+            swap_used_mb=float(snapshot.get("swap_used_mb", 0)),
+            visible_memory_limit_mb=float(
+                snapshot.get("visible_memory_limit_mb", snapshot.get("docker_memory_limit_mb", 0))
+            ),
             cpu_percent=float(snapshot["cpu_percent"]),
+            vram=[dict(item) for item in list(snapshot.get("vram", []))],
             disk_data_free_mb=float(snapshot["disk_data_free_mb"]),
             disk_models_free_mb=float(snapshot["disk_models_free_mb"]),
             disk_cache_free_mb=float(snapshot["disk_cache_free_mb"]),

@@ -115,7 +115,7 @@ class ProviderRegistry:
                 "technical_base_url": self.local_settings.llama_cpp_technical_base_url,
                 "models": model_files,
                 "missing_models": missing_models,
-                "reason": "Faltan modelos GGUF en el volumen Docker. Configura SONG_AI_GEMMA_GGUF_URL y SONG_AI_QWEN_GGUF_URL o coloca los archivos en /app/models/llm.",
+                "reason": "Faltan modelos GGUF locales. Configura SONG_AI_GEMMA_GGUF_URL y SONG_AI_QWEN_GGUF_URL o coloca los archivos en data/models/llm.",
             }
         provider = next(
             (item for item in self.interpreter_providers if isinstance(item, LlamaCppInterpreterProvider)),

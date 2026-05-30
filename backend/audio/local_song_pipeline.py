@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import importlib.machinery
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 from audio.mock_song_renderer import MockSongRenderContext
 from audio.resource_monitor import ResourceMonitor
@@ -246,26 +248,24 @@ class LocalSongPipeline:
         if "acestep_generate.py" in command:
             if self._full_song_available_cache is True:
                 return self._full_song_available_cache
-            provider_path = Path(self._provider_python_path())
-            if not provider_path.exists():
+            search_paths = self._provider_search_paths()
+            if importlib.machinery.PathFinder.find_spec("acestep", search_paths) is None:
                 self._full_song_unavailable_reason = (
-                    f"ACE-Step no esta instalado en el cache de providers: {provider_path}."
+                    "ACE-Step no esta importable en .venv ni en data/provider-cache/python. "
+                    "Ejecuta scripts\\install-local-prereqs.ps1."
                 )
                 self._full_song_available_cache = False
                 return False
-            if not (provider_path / "acestep").exists():
-                self._full_song_unavailable_reason = (
-                    f"ACE-Step no aparece instalado en el cache de providers: {provider_path / 'acestep'}."
-                )
-                self._full_song_available_cache = False
-                return False
-            if not (provider_path / "torchcodec").exists():
-                self._full_song_unavailable_reason = "Falta pytorchcodec. Instala la dependencia antes de generar con ACE-Step."
+            if importlib.machinery.PathFinder.find_spec("torchcodec", search_paths) is None:
+                self._full_song_unavailable_reason = "Falta torchcodec. Ejecuta scripts\\install-local-prereqs.ps1."
                 self._full_song_available_cache = False
                 return False
             self._full_song_available_cache = True
             return bool(self._full_song_available_cache)
         return True
+
+    def _provider_search_paths(self) -> list[str]:
+        return [self._provider_python_path(), *sys.path]
 
     def _full_song_detail(self, configured: bool, available: bool) -> str:
         if not configured:
@@ -301,7 +301,7 @@ class LocalSongPipeline:
         return env
 
     def _provider_python_path(self) -> str:
-        provider_cache = os.getenv("SONG_AI_PROVIDER_CACHE", "/app/provider-cache")
+        provider_cache = os.getenv("SONG_AI_PROVIDER_CACHE", str(Path.cwd() / "data" / "provider-cache"))
         return str(Path(provider_cache) / "python")
 
     def _assert_file(self, path: Path, message: str) -> None:

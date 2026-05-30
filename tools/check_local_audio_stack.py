@@ -11,7 +11,7 @@ def main() -> int:
     parser.parse_args()
 
     checks = [
-        ("ffmpeg", shutil.which("ffmpeg") is not None, "Instala ffmpeg o usa el contenedor Docker."),
+        ("ffmpeg", shutil.which("ffmpeg") is not None, "Instala ffmpeg y agrega su carpeta bin al PATH."),
         (
             "SONG_AI_SOUNDTRACK_COMMAND",
             bool(os.getenv("SONG_AI_SOUNDTRACK_COMMAND", "").strip()),

@@ -660,8 +660,13 @@
                 <p>El proyecto activo se selecciona en Biblioteca. En Production solo ajustas la descripcion antes de generar y exportar.</p>
               </div>
               <div class="actions">
+                <button v-if="activeProjectId && !activeProfessionalProject" class="primary" @click="createProfessionalProjectFromActiveSet">Preparar Production</button>
                 <button class="primary" :disabled="!dirty || !activeProjectId" @click="saveProductionMetadata">Guardar descripcion</button>
               </div>
+            </div>
+            <div v-if="activeProjectId && !activeProfessionalProject" class="inline-warning">
+              <strong>Production aun no esta preparado para este proyecto.</strong>
+              <span>El proyecto activo ya esta cargado. Prepara Production para habilitar tareas, Mastering/Full Song y Export sobre este mismo proyecto.</span>
             </div>
             <label>Descripcion del proyecto activo
               <textarea class="compact-textarea" v-model="projectSet.description" @input="markDirty('production')"></textarea>
@@ -684,9 +689,37 @@
                   <small>{{ step.phases }}</small>
                   <p>{{ step.purpose }}</p>
                 </div>
-                <button v-if="step.action" :disabled="!step.action.requires" @click="runProductionStep(step.action)">{{ step.actionLabel }}</button>
+                <button v-if="step.action" :disabled="!step.action.canRun" @click="runProductionStep(step.action)">{{ step.actionLabel }}</button>
                 <small v-else class="flow-note">{{ step.actionLabel }}</small>
               </article>
+            </div>
+            <div class="timing-grid">
+              <article>
+                <strong>{{ productionTimingEstimate.songLengthLabel }}</strong>
+                <small>Duracion enviada</small>
+              </article>
+              <article>
+                <strong>{{ productionTimingEstimate.estimateLabel }}</strong>
+                <small>Estimado de Mastering</small>
+              </article>
+              <article>
+                <strong>{{ productionTimingEstimate.timeoutLabel }}</strong>
+                <small>Timeout maximo</small>
+              </article>
+              <article>
+                <strong>{{ productionTimingEstimate.maxLabel }}</strong>
+                <small>Limite de cancion</small>
+              </article>
+            </div>
+            <div v-if="productionTimingEstimate.clipped || productionTimingEstimate.exceedsTimeout || productionTimingEstimate.cpuSlow" class="inline-warning">
+              <strong v-if="productionTimingEstimate.clipped">La duracion solicitada supera el limite configurado.</strong>
+              <strong v-else-if="productionTimingEstimate.exceedsTimeout">El estimado puede superar el timeout configurado.</strong>
+              <strong v-else>ACE-Step esta corriendo en modo CPU lento.</strong>
+              <span>
+                Solicitado: {{ productionTimingEstimate.requestedLabel }} /
+                Enviado: {{ productionTimingEstimate.songLengthLabel }} /
+                Runtime: {{ productionTimingEstimate.runtime }}
+              </span>
             </div>
           </section>
 
@@ -705,10 +738,17 @@
                   <div>
                     <strong>{{ step.label }}</strong>
                     <small>{{ step.summary }}</small>
+                    <small v-if="step.statusDetail" class="pipeline-detail">{{ step.statusDetail }}</small>
+                    <small v-if="step.activeModel || step.statusTime" class="pipeline-meta">
+                      {{ step.activeModel }}{{ step.activeModel && step.statusTime ? ' / ' : '' }}{{ step.statusTime }}
+                    </small>
+                    <small v-if="step.startedAt || step.elapsedLabel" class="pipeline-runtime">
+                      Inicio: {{ step.startedAt }}{{ step.elapsedLabel ? ' / Lleva ' + step.elapsedLabel : '' }}
+                    </small>
                   </div>
                 </header>
                 <span class="pipeline-badge">{{ step.stateLabel }}</span>
-                <button :disabled="!step.requires" @click="runProductionStep(step)">{{ step.buttonLabel }}</button>
+                <button :disabled="!step.canRun" @click="runProductionStep(step)">{{ step.buttonLabel }}</button>
               </article>
             </div>
           </section>
@@ -759,9 +799,10 @@
                 <article><strong>{{ Math.round(resourceSnapshot.ram_available_mb || 0) }} MB</strong><small>RAM disponible</small></article>
                 <article><strong>{{ Math.round(resourceSnapshot.ram_used_percent || 0) }}%</strong><small>RAM usada</small></article>
                 <article><strong>{{ Math.round(resourceSnapshot.cpu_percent || 0) }}%</strong><small>CPU</small></article>
-                <article><strong>{{ Math.round(resourceSnapshot.swap_free_mb || 0) }} MB</strong><small>Swap libre</small></article>
-                <article><strong>{{ Math.round(resourceSnapshot.docker_memory_limit_mb || 0) }} MB</strong><small>Limite Docker</small></article>
+                <article><strong>{{ Math.round(resourceSnapshot.swap_free_mb || 0) }} / {{ Math.round(resourceSnapshot.swap_total_mb || 0) }} MB</strong><small>Swap libre / total</small></article>
+                <article><strong>{{ Math.round(resourceSnapshot.visible_memory_limit_mb || 0) }} MB</strong><small>Memoria visible</small></article>
                 <article><strong>{{ Math.round(resourceSnapshot.disk_models_free_mb || 0) }} MB</strong><small>Disco modelos</small></article>
+                <article><strong>{{ acceleratorSummary }}</strong><small>{{ acceleratorDetail }}</small></article>
               </div>
               <div :class="['resource-decision', resourceDecisionClass]">{{ resourceStatus.readiness?.decision || 'observed' }}</div>
               <div class="recommendation-list">
@@ -780,7 +821,7 @@
               <div class="section-head">
                 <div>
                   <h2>Estado tecnico</h2>
-                  <p>Modelos, audio local y volumenes Docker. Normalmente no necesitas tocar esto.</p>
+                  <p>Modelos, audio local, cache y almacenamiento. Normalmente no necesitas tocar esto.</p>
                 </div>
                 <div class="actions">
                   <button @click="refreshSystemStatus">Consultar</button>
@@ -812,20 +853,21 @@
           </section>
         </section>
 
-        <section v-if="activeTab === 'production'" class="activity-log">
-          <strong>Actividad</strong>
-          <p v-for="item in messages" :key="item.id"><time>{{ item.time }}</time><span>{{ item.text }}</span></p>
-        </section>
+          <section v-if="activeTab === 'production'" class="activity-log">
+            <strong>Actividad</strong>
+            <p v-for="item in productionActivityLog" :key="item.id"><time>{{ item.time }}</time><span>{{ item.text }}</span></p>
+          </section>
       </main>
 
       <footer class="gemma-footer">
-        <div>
-          <strong>Gemma</strong>
-          <small>Contexto activo: {{ currentTab.label }} / {{ activeProjectTitle }}</small>
+        <div class="gemma-response">
           <p v-if="gemmaAssistant.response">{{ gemmaAssistant.response.message }}</p>
+          <p v-else>Listo para ayudarte con el siguiente paso de esta cancion.</p>
         </div>
-        <textarea v-model="gemmaAssistant.question" placeholder="Habla con Gemma sobre la cancion, la fase actual o el siguiente paso."></textarea>
-        <button class="primary" :disabled="gemmaAssistant.loading" @click="askGemmaAssistant">{{ gemmaAssistant.loading ? 'Pensando...' : 'Enviar' }}</button>
+        <div class="gemma-composer">
+          <textarea v-model="gemmaAssistant.question" placeholder="Pregunta por el siguiente paso, la letra, la voz o la produccion."></textarea>
+          <button class="primary" :disabled="gemmaAssistant.loading" @click="askGemmaAssistant">{{ gemmaAssistant.loading ? 'Pensando...' : 'Enviar' }}</button>
+        </div>
       </footer>
 
       <div v-if="showUnsavedModal" class="modal-backdrop">

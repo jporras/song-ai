@@ -10,7 +10,7 @@ from uuid import uuid4
 
 try:
     import psutil
-except ImportError:  # pragma: no cover - Docker instala psutil; esto mantiene importable el entorno local.
+except ImportError:  # pragma: no cover - mantiene importable el entorno si falta psutil.
     psutil = None
 
 from config.resource_settings import ResourceMonitorSettings
@@ -41,8 +41,8 @@ class ResourceMonitor:
         self.storage = storage
         self.settings = settings
         self.data_path = data_path or storage.data_dir
-        self.models_path = models_path or Path("/app/models")
-        self.cache_path = cache_path or Path("/app/provider-cache")
+        self.models_path = models_path or storage.data_dir / "models"
+        self.cache_path = cache_path or storage.data_dir / "provider-cache"
 
     def status(self, phase: str = "status") -> dict[str, object]:
         snapshot = self.capture(phase=phase, persist=True)
@@ -105,17 +105,22 @@ class ResourceMonitor:
                 "ram_used_percent": 100,
                 "swap_total_mb": 0,
                 "swap_free_mb": 0,
-                "docker_memory_limit_mb": 0,
+                "swap_used_mb": 0,
+                "visible_memory_limit_mb": 0,
                 "cpu_percent": 100,
-                "disk_data_free_mb": 0,
+            "vram": [],
+            "accelerators": self._accelerator_snapshot(),
+            "disk_data_free_mb": 0,
                 "disk_models_free_mb": 0,
                 "disk_cache_free_mb": 0,
                 "heavy_processes": [],
                 "decision": "blocked_missing_psutil",
-                "message": "psutil no esta instalado. Instala requirements o reconstruye Docker.",
+                "message": "psutil no esta instalado. Ejecuta scripts/setup-local.ps1.",
             }
             if persist:
-                return self.storage.create_resource_snapshot(snapshot)
+                stored = self.storage.create_resource_snapshot(snapshot)
+                stored["accelerators"] = snapshot["accelerators"]
+                return stored
             return snapshot
         cpu_percent = psutil.cpu_percent(interval=max(0, self.settings.sample_seconds))
         memory = psutil.virtual_memory()
@@ -128,8 +133,11 @@ class ResourceMonitor:
             "ram_used_percent": float(memory.percent),
             "swap_total_mb": self._mb(swap.total),
             "swap_free_mb": self._mb(swap.free),
-            "docker_memory_limit_mb": self._docker_memory_limit_mb(),
+            "swap_used_mb": self._mb(swap.used),
+            "visible_memory_limit_mb": self._visible_memory_limit_mb(),
             "cpu_percent": float(cpu_percent),
+            "vram": self._vram_snapshot(),
+            "accelerators": self._accelerator_snapshot(),
             "disk_data_free_mb": self._disk_free_mb(self.data_path),
             "disk_models_free_mb": self._disk_free_mb(self.models_path),
             "disk_cache_free_mb": self._disk_free_mb(self.cache_path),
@@ -138,7 +146,9 @@ class ResourceMonitor:
             "message": message or "Snapshot de recursos registrado.",
         }
         if persist:
-            return self.storage.create_resource_snapshot(snapshot)
+            stored = self.storage.create_resource_snapshot(snapshot)
+            stored["accelerators"] = snapshot["accelerators"]
+            return stored
         return snapshot
 
     def evaluate(self, snapshot: dict[str, object]) -> AudioReadiness:
@@ -181,14 +191,43 @@ class ResourceMonitor:
         if float(snapshot["ram_available_mb"]) < self.settings.min_free_ram_mb_for_audio * 1.25:
             recommendations.append("Bajar duracion a 15s")
             recommendations.append("Usar RVC en vez de ACE-Step")
-            recommendations.append("Aumentar RAM asignada a Docker")
+            recommendations.append("Cerrar apps pesadas o aumentar memoria virtual")
         if float(snapshot.get("swap_total_mb", 0)) < 4096:
             recommendations.append("Se recomienda disponer de al menos 4 GB de swap para mejorar la estabilidad durante la generacion de audio")
+        accelerators = dict(snapshot.get("accelerators", {}))
+        if not bool(accelerators.get("cuda_available")):
+            if bool(accelerators.get("intel_device_nodes")):
+                recommendations.append("iGPU Intel visible como dispositivo Linux; ACE-Step/PyTorch necesita backend Intel XPU/Level Zero para usarla")
+            else:
+                recommendations.append("No hay GPU/NPU visible para el proceso local; ACE-Step esta limitado a CPU")
         if min(float(snapshot["disk_data_free_mb"]), float(snapshot["disk_models_free_mb"]), float(snapshot["disk_cache_free_mb"])) < self.settings.min_free_disk_mb_for_audio * 1.25:
             recommendations.append("Liberar espacio en disco")
         return recommendations or ["Recursos dentro del rango configurado"]
 
-    def _docker_memory_limit_mb(self) -> float:
+    def _accelerator_snapshot(self) -> dict[str, object]:
+        device_nodes = {
+            "nvidia": sorted(str(path) for path in Path("/dev").glob("nvidia*")),
+            "dri": sorted(str(path) for path in Path("/dev/dri").glob("*")) if Path("/dev/dri").exists() else [],
+            "dxg": ["/dev/dxg"] if Path("/dev/dxg").exists() else [],
+            "accel": sorted(str(path) for path in Path("/dev/accel").glob("*")) if Path("/dev/accel").exists() else [],
+        }
+        cuda_available = bool(device_nodes["nvidia"]) and shutil.which("nvidia-smi") is not None
+        return {
+            "visible_cpu_count": os.cpu_count() or 0,
+            "cpu_affinity_count": len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count() or 0,
+            "cuda_available": cuda_available,
+            "nvidia_smi": bool(shutil.which("nvidia-smi")),
+            "device_nodes": device_nodes,
+            "intel_device_nodes": bool(device_nodes["dri"] or device_nodes["dxg"]),
+            "npu_visible_to_process": bool(device_nodes["accel"]),
+            "note": (
+                "El proceso ve dispositivos de aceleracion Linux."
+                if cuda_available or device_nodes["dri"] or device_nodes["dxg"] or device_nodes["accel"]
+                else "El proceso local no ve iGPU/NPU/GPU mediante dispositivos Linux; revisa backend nativo Windows/OpenVINO/DirectML."
+            ),
+        }
+
+    def _visible_memory_limit_mb(self) -> float:
         candidates = [
             Path("/sys/fs/cgroup/memory.max"),
             Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"),
@@ -231,6 +270,42 @@ class ResourceMonitor:
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         return processes
+
+    def _vram_snapshot(self) -> list[dict[str, object]]:
+        if shutil.which("nvidia-smi") is None:
+            return []
+        command = [
+            "nvidia-smi",
+            "--query-gpu=name,memory.total,memory.used,memory.free,utilization.gpu",
+            "--format=csv,noheader,nounits",
+        ]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            return []
+        if result.returncode != 0:
+            return []
+        gpus: list[dict[str, object]] = []
+        for line in result.stdout.splitlines():
+            parts = [part.strip() for part in line.split(",")]
+            if len(parts) != 5:
+                continue
+            gpus.append(
+                {
+                    "name": parts[0],
+                    "vram_total_mb": self._float(parts[1]),
+                    "vram_used_mb": self._float(parts[2]),
+                    "vram_free_mb": self._float(parts[3]),
+                    "gpu_util_percent": self._float(parts[4]),
+                }
+            )
+        return gpus
+
+    def _float(self, value: str) -> float:
+        try:
+            return float(value)
+        except ValueError:
+            return 0.0
 
     def _disk_free_mb(self, path: Path) -> float:
         path.mkdir(parents=True, exist_ok=True)

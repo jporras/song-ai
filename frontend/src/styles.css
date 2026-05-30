@@ -255,7 +255,7 @@ small {
 
 .workspace {
   min-width: 0;
-  padding: 26px 28px 148px;
+  padding: 26px 28px 178px;
   display: grid;
   align-content: start;
   gap: 18px;
@@ -802,9 +802,46 @@ summary span {
   min-width: min(360px, 100%);
 }
 
+.inline-warning {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid rgba(250, 204, 21, 0.28);
+  border-radius: 12px;
+  color: var(--text);
+  background: rgba(250, 204, 21, 0.08);
+}
+
+.inline-warning span {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .flow-guide {
   display: grid;
   gap: 10px;
+}
+
+.timing-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.timing-grid article {
+  display: grid;
+  gap: 4px;
+  min-height: 76px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(15, 17, 21, 0.44);
+}
+
+.timing-grid strong {
+  font-size: 18px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 .flow-step {
@@ -903,6 +940,27 @@ summary span {
   margin-top: 3px;
   overflow-wrap: anywhere;
   color: var(--muted);
+}
+
+.pipeline-step .pipeline-detail {
+  max-width: 980px;
+  color: var(--text);
+  opacity: 0.86;
+}
+
+.pipeline-step .pipeline-meta {
+  font-size: 0.78rem;
+  color: var(--accent);
+}
+
+.pipeline-step .pipeline-runtime {
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--processing);
+  background: rgba(96, 165, 250, 0.1);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .pipeline-state {
@@ -1387,26 +1445,49 @@ summary span {
   bottom: 0;
   z-index: 10;
   display: grid;
-  grid-template-columns: minmax(220px, 0.8fr) minmax(260px, 1.4fr) auto;
-  gap: 14px;
-  align-items: center;
-  padding: 14px 22px;
+  grid-template-columns: minmax(0, 3fr) minmax(360px, 2fr);
+  gap: 18px;
+  align-items: stretch;
+  min-height: 132px;
+  padding: 16px 22px;
   border-top: 1px solid rgba(124, 140, 255, 0.32);
   background: rgba(11, 13, 18, 0.86);
   box-shadow: 0 -18px 60px rgba(0, 0, 0, 0.3), 0 -1px 28px rgba(124, 140, 255, 0.12);
   backdrop-filter: blur(22px);
 }
 
+.gemma-response {
+  min-width: 0;
+  max-height: 108px;
+  overflow: auto;
+  padding: 2px 4px 2px 0;
+}
+
+.gemma-composer {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
 .gemma-footer textarea {
-  min-height: 58px;
-  max-height: 120px;
-  border-radius: 18px;
+  min-height: 86px;
+  max-height: 112px;
+  resize: vertical;
+  border-radius: 16px;
   background: rgba(23, 26, 33, 0.72);
 }
 
+.gemma-footer button {
+  height: 52px;
+  min-width: 82px;
+}
+
 .gemma-footer p {
-  margin: 6px 0 0;
+  margin: 0;
   color: var(--text);
+  line-height: 1.45;
 }
 
 .modal-backdrop {
@@ -1453,10 +1534,15 @@ summary span {
   .gemma-footer {
     left: 0;
     grid-template-columns: 1fr;
+    min-height: 228px;
   }
 
   .workspace {
-    padding-bottom: 260px;
+    padding-bottom: 300px;
+  }
+
+  .gemma-composer {
+    grid-template-columns: 1fr;
   }
 
   .grid.two,
@@ -1466,9 +1552,10 @@ summary span {
   .section-head,
   .hero-strip,
   .creation-panel,
-  .project-header-panel,
-  .flow-step,
-  .preview-strip {
+    .project-header-panel,
+    .flow-step,
+    .timing-grid,
+    .preview-strip {
     grid-template-columns: 1fr;
   }
 }

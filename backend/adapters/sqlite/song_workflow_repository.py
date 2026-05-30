@@ -14,8 +14,14 @@ class SongWorkflowRepository:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.ensure_schema()
 
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.db_path, timeout=30)
+        connection.execute("PRAGMA busy_timeout = 30000")
+        connection.execute("PRAGMA journal_mode = WAL")
+        return connection
+
     def ensure_schema(self) -> None:
-        with sqlite3.connect(self.db_path) as connection:
+        with self._connect() as connection:
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS song_projects (
@@ -53,6 +59,31 @@ class SongWorkflowRepository:
                     metadata_json TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(song_id) REFERENCES song_projects(id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS project_artifacts (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    phase_name TEXT NOT NULL,
+                    artifact_type TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    file_size INTEGER NOT NULL DEFAULT 0,
+                    checksum TEXT NOT NULL DEFAULT '',
+                    generation_params_json TEXT NOT NULL DEFAULT '{}',
+                    source_phase_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                    provider_name TEXT NOT NULL DEFAULT '',
+                    provider_version TEXT NOT NULL DEFAULT '',
+                    seed TEXT NOT NULL DEFAULT '',
+                    error_code TEXT NOT NULL DEFAULT '',
+                    error_message TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_verified_at TEXT NOT NULL DEFAULT '',
+                    FOREIGN KEY(project_id) REFERENCES song_projects(id)
                 )
                 """
             )
@@ -100,8 +131,10 @@ class SongWorkflowRepository:
                     ram_used_percent REAL NOT NULL,
                     swap_total_mb REAL NOT NULL DEFAULT 0,
                     swap_free_mb REAL NOT NULL DEFAULT 0,
-                    docker_memory_limit_mb REAL NOT NULL DEFAULT 0,
+                    swap_used_mb REAL NOT NULL DEFAULT 0,
+                    visible_memory_limit_mb REAL NOT NULL DEFAULT 0,
                     cpu_percent REAL NOT NULL,
+                    vram_json TEXT NOT NULL DEFAULT '[]',
                     disk_data_free_mb REAL NOT NULL,
                     disk_models_free_mb REAL NOT NULL,
                     disk_cache_free_mb REAL NOT NULL,
@@ -121,14 +154,24 @@ class SongWorkflowRepository:
         additions = {
             "swap_total_mb": "REAL NOT NULL DEFAULT 0",
             "swap_free_mb": "REAL NOT NULL DEFAULT 0",
-            "docker_memory_limit_mb": "REAL NOT NULL DEFAULT 0",
+            "swap_used_mb": "REAL NOT NULL DEFAULT 0",
+            "visible_memory_limit_mb": "REAL NOT NULL DEFAULT 0",
+            "vram_json": "TEXT NOT NULL DEFAULT '[]'",
         }
         for name, definition in additions.items():
             if name not in columns:
                 connection.execute(f"ALTER TABLE resource_snapshots ADD COLUMN {name} {definition}")
+        if "visible_memory_limit_mb" in additions and "docker_memory_limit_mb" in columns:
+            connection.execute(
+                """
+                UPDATE resource_snapshots
+                SET visible_memory_limit_mb = docker_memory_limit_mb
+                WHERE visible_memory_limit_mb = 0 AND docker_memory_limit_mb > 0
+                """
+            )
 
     def create_project(self, project: SongProject) -> dict[str, object]:
-        with sqlite3.connect(self.db_path) as connection:
+        with self._connect() as connection:
             connection.execute(
                 """
                 INSERT INTO song_projects (id, title, user_id, status, current_phase, created_at, updated_at)
@@ -156,7 +199,7 @@ class SongWorkflowRepository:
         return self.get_project(project.id) or {}
 
     def list_projects(self) -> list[dict[str, object]]:
-        with sqlite3.connect(self.db_path) as connection:
+        with self._connect() as connection:
             connection.row_factory = sqlite3.Row
             rows = connection.execute(
                 """
@@ -168,7 +211,7 @@ class SongWorkflowRepository:
         return [self.project_row_to_dict(row) for row in rows]
 
     def get_project(self, song_id: str) -> dict[str, object] | None:
-        with sqlite3.connect(self.db_path) as connection:
+        with self._connect() as connection:
             connection.row_factory = sqlite3.Row
             row = connection.execute(
                 """
@@ -187,7 +230,7 @@ class SongWorkflowRepository:
         return project
 
     def update_project_phase(self, song_id: str, phase: str, status: str) -> dict[str, object]:
-        with sqlite3.connect(self.db_path) as connection:
+        with self._connect() as connection:
             connection.execute(
                 """
                 UPDATE song_projects
@@ -208,7 +251,10 @@ class SongWorkflowRepository:
         metadata: dict[str, object],
     ) -> dict[str, object]:
         created_at = utc_now()
-        with sqlite3.connect(self.db_path) as connection:
+        artifact_status = str(metadata.get("artifact_status", "GENERATED"))
+        file_size = int(metadata.get("file_size", 0) or 0)
+        checksum = str(metadata.get("checksum", ""))
+        with self._connect() as connection:
             connection.execute(
                 """
                 INSERT INTO song_artifacts (
@@ -229,6 +275,51 @@ class SongWorkflowRepository:
                     created_at,
                 ),
             )
+            connection.execute(
+                """
+                INSERT INTO project_artifacts (
+                    id, project_id, phase_name, artifact_type, status, file_path, file_size,
+                    checksum, generation_params_json, source_phase_snapshot_json, provider_name,
+                    provider_version, seed, error_code, error_message, created_at, updated_at,
+                    last_verified_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    status = excluded.status,
+                    file_path = excluded.file_path,
+                    file_size = excluded.file_size,
+                    checksum = excluded.checksum,
+                    generation_params_json = excluded.generation_params_json,
+                    source_phase_snapshot_json = excluded.source_phase_snapshot_json,
+                    provider_name = excluded.provider_name,
+                    provider_version = excluded.provider_version,
+                    seed = excluded.seed,
+                    error_code = excluded.error_code,
+                    error_message = excluded.error_message,
+                    updated_at = excluded.updated_at,
+                    last_verified_at = excluded.last_verified_at
+                """,
+                (
+                    artifact_id,
+                    song_id,
+                    phase,
+                    artifact_type,
+                    artifact_status,
+                    file_path,
+                    file_size,
+                    checksum,
+                    json.dumps(metadata.get("generation_params", {}), ensure_ascii=False),
+                    json.dumps(metadata.get("source_phase_snapshot", {}), ensure_ascii=False),
+                    str(metadata.get("provider_name", metadata.get("source", ""))),
+                    str(metadata.get("provider_version", "")),
+                    str(metadata.get("seed", "")),
+                    str(metadata.get("error_code", "")),
+                    str(metadata.get("error_message", "")),
+                    created_at,
+                    created_at,
+                    created_at,
+                ),
+            )
         return {
             "artifact_id": artifact_id,
             "song_id": song_id,
@@ -239,6 +330,36 @@ class SongWorkflowRepository:
             "created_at": created_at,
         }
 
+    def update_artifact_metadata(self, artifact_id: str, metadata: dict[str, object]) -> None:
+        updated_at = utc_now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE song_artifacts
+                SET metadata_json = ?
+                WHERE artifact_id = ?
+                """,
+                (json.dumps(metadata, ensure_ascii=False), artifact_id),
+            )
+            connection.execute(
+                """
+                UPDATE project_artifacts
+                SET status = ?, file_size = ?, checksum = ?, error_code = ?, error_message = ?,
+                    updated_at = ?, last_verified_at = ?
+                WHERE id = ?
+                """,
+                (
+                    str(metadata.get("artifact_status", "GENERATED")),
+                    int(metadata.get("file_size", 0) or 0),
+                    str(metadata.get("checksum", "")),
+                    str(metadata.get("error_code", "")),
+                    str(metadata.get("error_message", "")),
+                    updated_at,
+                    updated_at,
+                    artifact_id,
+                ),
+            )
+
     def upsert_spec(
         self,
         song_id: str,
@@ -247,7 +368,7 @@ class SongWorkflowRepository:
         missing_fields: list[str],
     ) -> dict[str, object]:
         now = utc_now()
-        with sqlite3.connect(self.db_path) as connection:
+        with self._connect() as connection:
             connection.execute(
                 """
                 INSERT INTO song_specs (song_id, json_spec, approved_by_qwen, missing_fields_json, created_at, updated_at)
@@ -270,7 +391,7 @@ class SongWorkflowRepository:
         return self.get_spec(song_id) or {}
 
     def get_spec(self, song_id: str) -> dict[str, object] | None:
-        with sqlite3.connect(self.db_path) as connection:
+        with self._connect() as connection:
             connection.row_factory = sqlite3.Row
             row = connection.execute(
                 """
@@ -304,7 +425,7 @@ class SongWorkflowRepository:
     ) -> dict[str, object]:
         event_id = f"event_{uuid4().hex[:12]}"
         created_at = utc_now()
-        with sqlite3.connect(self.db_path) as connection:
+        with self._connect() as connection:
             connection.execute(
                 """
                 INSERT INTO song_events (
@@ -340,7 +461,7 @@ class SongWorkflowRepository:
         }
 
     def list_events(self, song_id: str) -> list[dict[str, object]]:
-        with sqlite3.connect(self.db_path) as connection:
+        with self._connect() as connection:
             connection.row_factory = sqlite3.Row
             rows = connection.execute(
                 """
@@ -354,7 +475,7 @@ class SongWorkflowRepository:
         return [self.event_row_to_dict(row) for row in rows]
 
     def list_artifacts(self, song_id: str) -> list[dict[str, object]]:
-        with sqlite3.connect(self.db_path) as connection:
+        with self._connect() as connection:
             connection.row_factory = sqlite3.Row
             rows = connection.execute(
                 """
@@ -376,8 +497,10 @@ class SongWorkflowRepository:
         ram_used_percent: float,
         swap_total_mb: float,
         swap_free_mb: float,
-        docker_memory_limit_mb: float,
+        swap_used_mb: float,
+        visible_memory_limit_mb: float,
         cpu_percent: float,
+        vram: list[dict[str, object]],
         disk_data_free_mb: float,
         disk_models_free_mb: float,
         disk_cache_free_mb: float,
@@ -386,17 +509,17 @@ class SongWorkflowRepository:
         message: str,
     ) -> dict[str, object]:
         created_at = utc_now()
-        with sqlite3.connect(self.db_path) as connection:
+        with self._connect() as connection:
             connection.execute(
                 """
                 INSERT INTO resource_snapshots (
                     id, created_at, phase, ram_total_mb, ram_available_mb,
                     ram_used_percent, swap_total_mb, swap_free_mb,
-                    docker_memory_limit_mb, cpu_percent, disk_data_free_mb,
+                    swap_used_mb, visible_memory_limit_mb, cpu_percent, vram_json, disk_data_free_mb,
                     disk_models_free_mb, disk_cache_free_mb, heavy_processes_json,
                     decision, message
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     snapshot_id,
@@ -407,8 +530,10 @@ class SongWorkflowRepository:
                     ram_used_percent,
                     swap_total_mb,
                     swap_free_mb,
-                    docker_memory_limit_mb,
+                    swap_used_mb,
+                    visible_memory_limit_mb,
                     cpu_percent,
+                    json.dumps(vram, ensure_ascii=False),
                     disk_data_free_mb,
                     disk_models_free_mb,
                     disk_cache_free_mb,
@@ -426,8 +551,10 @@ class SongWorkflowRepository:
             "ram_used_percent": ram_used_percent,
             "swap_total_mb": swap_total_mb,
             "swap_free_mb": swap_free_mb,
-            "docker_memory_limit_mb": docker_memory_limit_mb,
+            "swap_used_mb": swap_used_mb,
+            "visible_memory_limit_mb": visible_memory_limit_mb,
             "cpu_percent": cpu_percent,
+            "vram": vram,
             "disk_data_free_mb": disk_data_free_mb,
             "disk_models_free_mb": disk_models_free_mb,
             "disk_cache_free_mb": disk_cache_free_mb,
@@ -437,13 +564,13 @@ class SongWorkflowRepository:
         }
 
     def list_resource_snapshots(self, limit: int = 100) -> list[dict[str, object]]:
-        with sqlite3.connect(self.db_path) as connection:
+        with self._connect() as connection:
             connection.row_factory = sqlite3.Row
             rows = connection.execute(
                 """
                 SELECT id, created_at, phase, ram_total_mb, ram_available_mb,
                        ram_used_percent, swap_total_mb, swap_free_mb,
-                       docker_memory_limit_mb, cpu_percent, disk_data_free_mb,
+                       swap_used_mb, visible_memory_limit_mb, cpu_percent, vram_json, disk_data_free_mb,
                        disk_models_free_mb, disk_cache_free_mb, heavy_processes_json,
                        decision, message
                 FROM resource_snapshots
@@ -500,8 +627,10 @@ class SongWorkflowRepository:
             "ram_used_percent": float(row["ram_used_percent"]),
             "swap_total_mb": float(row["swap_total_mb"]),
             "swap_free_mb": float(row["swap_free_mb"]),
-            "docker_memory_limit_mb": float(row["docker_memory_limit_mb"]),
+            "swap_used_mb": float(row["swap_used_mb"]),
+            "visible_memory_limit_mb": float(row["visible_memory_limit_mb"]),
             "cpu_percent": float(row["cpu_percent"]),
+            "vram": json.loads(str(row["vram_json"])),
             "disk_data_free_mb": float(row["disk_data_free_mb"]),
             "disk_models_free_mb": float(row["disk_models_free_mb"]),
             "disk_cache_free_mb": float(row["disk_cache_free_mb"]),

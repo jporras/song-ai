@@ -161,6 +161,24 @@ class ModelOrchestrator:
             "task": completed_task,
             "model_run": completed_run,
             "summary": result["summary"],
+            "result": result,
+        }
+
+    def review_sqlite_project_state(self, payload: dict[str, object]) -> dict[str, object]:
+        context = dict(payload.get("context", {}))
+        validation = self._validate_sqlite_project_context(context)
+        handoff = self.run_handoff(
+            {
+                **payload,
+                "model_role": "technical",
+                "task_type": "sqlite_project_technical_review",
+                "phase": str(payload.get("phase", "technical_review")),
+                "technical_validation": validation,
+            }
+        )
+        return {
+            "handoff": handoff,
+            "validation": validation,
         }
 
     def build_provider_result(
@@ -169,6 +187,8 @@ class ModelOrchestrator:
         task_type: str,
         payload: dict[str, object],
     ) -> dict[str, object] | None:
+        if task_type == "sqlite_project_technical_review":
+            return None
         if not self._can_run_provider_handoff(model_role):
             return None
         prompt = self._technical_prompt(task_type, payload)
@@ -259,6 +279,21 @@ class ModelOrchestrator:
         task_type: str,
         payload: dict[str, object],
     ) -> dict[str, object]:
+        if task_type == "sqlite_project_technical_review":
+            validation = dict(payload.get("technical_validation", {}))
+            return {
+                "model_role": model_role,
+                "task_type": task_type,
+                "summary": str(validation.get("summary", "Revision tecnica completada desde SQLite.")),
+                "missing_fields": list(validation.get("missing_items", [])),
+                "validation_results": validation,
+                "song_blueprint": {
+                    "goal": "complete_song_with_project_state_from_sqlite",
+                    "source_of_truth": "sqlite",
+                    "handoff_contract": "backend_sqlite_snapshot_to_technical_to_gemma",
+                },
+                "next_action": str(validation.get("next_action", "")),
+            }
         project_name = str(payload.get("project_name", "Proyecto activo"))
         return {
             "model_role": model_role,
@@ -292,3 +327,119 @@ class ModelOrchestrator:
             },
             "next_action": "Persistir intent/set y continuar con letra completa, prompt musical, soundtrack, voz cantada y mezcla.",
         }
+
+    def _validate_sqlite_project_context(self, context: dict[str, object]) -> dict[str, object]:
+        project = dict(context.get("project") or {})
+        set_data = dict(context.get("set") or {})
+        phase_data = dict(context.get("phase_data") or {})
+        saved_editor_phases = dict(context.get("saved_editor_phases") or {})
+        ui_ready_phases = dict(context.get("ui_ready_phases") or {})
+        professional_project = dict(context.get("active_professional_project") or {})
+        professional_next = dict(context.get("professional_next") or {})
+        ui_statuses = dict(context.get("ui_editor_phase_statuses") or {})
+
+        missing: list[str] = []
+        warnings: list[str] = []
+        required_assets = ("instrumental_id", "melody_id", "lyrics_id")
+        for key in required_assets:
+            if not str(set_data.get(key, "")).strip():
+                missing.append(key)
+
+        required_phases = ("intent", "lyrics", "music-plan", "midi", "instrumental", "voice")
+        for phase in required_phases:
+            is_saved = bool(dict(phase_data.get(phase, {})).get("status")) or bool(saved_editor_phases.get(phase))
+            ui_ready = bool(ui_ready_phases.get(phase)) or str(ui_statuses.get(phase, "")).upper() == "READY"
+            if not is_saved:
+                missing.append(f"guardar fase:{phase}" if ui_ready else f"fase:{phase}")
+
+        intent_data = dict(dict(phase_data.get("intent", {})).get("data", {})).get("intent", {})
+        lyrics_data = dict(dict(phase_data.get("lyrics", {})).get("data", {}))
+        music_data = dict(dict(phase_data.get("music-plan", {})).get("data", {})).get("musicPlan", {})
+        voice_data = dict(dict(phase_data.get("voice", {})).get("data", {})).get("voice", {})
+
+        if isinstance(intent_data, dict):
+            for field in ("description", "language", "bpm", "key"):
+                if field in intent_data and not str(intent_data.get(field, "")).strip():
+                    warnings.append(f"intent.{field} vacio")
+        lyric_sections = lyrics_data.get("lyricSections", [])
+        lyrics_editor = dict(lyrics_data.get("lyricsEditor", {}))
+        if (
+            phase_data.get("lyrics")
+            and not lyric_sections
+            and not str(lyrics_editor.get("content", "")).strip()
+            and "fase:lyrics" not in missing
+            and "guardar fase:lyrics" not in missing
+        ):
+            missing.append("lyrics.content")
+
+        if isinstance(music_data, dict) and music_data:
+            for field in ("bpm", "key", "timeSignature"):
+                if not str(music_data.get(field, "")).strip():
+                    missing.append(f"music-plan.{field}")
+            sections = music_data.get("sections", [])
+            if not isinstance(sections, list) or not sections:
+                missing.append("music-plan.sections")
+            else:
+                duration = sum(int(dict(section).get("seconds") or dict(section).get("duration") or 0) for section in sections)
+                if duration <= 0:
+                    missing.append("music-plan.duration")
+        elif phase_data.get("music-plan") and "fase:music-plan" not in missing and "guardar fase:music-plan" not in missing:
+            missing.append("music-plan.data")
+
+        if isinstance(voice_data, dict) and voice_data:
+            if not str(voice_data.get("mainVoice", "") or voice_data.get("style", "")).strip():
+                warnings.append("voice.mainVoice vacio")
+
+        if not professional_project:
+            missing.append("production.project")
+        elif str(professional_next.get("status", "")) != "completed":
+            warnings.append(f"production.next:{professional_next.get('missing_label', 'siguiente fase')}")
+
+        blocking = [item for item in missing if not item.startswith("production.")]
+        status = "ready_for_production" if not blocking else "needs_user_input"
+        if status == "ready_for_production" and not professional_project:
+            status = "needs_production_preparation"
+
+        if blocking:
+            next_action = f"Completar {blocking[0]} antes de continuar."
+        elif not professional_project:
+            next_action = "Preparar Production para el proyecto activo."
+        else:
+            next_action = str(professional_next.get("recommendation") or "Ejecutar la siguiente tarea de Production.")
+
+        project_name = str(project.get("project_name") or set_data.get("project_name") or "Proyecto activo")
+        summary = (
+            f"Revision tecnica de {project_name}: {status}. "
+            f"Faltantes: {', '.join(missing) if missing else 'ninguno'}. "
+            f"Siguiente accion: {next_action}"
+        )
+        return {
+            "status": status,
+            "source_of_truth": "sqlite",
+            "project_id": str(project.get("project_id") or set_data.get("set_id") or ""),
+            "project_name": project_name,
+            "missing_items": missing,
+            "warnings": warnings,
+            "next_action": next_action,
+            "summary": summary,
+            "gemma_instruction": self._gemma_instruction(status, missing, warnings, next_action),
+        }
+
+    def _gemma_instruction(
+        self,
+        status: str,
+        missing: list[str],
+        warnings: list[str],
+        next_action: str,
+    ) -> str:
+        if missing:
+            return (
+                "Si: estas en el proyecto activo. La revision tecnica indica que falta completar "
+                f"{', '.join(missing)}. Siguiente paso: {next_action}"
+            )
+        if warnings:
+            return (
+                "El proyecto esta usable. La revision tecnica marco esta advertencia "
+                f"({warnings[0]}). Siguiente paso: {next_action}"
+            )
+        return f"Tecnicamente el proyecto esta listo para continuar. Siguiente paso: {next_action}"

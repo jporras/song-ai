@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from config.env import load_dotenv
 from config.model_settings import HuggingFaceModelSettings, LocalModelSettings
 from config.resource_settings import ResourceMonitorSettings
 
@@ -17,6 +18,7 @@ class Settings:
     @classmethod
     def load(cls) -> "Settings":
         project_root = Path(__file__).resolve().parents[2]
+        load_dotenv(project_root)
         return cls(
             project_root=project_root,
             data_dir=project_root / "data",

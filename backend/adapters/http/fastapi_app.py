@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from application.song_service import SongService
-from bootstrap.docker_bootstrap import refresh_llm_model, run_bootstrap
+from bootstrap.local_bootstrap import refresh_llm_model, run_bootstrap
 from config.settings import Settings
 from core.storage import StorageManager
 
@@ -185,6 +185,41 @@ def save_project_phase_data(set_id: str, phase: str, payload: dict[str, Any]) ->
     return run_action(lambda: service.save_project_phase_data(set_id, phase, payload))
 
 
+@app.get("/api/projects/{set_id}/phases")
+def get_project_phase_data(set_id: str) -> dict[str, Any]:
+    return run_action(lambda: {"phases": service.get_project(set_id)["phases"]})
+
+
+@app.get("/api/projects/{set_id}/phases/{phase}")
+def get_project_single_phase_data(set_id: str, phase: str) -> dict[str, Any]:
+    return run_action(lambda: {"phase": service.get_project(set_id)["phases"].get(phase, {"phase_status": "NOT_CREATED"})})
+
+
+@app.post("/api/projects/{set_id}/phases/{phase}/initialize")
+def initialize_project_phase_data(set_id: str, phase: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    return run_action(lambda: service.initialize_project_phase(set_id, phase, payload or {}))
+
+
+@app.post("/api/projects/{set_id}/phases/{phase}/save")
+def save_project_phase_data_explicit(set_id: str, phase: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.save_project_phase_data(set_id, phase, payload))
+
+
+@app.post("/api/projects/{set_id}/phases/{phase}/reset")
+def reset_project_phase_data(set_id: str, phase: str) -> dict[str, Any]:
+    return run_action(lambda: service.reset_project_phase(set_id, phase))
+
+
+@app.post("/api/projects/{set_id}/phases/{phase}/ai-suggest")
+def ai_suggest_project_phase_data(set_id: str, phase: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.ai_suggest_project_phase(set_id, phase, payload))
+
+
+@app.put("/api/projects/{set_id}/ui-state")
+def save_project_ui_state(set_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.save_project_active_phase(set_id, payload))
+
+
 @app.get("/api/favorites")
 def get_favorites() -> dict[str, Any]:
     return ok(service.list_favorites())
@@ -273,6 +308,11 @@ def get_professional_project(song_id: str) -> dict[str, Any]:
 @app.get("/api/pro/projects/{song_id}/events")
 def get_professional_project_events(song_id: str) -> dict[str, Any]:
     return run_action(lambda: service.list_professional_project_events(song_id))
+
+
+@app.get("/api/pro/projects/{song_id}/artifacts")
+def get_professional_artifacts(song_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.list_professional_artifacts(song_id))
 
 
 @app.post("/api/pro/projects/{song_id}/spec/messages")
@@ -378,6 +418,16 @@ def export_professional_song(song_id: str) -> dict[str, Any]:
 @app.get("/api/pro/projects/{song_id}/export")
 def get_professional_export(song_id: str) -> dict[str, Any]:
     return run_action(lambda: service.get_professional_export(song_id))
+
+
+@app.post("/api/pro/projects/{song_id}/artifacts/{artifact_type}/verify")
+def verify_professional_artifact(song_id: str, artifact_type: str) -> dict[str, Any]:
+    return run_action(lambda: service.verify_professional_artifact(song_id, artifact_type))
+
+
+@app.post("/api/pro/projects/{song_id}/artifacts/{artifact_type}/regenerate")
+def regenerate_professional_artifact(song_id: str, artifact_type: str) -> dict[str, Any]:
+    return run_action(lambda: service.regenerate_professional_artifact(song_id, artifact_type))
 
 
 @app.get("/api/pro/projects/{song_id}/artifacts/{artifact_type}/download")

@@ -84,6 +84,9 @@ class ProfessionalSongService:
         title = str(payload.get("title") or payload.get("project_name") or "Nueva cancion")
         user_id = str(payload.get("user_id") or "local-user")
         project = self.storage.create_song_project(title=title, user_id=user_id)
+        source_set_id = str(payload.get("source_set_id") or "").strip()
+        if source_set_id:
+            project = self._seed_project_from_set(str(project["id"]), source_set_id, payload)
         return {
             "project": project,
             "phases": self.phases(),
@@ -91,7 +94,10 @@ class ProfessionalSongService:
         }
 
     def list_projects(self) -> dict[str, object]:
-        projects = self.storage.list_song_projects()
+        projects = []
+        for listed_project in self.storage.list_song_projects():
+            full_project = self.storage.get_song_project(str(listed_project["id"])) or listed_project
+            projects.append(self._ensure_project_seeded_from_link(full_project))
         return {
             "projects": projects,
             "phases": self.phases(),
@@ -101,6 +107,7 @@ class ProfessionalSongService:
         project = self.storage.get_song_project(song_id)
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
+        project = self._ensure_project_seeded_from_link(project)
         return {
             "project": project,
             "phases": self.phases(),
@@ -119,6 +126,7 @@ class ProfessionalSongService:
         project = self.storage.get_song_project(song_id)
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
+        project = self._ensure_project_seeded_from_link(project)
         spec_record = project.get("spec")
         if not spec_record or not bool(dict(spec_record).get("approved_by_qwen")):
             raise ValueError("La especificacion debe estar aprobada por el director tecnico antes de generar letra.")
@@ -154,6 +162,7 @@ class ProfessionalSongService:
         project = self.storage.get_song_project(song_id)
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
+        project = self._ensure_project_seeded_from_link(project)
         spec_record = project.get("spec")
         if not spec_record or not bool(dict(spec_record).get("approved_by_qwen")):
             raise ValueError("La especificacion debe estar aprobada antes de revisar la letra.")
@@ -181,6 +190,7 @@ class ProfessionalSongService:
         project = self.storage.get_song_project(song_id)
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
+        project = self._ensure_project_seeded_from_link(project)
         spec_record = project.get("spec")
         if not spec_record or not bool(dict(spec_record).get("approved_by_qwen")):
             raise ValueError("La especificacion debe estar aprobada antes de generar el plan musical.")
@@ -219,6 +229,7 @@ class ProfessionalSongService:
         project = self.storage.get_song_project(song_id)
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
+        self._ensure_project_seeded_from_link(project)
         music_plan = self.music_plan_service.get(song_id)["music_plan"]
         self.model_manager.run_model("qwen", {"song_id": song_id, "phase": SongPhase.MIDI_GENERATION.value})
         self.storage.create_song_event(
@@ -274,6 +285,7 @@ class ProfessionalSongService:
         project = self.storage.get_song_project(song_id)
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
+        project = self._ensure_project_seeded_from_link(project)
         spec_record = project.get("spec")
         if not spec_record:
             raise ValueError("La especificacion debe existir antes de generar voz.")
@@ -295,13 +307,31 @@ class ProfessionalSongService:
             payload={"lyrics_approved": str(lyrics_approved_path), "midi_metadata": str(self.storage.data_dir / "projects" / song_id / "midi_metadata.json")},
         )
         spec = dict(dict(spec_record).get("json_spec", {}))
-        result = self.vocal_synthesis_service.generate(
-            song_id,
-            lyrics_approved,
-            dict(midi["metadata"]),
-            str(spec.get("voice_style", "soft vocal")),
-        )
-        self.model_manager.unload_model(active_model)
+        try:
+            result = self.vocal_synthesis_service.generate(
+                song_id,
+                lyrics_approved,
+                dict(midi["metadata"]),
+                str(spec.get("voice_style", "soft vocal")),
+            )
+        except Exception as exc:
+            self.storage.create_song_event(
+                song_id=song_id,
+                phase=SongPhase.VOCAL_SYNTHESIS.value,
+                status=SongPhaseStatus.FAILED.value,
+                progress=100,
+                message=f"La generacion de voz fallo: {exc}",
+                active_model=active_model,
+                payload={"error": str(exc)},
+            )
+            self.storage.update_song_project_phase(
+                song_id,
+                SongPhase.VOCAL_SYNTHESIS.value,
+                SongPhaseStatus.FAILED.value,
+            )
+            raise
+        finally:
+            self.model_manager.unload_model(active_model)
         result["progress"] = self.progress_for(result["project"])
         return result
 
@@ -314,6 +344,7 @@ class ProfessionalSongService:
         project = self.storage.get_song_project(song_id)
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
+        project = self._ensure_project_seeded_from_link(project)
         spec_record = project.get("spec")
         if not spec_record:
             raise ValueError("La especificacion debe existir antes de convertir voz.")
@@ -369,36 +400,74 @@ class ProfessionalSongService:
         return self.mixing_service.get(song_id)
 
     def master_song(self, song_id: str) -> dict[str, object]:
-        if self.storage.get_song_project(song_id) is None:
+        project = self.storage.get_song_project(song_id)
+        if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
+        self._ensure_project_seeded_from_link(project)
         if self.full_song_service.configured():
-            self.model_manager.run_model("local-full-song-provider", {"song_id": song_id, "phase": SongPhase.MASTERING.value})
+            active_model = "local-full-song-provider"
+            self.model_manager.run_model(active_model, {"song_id": song_id, "phase": SongPhase.MASTERING.value})
+            self.storage.update_song_project_phase(song_id, SongPhase.MASTERING.value, SongPhaseStatus.RUNNING.value)
             self.storage.create_song_event(
                 song_id=song_id,
                 phase=SongPhase.MASTERING.value,
                 status=SongPhaseStatus.RUNNING.value,
                 progress=35,
                 message="Generando cancion final completa con provider local full-song.",
-                active_model="local-full-song-provider",
+                active_model=active_model,
                 payload={},
             )
-            result = self.full_song_service.generate(song_id)
-            self.model_manager.unload_model("local-full-song-provider")
+            try:
+                result = self.full_song_service.generate(song_id)
+            except Exception as exc:
+                self.storage.create_song_event(
+                    song_id=song_id,
+                    phase=SongPhase.MASTERING.value,
+                    status=SongPhaseStatus.FAILED.value,
+                    progress=100,
+                    message=f"La generacion full-song fallo: {exc}",
+                    active_model=active_model,
+                    payload={"error": str(exc)},
+                )
+                self.storage.update_song_project_phase(
+                    song_id,
+                    SongPhase.MASTERING.value,
+                    SongPhaseStatus.FAILED.value,
+                )
+                raise
+            finally:
+                self.model_manager.unload_model(active_model)
             result["progress"] = self.progress_for(result["project"])
             return result
         self.mixing_service.get(song_id)
-        self.model_manager.run_model("local-mastering", {"song_id": song_id, "phase": SongPhase.MASTERING.value})
+        active_model = "local-mastering"
+        self.model_manager.run_model(active_model, {"song_id": song_id, "phase": SongPhase.MASTERING.value})
+        self.storage.update_song_project_phase(song_id, SongPhase.MASTERING.value, SongPhaseStatus.RUNNING.value)
         self.storage.create_song_event(
             song_id=song_id,
             phase=SongPhase.MASTERING.value,
             status=SongPhaseStatus.RUNNING.value,
             progress=45,
             message="Masterizando mix.wav y preparando final_song.wav/final_song.mp3.",
-            active_model="local-mastering",
+            active_model=active_model,
             payload={},
         )
-        result = self.mastering_service.master(song_id)
-        self.model_manager.unload_model("local-mastering")
+        try:
+            result = self.mastering_service.master(song_id)
+        except Exception as exc:
+            self.storage.create_song_event(
+                song_id=song_id,
+                phase=SongPhase.MASTERING.value,
+                status=SongPhaseStatus.FAILED.value,
+                progress=100,
+                message=f"Mastering fallo: {exc}",
+                active_model=active_model,
+                payload={"error": str(exc)},
+            )
+            self.storage.update_song_project_phase(song_id, SongPhase.MASTERING.value, SongPhaseStatus.FAILED.value)
+            raise
+        finally:
+            self.model_manager.unload_model(active_model)
         result["progress"] = self.progress_for(result["project"])
         return result
 
@@ -429,6 +498,42 @@ class ProfessionalSongService:
 
     def artifact_download_file(self, song_id: str, artifact_type: str) -> tuple[Path, str, str]:
         return self.export_service.download_file(song_id, artifact_type)
+
+    def list_artifacts(self, song_id: str) -> dict[str, object]:
+        project = self.storage.get_song_project(song_id)
+        if project is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        verified = [
+            self.storage.verify_song_artifact(song_id, str(artifact.get("type", "")))
+            for artifact in list(project.get("artifacts", []))
+        ]
+        return {"song_id": song_id, "artifacts": verified}
+
+    def verify_artifact(self, song_id: str, artifact_type: str) -> dict[str, object]:
+        return self.storage.verify_song_artifact(song_id, artifact_type)
+
+    def regenerate_artifact(self, song_id: str, artifact_type: str) -> dict[str, object]:
+        if artifact_type in {"lyrics_markdown", "lyrics_json"}:
+            return self.generate_lyrics(song_id)
+        if artifact_type == "lyrics_approved_json":
+            return self.review_lyrics(song_id)
+        if artifact_type == "music_plan_json":
+            return self.generate_music_plan(song_id)
+        if artifact_type in {"midi", "midi_metadata_json"}:
+            return self.generate_midi(song_id)
+        if artifact_type == "instrumental_wav":
+            return self.generate_instrumental(song_id)
+        if artifact_type == "vocals_wav":
+            return self.generate_vocals(song_id)
+        if artifact_type == "vocals_converted_wav":
+            return self.convert_voice(song_id)
+        if artifact_type == "mix_wav":
+            return self.mix_song(song_id)
+        if artifact_type in {"final_song_wav", "final_song_mp3", "final_song_flac"}:
+            return self.master_song(song_id)
+        if artifact_type in {"export_manifest_json", "project_zip"}:
+            return self.export_song(song_id)
+        raise ValueError(f"No hay regenerador registrado para {artifact_type}.")
 
     def collect_spec(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
         project = self.storage.get_song_project(song_id)
@@ -541,3 +646,412 @@ class ProfessionalSongService:
             file_path=str(Path(path)),
             metadata={"approved_by_qwen": approved, "missing_fields": missing_fields},
         )
+
+    def _seed_project_from_set(
+        self,
+        song_id: str,
+        source_set_id: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        song_set = self.storage.get_indexed_set(source_set_id)
+        if song_set is None:
+            raise ValueError("Set/proyecto activo no encontrado para preparar Production.")
+
+        phase_data = self.storage.list_project_phase_data(source_set_id)
+        assets = self._assets_for_set(song_set)
+        spec = self._spec_from_set_data(song_set, phase_data, assets, payload)
+        spec_record = self.storage.upsert_song_spec(
+            song_id=song_id,
+            json_spec=spec,
+            approved_by_qwen=True,
+            missing_fields=[],
+        )
+        spec_artifact = self._write_song_spec_snapshot(song_id, spec, True, [])
+
+        self.storage.create_song_event(
+            song_id=song_id,
+            phase=SongPhase.SONG_SPEC_COLLECTION.value,
+            status=SongPhaseStatus.COMPLETED.value,
+            progress=100,
+            message="Production preparo la especificacion desde las fases guardadas del proyecto activo.",
+            active_model="sqlite-project-bridge",
+            payload={
+                "source_set_id": source_set_id,
+                "song_spec_id": str(spec_record.get("id", "")),
+                "source": "active_set_phase_data",
+            },
+            artifact_id=str(spec_artifact["artifact_id"]),
+        )
+
+        lyrics_markdown = self._lyrics_markdown_from_set(song_set, phase_data, assets)
+        lyrics_payload = self.lyrics_service.from_markdown(
+            song_id=song_id,
+            title=str(spec.get("title", song_set.get("project_name", "Letra"))),
+            markdown=lyrics_markdown,
+        )
+        lyrics_result = self.lyrics_service.write(
+            song_id,
+            lyrics_payload,
+            lyrics_markdown,
+            "Letra preparada desde la fase Lyrics del proyecto activo.",
+        )
+        approved_artifact = self._write_approved_lyrics_snapshot(song_id, lyrics_payload, source_set_id)
+        self._write_music_plan_from_set(song_id, phase_data, spec, source_set_id)
+
+        target_phase = self._target_phase_from_editor_data(song_id)
+        self.storage.create_song_event(
+            song_id=song_id,
+            phase=SongPhase.LYRICS_TECHNICAL_REVIEW.value,
+            status=SongPhaseStatus.COMPLETED.value,
+            progress=100,
+            message="La letra del proyecto activo quedo disponible como lyrics_approved.json para Production.",
+            active_model="sqlite-project-bridge",
+            payload={
+                "source_set_id": source_set_id,
+                "lyrics_markdown_artifacts": [
+                    str(item.get("artifact_id", "")) for item in list(lyrics_result.get("artifacts", []))
+                ],
+            },
+            artifact_id=str(approved_artifact["artifact_id"]),
+        )
+        return self.storage.update_song_project_phase(song_id, target_phase.value, SongPhaseStatus.READY.value)
+
+    def _ensure_project_seeded_from_link(self, project: dict[str, object]) -> dict[str, object]:
+        user_id = str(project.get("user_id", ""))
+        if not user_id.startswith("set:"):
+            return project
+        song_id = str(project["id"])
+        if "spec" not in project:
+            project = self.storage.get_song_project(song_id) or project
+        music_plan_path = self.storage.data_dir / "projects" / song_id / "music_plan.json"
+        spec = project.get("spec")
+        source_set_id = user_id.split(":", 1)[1].strip()
+        if spec and bool(dict(spec).get("approved_by_qwen")):
+            if source_set_id and not music_plan_path.exists():
+                phase_data = self.storage.list_project_phase_data(source_set_id)
+                if self._phase_payload(phase_data, "music-plan").get("musicPlan"):
+                    spec_data = dict(dict(spec).get("json_spec", {}))
+                    self._write_music_plan_from_set(song_id, phase_data, spec_data, source_set_id)
+                    return self.storage.update_song_project_phase(
+                        song_id,
+                        SongPhase.MIDI_GENERATION.value,
+                        SongPhaseStatus.READY.value,
+                    )
+            return project
+        if not source_set_id:
+            return project
+        return self._seed_project_from_set(
+            song_id,
+            source_set_id,
+            {"title": str(project.get("title") or "Cancion")},
+        )
+
+    def _assets_for_set(self, song_set: dict[str, object]) -> dict[str, dict[str, object]]:
+        assets: dict[str, dict[str, object]] = {}
+        for key, asset_key in (
+            ("instrumental", "instrumental_id"),
+            ("melody", "melody_id"),
+            ("lyrics", "lyrics_id"),
+        ):
+            asset_id = str(song_set.get(asset_key, "")).strip()
+            if asset_id:
+                try:
+                    assets[key] = self.storage.get_asset_draft_detail(asset_id)
+                except ValueError:
+                    assets[key] = {}
+        return assets
+
+    def _spec_from_set_data(
+        self,
+        song_set: dict[str, object],
+        phase_data: dict[str, object],
+        assets: dict[str, dict[str, object]],
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        intent = self._dict_or_empty(self._phase_payload(phase_data, "intent").get("intent", {}))
+        music_plan = self._dict_or_empty(self._phase_payload(phase_data, "music-plan").get("musicPlan", {}))
+        voice = self._dict_or_text_style(self._phase_payload(phase_data, "voice").get("voice", {}))
+        lyrics = self._dict_or_empty(self._phase_payload(phase_data, "lyrics").get("lyrics", {}))
+        instrumental_intent = dict(dict(assets.get("instrumental", {})).get("intent", {}))
+        melody_intent = dict(dict(assets.get("melody", {})).get("intent", {}))
+        lyrics_intent = dict(dict(assets.get("lyrics", {})).get("intent", {}))
+
+        title = str(payload.get("title") or song_set.get("project_name") or "Cancion")
+        description = str(payload.get("description") or song_set.get("description") or "")
+        language = self._first_text(
+            lyrics.get("language"),
+            intent.get("language"),
+            lyrics_intent.get("language"),
+            "Spanish",
+        )
+        structure = self._structure_from_editor(phase_data, music_plan, lyrics_intent)
+        instruments = self._list_value(
+            intent.get("instruments")
+            or music_plan.get("instruments")
+            or instrumental_intent.get("instruments")
+            or instrumental_intent.get("instrumentation")
+            or ["acoustic guitar", "soft pad"]
+        )
+        duration = self._duration_seconds(music_plan, intent)
+        bpm = int(self._first_number(music_plan.get("bpm"), intent.get("bpm"), instrumental_intent.get("bpm"), 72))
+        return {
+            "title": title,
+            "project_name": title,
+            "description": description,
+            "song_type": self._first_text(intent.get("song_type"), instrumental_intent.get("genre"), "personal_song"),
+            "recipient_name": self._first_text(intent.get("recipient"), intent.get("recipient_name"), "persona querida"),
+            "language": language,
+            "theme": self._first_text(lyrics.get("theme"), intent.get("theme"), lyrics_intent.get("theme"), description, "cancion personal"),
+            "emotion": self._first_text(intent.get("mood"), music_plan.get("mood"), instrumental_intent.get("mood"), "tender"),
+            "voice_style": self._first_text(
+                voice.get("style"),
+                voice.get("vocalStyle"),
+                melody_intent.get("vocal_style"),
+                intent.get("voice_style"),
+                "soft female vocal",
+            ),
+            "bpm": bpm,
+            "key": self._first_text(music_plan.get("key"), intent.get("key"), instrumental_intent.get("key"), "C major"),
+            "duration_seconds": duration,
+            "structure": structure,
+            "instruments": instruments,
+            "output_format": self._first_text(intent.get("output_format"), "mp3"),
+            "source_set_id": str(song_set["set_id"]),
+            "source_of_truth": "sqlite_phase_data",
+        }
+
+    def _phase_payload(self, phase_data: dict[str, object], phase: str) -> dict[str, object]:
+        record = dict(phase_data.get(phase, {}))
+        data = dict(record.get("data", {}))
+        nested = data.get("data")
+        if isinstance(nested, dict):
+            return dict(nested)
+        return data
+
+    def _dict_or_empty(self, value: object) -> dict[str, object]:
+        return dict(value) if isinstance(value, dict) else {}
+
+    def _dict_or_text_style(self, value: object) -> dict[str, object]:
+        if isinstance(value, dict):
+            return dict(value)
+        text = str(value).strip()
+        return {"style": text} if text else {}
+
+    def _lyrics_markdown_from_set(
+        self,
+        song_set: dict[str, object],
+        phase_data: dict[str, object],
+        assets: dict[str, dict[str, object]],
+    ) -> str:
+        lyrics_data = self._phase_payload(phase_data, "lyrics")
+        editor = dict(lyrics_data.get("lyricsEditor", {}))
+        content = str(editor.get("content") or "").strip()
+        if not content:
+            sections = lyrics_data.get("lyricSections", [])
+            if isinstance(sections, list) and sections:
+                lines = [f"# {song_set.get('project_name', 'Letra')}", ""]
+                for section in sections:
+                    item = dict(section)
+                    label = str(item.get("type") or item.get("label") or "Verse").strip() or "Verse"
+                    text = str(item.get("text") or "").strip()
+                    if text:
+                        lines.extend([f"## {label}", text, ""])
+                content = "\n".join(lines).strip()
+        if not content:
+            content = str(dict(assets.get("lyrics", {})).get("content") or "").strip()
+        if not content:
+            content = (
+                f"# {song_set.get('project_name', 'Letra')}\n\n"
+                "## Verse 1\nPendiente de completar desde la fase Lyrics.\n"
+            )
+        return content.rstrip() + "\n"
+
+    def _write_approved_lyrics_snapshot(
+        self,
+        song_id: str,
+        lyrics_payload: dict[str, object],
+        source_set_id: str,
+    ) -> dict[str, object]:
+        path = self.storage.data_dir / "projects" / song_id / "lyrics_approved.json"
+        self.storage.write_json(
+            path,
+            {
+                "song_id": song_id,
+                "approved_by_qwen": True,
+                "status": "approved",
+                "issues": [],
+                "recommendations_for_gemma": [],
+                "metrics": {"source": "active_set_phase_data"},
+                "lyrics": lyrics_payload,
+                "source_set_id": source_set_id,
+            },
+        )
+        return self.storage.create_song_artifact(
+            artifact_id=f"{song_id}_lyrics_approved",
+            song_id=song_id,
+            phase=SongPhase.LYRICS_TECHNICAL_REVIEW.value,
+            artifact_type="lyrics_approved_json",
+            file_path=str(Path(path)),
+            metadata={"approved_by_qwen": True, "source_set_id": source_set_id},
+        )
+
+    def _write_music_plan_from_set(
+        self,
+        song_id: str,
+        phase_data: dict[str, object],
+        spec: dict[str, object],
+        source_set_id: str,
+    ) -> dict[str, object] | None:
+        path = self.storage.data_dir / "projects" / song_id / "music_plan.json"
+        if path.exists():
+            return self.storage.read_json(path)
+        editor_plan = self._phase_payload(phase_data, "music-plan").get("musicPlan")
+        if not isinstance(editor_plan, dict) or not editor_plan:
+            return None
+        sections = [dict(item) for item in list(editor_plan.get("sections", []))]
+        duration = sum(int(self._first_number(item.get("seconds"), item.get("duration"), 0)) for item in sections)
+        duration = duration or int(spec.get("duration_seconds", 120))
+        timeline: list[dict[str, object]] = []
+        cursor = 0
+        for item in sections:
+            section_duration = int(self._first_number(item.get("seconds"), item.get("duration"), 0)) or 8
+            section_name = self._section_id(str(item.get("name") or item.get("section") or "section"))
+            timeline.append(
+                {
+                    "section": section_name,
+                    "start_seconds": cursor,
+                    "end_seconds": cursor + section_duration,
+                    "duration_seconds": section_duration,
+                }
+            )
+            cursor += section_duration
+        if not timeline:
+            timeline = self.music_plan_service._timeline([str(item) for item in list(spec.get("structure", []))], duration)
+        plan = {
+            "song_id": song_id,
+            "title": str(spec.get("title", "Nueva cancion")),
+            "bpm": int(self._first_number(editor_plan.get("bpm"), spec.get("bpm"), 80)),
+            "key": self._first_text(editor_plan.get("key"), spec.get("key"), "C major"),
+            "time_signature": self._first_text(editor_plan.get("timeSignature"), editor_plan.get("time_signature"), "4/4"),
+            "chord_progression": [
+                item.strip()
+                for item in self._first_text(editor_plan.get("progression"), "I - V - vi - IV").replace("-", ",").split(",")
+                if item.strip()
+            ],
+            "duration_seconds": duration,
+            "structure_timeline": timeline,
+            "section_intensity": {
+                str(item["section"]): str(sections[index].get("intensity", "medium"))
+                for index, item in enumerate(timeline)
+                if index < len(sections)
+            },
+            "instrumentation_prompt": self._first_text(
+                editor_plan.get("instrumentationNotes"),
+                ", ".join(str(item) for item in list(spec.get("instruments", []))),
+            ),
+            "midi_requirements": {
+                "must_include_vocal_melody": True,
+                "must_include_chords": True,
+                "must_include_section_markers": True,
+                "tempo_bpm": int(self._first_number(editor_plan.get("bpm"), spec.get("bpm"), 80)),
+                "key": self._first_text(editor_plan.get("key"), spec.get("key"), "C major"),
+            },
+            "source_set_id": source_set_id,
+            "source_of_truth": "sqlite_music_plan_phase",
+        }
+        self.storage.write_json(path, plan)
+        artifact = self.storage.create_song_artifact(
+            artifact_id=f"{song_id}_music_plan",
+            song_id=song_id,
+            phase=SongPhase.MUSIC_PLAN_GENERATION.value,
+            artifact_type="music_plan_json",
+            file_path=str(Path(path)),
+            metadata={
+                "bpm": plan["bpm"],
+                "key": plan["key"],
+                "duration_seconds": duration,
+                "source_set_id": source_set_id,
+            },
+        )
+        self.storage.create_song_event(
+            song_id=song_id,
+            phase=SongPhase.MUSIC_PLAN_GENERATION.value,
+            status=SongPhaseStatus.COMPLETED.value,
+            progress=100,
+            message="Production preparo music_plan.json desde la fase Music Plan del proyecto activo.",
+            active_model="sqlite-project-bridge",
+            payload={"source_set_id": source_set_id, "music_plan": str(path)},
+            artifact_id=str(artifact["artifact_id"]),
+        )
+        return plan
+
+    def _target_phase_from_editor_data(self, song_id: str) -> SongPhase:
+        if (self.storage.data_dir / "projects" / song_id / "music_plan.json").exists():
+            return SongPhase.MIDI_GENERATION
+        return SongPhase.MUSIC_PLAN_GENERATION
+
+    def _structure_from_editor(
+        self,
+        phase_data: dict[str, object],
+        music_plan: object,
+        lyrics_intent: dict[str, object],
+    ) -> list[str]:
+        lyrics_data = self._phase_payload(phase_data, "lyrics")
+        sections = lyrics_data.get("lyricSections", [])
+        if isinstance(sections, list) and sections:
+            return [self._section_id(str(dict(item).get("type") or "verse")) for item in sections]
+        plan_sections = dict(music_plan).get("sections", []) if isinstance(music_plan, dict) else []
+        if isinstance(plan_sections, list) and plan_sections:
+            return [self._section_id(str(dict(item).get("name") or dict(item).get("section") or "verse")) for item in plan_sections]
+        structure = lyrics_intent.get("structure", [])
+        if isinstance(structure, str):
+            return [self._section_id(item) for item in structure.split(",") if item.strip()]
+        if isinstance(structure, list) and structure:
+            return [self._section_id(str(item)) for item in structure]
+        return ["intro", "verse_1", "chorus", "bridge", "outro"]
+
+    def _duration_seconds(self, music_plan: object, intent: object) -> int:
+        if isinstance(music_plan, dict):
+            direct = self._first_number(music_plan.get("durationSeconds"), music_plan.get("duration_seconds"), 0)
+            if direct:
+                return int(direct)
+            sections = music_plan.get("sections", [])
+            if isinstance(sections, list) and sections:
+                total = 0
+                for section in sections:
+                    item = dict(section)
+                    total += int(self._first_number(item.get("duration"), item.get("duration_seconds"), 0))
+                if total:
+                    return total
+        if isinstance(intent, dict):
+            direct = self._first_number(intent.get("durationSeconds"), intent.get("duration_seconds"), 0)
+            if direct:
+                return int(direct)
+        return 120
+
+    def _section_id(self, label: str) -> str:
+        return label.strip().lower().replace(" ", "_").replace("-", "_")
+
+    def _list_value(self, value: object) -> list[str]:
+        if isinstance(value, list):
+            return [str(item) for item in value if str(item).strip()]
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return []
+
+    def _first_text(self, *values: object) -> str:
+        for value in values:
+            text = str(value or "").strip()
+            if text:
+                return text
+        return ""
+
+    def _first_number(self, *values: object) -> float:
+        for value in values:
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                continue
+            if number > 0:
+                return number
+        return 0

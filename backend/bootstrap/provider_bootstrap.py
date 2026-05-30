@@ -10,10 +10,14 @@ import sys
 import urllib.request
 from datetime import datetime, timezone
 
+from config.env import load_dotenv
 
-MODEL_ROOT = Path(os.getenv("SONG_AI_MODEL_ROOT", "/app/models"))
-PROVIDER_ROOT = Path(os.getenv("SONG_AI_PROVIDER_ROOT", "/app/providers"))
-CACHE_ROOT = Path(os.getenv("SONG_AI_PROVIDER_CACHE", "/app/provider-cache"))
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(PROJECT_ROOT)
+MODEL_ROOT = Path(os.getenv("SONG_AI_MODEL_ROOT", str(PROJECT_ROOT / "data" / "models")))
+PROVIDER_ROOT = Path(os.getenv("SONG_AI_PROVIDER_ROOT", str(PROJECT_ROOT / "data" / "providers")))
+CACHE_ROOT = Path(os.getenv("SONG_AI_PROVIDER_CACHE", str(PROJECT_ROOT / "data" / "provider-cache")))
 PYTHON_TARGET = CACHE_ROOT / "python"
 PIP_CACHE = CACHE_ROOT / "pip"
 LOCAL_AUDIO_MARKER = CACHE_ROOT / ".local-audio-deps.installed"
@@ -99,7 +103,7 @@ def ensure_directories(summary: dict[str, object]) -> None:
 
 
 def install_local_audio_deps(upgrade: bool = False) -> bool:
-    requirements = Path("/app/backend/requirements-local-audio.txt")
+    requirements = PROJECT_ROOT / "backend" / "requirements-local-audio.txt"
     if not requirements.exists():
         raise RuntimeError(f"No existe {requirements}")
     marker_content = requirements.read_text(encoding="utf-8")
@@ -149,7 +153,7 @@ def install_ace_step(upgrade: bool = False) -> bool:
         if modules_available(["acestep"]) and not ace_step_ready():
             raise RuntimeError(
                 "ACE-Step se instalo, pero no pudo importarse. Revisa compatibilidad Torch/Torchvision "
-                "en /app/provider-cache/python."
+                f"en {PYTHON_TARGET}."
             )
     write_marker(ACE_STEP_MARKER, requirement)
     return True
@@ -217,7 +221,7 @@ def download_huggingface_models(summary: dict[str, object]) -> None:
     except ImportError as error:
         raise RuntimeError(
             "huggingface_hub no esta instalado. Activa SONG_AI_INSTALL_LOCAL_AUDIO_DEPS=true "
-            "o instala dependencias locales en el volumen."
+            "o instala dependencias locales en data/provider-cache."
         ) from error
 
     hf_root = MODEL_ROOT / "huggingface"
@@ -231,7 +235,7 @@ def clone_provider_repositories(summary: dict[str, object]) -> None:
     repos = split_list(os.getenv("SONG_AI_PROVIDER_REPOS", ""))
     git_path = shutil.which("git")
     if repos and git_path is None:
-        raise RuntimeError("SONG_AI_PROVIDER_REPOS requiere git dentro del contenedor.")
+        raise RuntimeError("SONG_AI_PROVIDER_REPOS requiere git instalado localmente.")
     for item in repos:
         if "=" not in item:
             raise RuntimeError("Cada provider repo debe tener formato nombre=url.")

@@ -8,6 +8,8 @@ import sys
 import tempfile
 import unittest
 import wave
+import importlib.util
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -21,7 +23,16 @@ from config.settings import Settings
 from config.model_settings import LocalModelSettings
 from core.storage import StorageManager
 from providers.registry import ProviderRegistry
-from bootstrap import docker_bootstrap
+from bootstrap import provider_bootstrap
+
+
+ACESTEP_GENERATE_SPEC = importlib.util.spec_from_file_location(
+    "acestep_generate",
+    PROJECT_ROOT / "tools" / "acestep_generate.py",
+)
+acestep_generate = importlib.util.module_from_spec(ACESTEP_GENERATE_SPEC)
+assert ACESTEP_GENERATE_SPEC.loader is not None
+ACESTEP_GENERATE_SPEC.loader.exec_module(acestep_generate)
 
 
 class AudioExportTest(unittest.TestCase):
@@ -564,6 +575,34 @@ class AudioExportTest(unittest.TestCase):
             self.assertTrue(str(zip_filename).endswith("-project_zip.zip"))
             self.assertEqual(zip_media_type, "application/zip")
 
+    def test_professional_artifact_verification_marks_missing_file(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            temp_path = Path(temp_dir)
+            storage = StorageManager(temp_path)
+            service = SongService(storage, replace(Settings.load(), data_dir=temp_path))
+            service.bootstrap()
+            created = service.create_professional_project({"title": "Verificacion de artefacto"})
+            song_id = str(created["project"]["id"])
+            project_dir = temp_path / "projects" / song_id
+            wav_path = project_dir / "probe.wav"
+            self.write_tone_wav(wav_path, 220.0)
+            storage.create_song_artifact(
+                artifact_id=f"{song_id}_probe",
+                song_id=song_id,
+                phase="MASTERING",
+                artifact_type="probe_wav",
+                file_path=str(wav_path),
+                metadata={"provider_name": "test"},
+            )
+
+            ok = service.verify_professional_artifact(song_id, "probe_wav")
+            wav_path.unlink()
+            missing = service.verify_professional_artifact(song_id, "probe_wav")
+
+            self.assertEqual(ok["artifact_status"], "GENERATED")
+            self.assertEqual(missing["artifact_status"], "MISSING")
+            self.assertIn("no existe", missing["message"])
+
     @unittest.skipIf(not shutil.which("ffmpeg"), "ffmpeg no esta disponible para exportar MP3")
     def test_professional_full_song_command_can_create_export_without_stem_vocals(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
@@ -610,23 +649,23 @@ class AudioExportTest(unittest.TestCase):
             self.assertEqual(final_wav["metadata"]["generation_mode"], "local_full_song_command")
             self.assertTrue(Path(str(mastered["final_mp3"])).exists())
 
-    def test_docker_bootstrap_creates_named_volume_directories_without_downloads(self) -> None:
+    def test_provider_bootstrap_creates_local_cache_directories_without_downloads(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
-            with patch.object(docker_bootstrap, "MODEL_ROOT", temp_path / "models"), patch.object(
-                docker_bootstrap,
+            with patch.object(provider_bootstrap, "MODEL_ROOT", temp_path / "models"), patch.object(
+                provider_bootstrap,
                 "PROVIDER_ROOT",
                 temp_path / "providers",
-            ), patch.object(docker_bootstrap, "CACHE_ROOT", temp_path / "provider-cache"), patch.object(
-                docker_bootstrap,
+            ), patch.object(provider_bootstrap, "CACHE_ROOT", temp_path / "provider-cache"), patch.object(
+                provider_bootstrap,
                 "PYTHON_TARGET",
                 temp_path / "provider-cache" / "python",
-            ), patch.object(docker_bootstrap, "PIP_CACHE", temp_path / "provider-cache" / "pip"), patch.dict(
+            ), patch.object(provider_bootstrap, "PIP_CACHE", temp_path / "provider-cache" / "pip"), patch.dict(
                 os.environ,
                 {"SONG_AI_BOOTSTRAP_ON_START": "false"},
                 clear=False,
             ):
-                summary = docker_bootstrap.run_bootstrap()
+                summary = provider_bootstrap.run_bootstrap()
 
             self.assertFalse(summary["enabled"])
             self.assertTrue((temp_path / "models" / "llm").exists())
@@ -634,14 +673,14 @@ class AudioExportTest(unittest.TestCase):
             self.assertTrue((temp_path / "providers").exists())
             self.assertTrue((temp_path / "provider-cache" / "python").exists())
 
-    def test_docker_bootstrap_downloads_gguf_models_to_configured_paths(self) -> None:
+    def test_provider_bootstrap_downloads_gguf_models_to_configured_paths(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
             source = temp_path / "source.gguf"
             source.write_text("fake gguf", encoding="utf-8")
             gemma_path = temp_path / "models" / "llm" / "gemma" / "gemma.gguf"
             qwen_path = temp_path / "models" / "llm" / "qwen" / "qwen.gguf"
-            with patch.object(docker_bootstrap, "MODEL_ROOT", temp_path / "models"), patch.dict(
+            with patch.object(provider_bootstrap, "MODEL_ROOT", temp_path / "models"), patch.dict(
                 os.environ,
                 {
                     "SONG_AI_GEMMA_GGUF_URL": source.as_uri(),
@@ -652,21 +691,21 @@ class AudioExportTest(unittest.TestCase):
                 clear=False,
             ):
                 summary = {"downloads": []}
-                docker_bootstrap.download_url_models(summary)
+                provider_bootstrap.download_url_models(summary)
 
             self.assertTrue(gemma_path.exists())
             self.assertTrue(qwen_path.exists())
             self.assertEqual(len(summary["downloads"]), 2)
 
-    def test_docker_bootstrap_markers_skip_existing_installs(self) -> None:
+    def test_provider_bootstrap_markers_skip_existing_installs(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
             marker = temp_path / "provider-cache" / ".ace-step.installed"
             package = "git+https://github.com/ace-step/ACE-Step.git"
             marker.parent.mkdir(parents=True, exist_ok=True)
             marker.write_text(f"{package}\npython={sys.version.split()[0]}\n", encoding="utf-8")
-            with patch.object(docker_bootstrap, "CACHE_ROOT", temp_path / "provider-cache"), patch.object(
-                docker_bootstrap,
+            with patch.object(provider_bootstrap, "CACHE_ROOT", temp_path / "provider-cache"), patch.object(
+                provider_bootstrap,
                 "ACE_STEP_MARKER",
                 marker,
             ), patch.dict(
@@ -676,25 +715,25 @@ class AudioExportTest(unittest.TestCase):
                     "SONG_AI_ACE_STEP_PACKAGE": package,
                 },
                 clear=False,
-            ), patch.object(docker_bootstrap, "ace_step_ready", return_value=True), patch("subprocess.run") as run:
-                installed = docker_bootstrap.install_ace_step(upgrade=False)
+            ), patch.object(provider_bootstrap, "ace_step_ready", return_value=True), patch("subprocess.run") as run:
+                installed = provider_bootstrap.install_ace_step(upgrade=False)
 
             self.assertFalse(installed)
             run.assert_not_called()
 
-    def test_docker_bootstrap_marker_reinstalls_when_modules_are_missing(self) -> None:
+    def test_provider_bootstrap_marker_reinstalls_when_modules_are_missing(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
             marker = temp_path / "provider-cache" / ".ace-step.installed"
             package = "git+https://github.com/ace-step/ACE-Step.git"
             marker.parent.mkdir(parents=True, exist_ok=True)
             marker.write_text(f"{package}\npython={sys.version.split()[0]}\n", encoding="utf-8")
-            with patch.object(docker_bootstrap, "PIP_CACHE", temp_path / "provider-cache" / "pip"), patch.object(
-                docker_bootstrap,
+            with patch.object(provider_bootstrap, "PIP_CACHE", temp_path / "provider-cache" / "pip"), patch.object(
+                provider_bootstrap,
                 "PYTHON_TARGET",
                 temp_path / "provider-cache" / "python",
             ), patch.object(
-                docker_bootstrap,
+                provider_bootstrap,
                 "ACE_STEP_MARKER",
                 marker,
             ), patch.dict(
@@ -704,37 +743,37 @@ class AudioExportTest(unittest.TestCase):
                     "SONG_AI_ACE_STEP_PACKAGE": package,
                 },
                 clear=False,
-            ), patch.object(docker_bootstrap, "modules_available", return_value=False), patch.object(
-                docker_bootstrap,
+            ), patch.object(provider_bootstrap, "modules_available", return_value=False), patch.object(
+                provider_bootstrap,
                 "ace_step_ready",
                 return_value=False,
             ), patch("subprocess.run") as run:
-                installed = docker_bootstrap.install_ace_step(upgrade=False)
+                installed = provider_bootstrap.install_ace_step(upgrade=False)
 
             self.assertTrue(installed)
             run.assert_called_once()
 
-    def test_docker_bootstrap_existing_modules_create_marker_without_reinstall(self) -> None:
+    def test_provider_bootstrap_existing_modules_create_marker_without_reinstall(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
             marker = temp_path / "provider-cache" / ".ace-step.installed"
             package = "git+https://github.com/ace-step/ACE-Step.git"
-            with patch.object(docker_bootstrap, "ACE_STEP_MARKER", marker), patch.dict(
+            with patch.object(provider_bootstrap, "ACE_STEP_MARKER", marker), patch.dict(
                 os.environ,
                 {
                     "SONG_AI_BOOTSTRAP_UPGRADE": "false",
                     "SONG_AI_ACE_STEP_PACKAGE": package,
                 },
                 clear=False,
-            ), patch.object(docker_bootstrap, "ace_step_ready", return_value=True), patch("subprocess.run") as run:
-                installed = docker_bootstrap.install_ace_step(upgrade=False)
+            ), patch.object(provider_bootstrap, "ace_step_ready", return_value=True), patch("subprocess.run") as run:
+                installed = provider_bootstrap.install_ace_step(upgrade=False)
 
             self.assertFalse(installed)
             self.assertTrue(marker.exists())
             self.assertIn(package, marker.read_text(encoding="utf-8"))
             run.assert_not_called()
 
-    def test_docker_bootstrap_repairs_local_audio_deps_when_compatibility_probe_fails(self) -> None:
+    def test_provider_bootstrap_repairs_local_audio_deps_when_compatibility_probe_fails(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
             marker = temp_path / "provider-cache" / ".local-audio-deps.installed"
@@ -742,46 +781,46 @@ class AudioExportTest(unittest.TestCase):
             requirements = temp_path / "requirements-local-audio.txt"
             requirements.write_text("huggingface_hub>=0.34.0,<1.0\n", encoding="utf-8")
             marker.write_text(f"{requirements.read_text(encoding='utf-8')}\npython={sys.version.split()[0]}\n", encoding="utf-8")
-            with patch.object(docker_bootstrap, "LOCAL_AUDIO_MARKER", marker), patch.object(
-                docker_bootstrap,
+            with patch.object(provider_bootstrap, "LOCAL_AUDIO_MARKER", marker), patch.object(
+                provider_bootstrap,
                 "PIP_CACHE",
                 temp_path / "provider-cache" / "pip",
             ), patch.object(
-                docker_bootstrap,
+                provider_bootstrap,
                 "PYTHON_TARGET",
                 temp_path / "provider-cache" / "python",
             ), patch("pathlib.Path.exists", return_value=True), patch(
                 "pathlib.Path.read_text",
                 return_value=requirements.read_text(encoding="utf-8"),
-            ), patch.object(docker_bootstrap, "modules_available", return_value=True), patch.object(
-                docker_bootstrap,
+            ), patch.object(provider_bootstrap, "modules_available", return_value=True), patch.object(
+                provider_bootstrap,
                 "local_audio_deps_ready",
                 return_value=False,
             ), patch("subprocess.run") as run:
-                installed = docker_bootstrap.install_local_audio_deps(upgrade=False)
+                installed = provider_bootstrap.install_local_audio_deps(upgrade=False)
 
             self.assertTrue(installed)
             self.assertIn("--upgrade", run.call_args.args[0])
             self.assertIn("huggingface_hub>=0.34.0,<1.0", run.call_args.args[0])
             self.assertNotIn("-r", run.call_args.args[0])
 
-    def test_docker_bootstrap_upgrade_ignores_existing_markers(self) -> None:
+    def test_provider_bootstrap_upgrade_ignores_existing_markers(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
             marker = temp_path / "provider-cache" / ".ace-step.installed"
             package = "git+https://github.com/ace-step/ACE-Step.git"
             marker.parent.mkdir(parents=True, exist_ok=True)
             marker.write_text(package, encoding="utf-8")
-            with patch.object(docker_bootstrap, "CACHE_ROOT", temp_path / "provider-cache"), patch.object(
-                docker_bootstrap,
+            with patch.object(provider_bootstrap, "CACHE_ROOT", temp_path / "provider-cache"), patch.object(
+                provider_bootstrap,
                 "PIP_CACHE",
                 temp_path / "provider-cache" / "pip",
             ), patch.object(
-                docker_bootstrap,
+                provider_bootstrap,
                 "PYTHON_TARGET",
                 temp_path / "provider-cache" / "python",
             ), patch.object(
-                docker_bootstrap,
+                provider_bootstrap,
                 "ACE_STEP_MARKER",
                 marker,
             ), patch.dict(
@@ -789,7 +828,7 @@ class AudioExportTest(unittest.TestCase):
                 {"SONG_AI_ACE_STEP_PACKAGE": package},
                 clear=False,
             ), patch("subprocess.run") as run:
-                installed = docker_bootstrap.install_ace_step(upgrade=True)
+                installed = provider_bootstrap.install_ace_step(upgrade=True)
 
             self.assertTrue(installed)
             self.assertIn("--upgrade", run.call_args.args[0])
@@ -807,6 +846,38 @@ class AudioExportTest(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_acestep_diagnostics_preserve_spanish_lyrics_and_sections(self) -> None:
+        args = SimpleNamespace(
+            prompt="prompt.txt",
+            lyrics="lyrics.md",
+            duration=8,
+            infer_step=4,
+            guidance_scale=15.0,
+            scheduler_type="euler",
+            cfg_type="apg",
+            omega_scale=10.0,
+            seed=42,
+            output_type="full_song_with_vocals",
+            oss_steps="16,96",
+        )
+        lyrics = "[es]\n[verse]\nDuerme mi cielo\ncierra los ojos\n\n[chorus]\nAquí estoy contigo\nguardando tu sueño\n"
+        diagnostics = acestep_generate.build_diagnostics(
+            args,
+            "tender Spanish lullaby, soft female vocal, acoustic guitar",
+            lyrics,
+            Path("out.wav"),
+            Path("models/ace-step"),
+        )
+
+        self.assertEqual(diagnostics["input"]["lyrics"], lyrics)
+        self.assertEqual(diagnostics["input"]["detected_language"], "Spanish")
+        self.assertTrue(diagnostics["input"]["has_spanish_language_tag"])
+        self.assertTrue(diagnostics["input"]["contains_accents"])
+        self.assertIn("verse", [section["label"] for section in diagnostics["input"]["sections"]])
+        self.assertIn("chorus", [section["label"] for section in diagnostics["input"]["sections"]])
+        self.assertFalse(diagnostics["parameters"]["instrumental_mode"])
+        self.assertTrue(diagnostics["parameters"]["sung_vocal_requested"])
 
     def test_local_pipeline_does_not_report_ace_step_ready_when_module_is_missing(self) -> None:
         base_settings = Settings.load()
@@ -856,7 +927,17 @@ class AudioExportTest(unittest.TestCase):
     def test_project_phase_data_is_persisted_without_generation(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             storage = StorageManager(Path(temp_dir))
-            service = SongService(storage, Settings.load())
+            settings = Settings.load()
+            settings = replace(
+                settings,
+                local_models=replace(
+                    settings.local_models,
+                    full_song_command="",
+                    soundtrack_command="",
+                    singing_voice_command="",
+                ),
+            )
+            service = SongService(storage, settings)
             service.bootstrap()
             service.create_instrumental({"genre": "lullaby", "mood": "warm"})
             service.create_melody({"vocal_style": "soft", "structure": "verse, chorus"})
@@ -872,12 +953,265 @@ class AudioExportTest(unittest.TestCase):
             loaded = service.get_project(set_id)
 
             self.assertEqual(saved["saved"]["status"], "intent_saved")
+            self.assertEqual(saved["saved"]["phase_status"], "COMPLETED")
+            self.assertEqual(saved["saved"]["change_source"], "USER")
             self.assertEqual(loaded["phase_data"]["intent"]["data"]["intent"]["recipient"], "Isabella")
+            self.assertEqual(loaded["phases"]["intent"]["phase_status"], "COMPLETED")
+            self.assertEqual(loaded["phases"]["intent"]["change_source"], "USER")
+            phase_events = storage.list_project_phase_events(set_id)
+            self.assertTrue(any(event["event_type"] == "PHASE_SAVED" for event in phase_events))
 
-    def test_audio_export_contains_song_mock_context_and_stems(self) -> None:
+    def test_project_phase_ai_suggestion_stays_draft_until_saved(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             storage = StorageManager(Path(temp_dir))
             service = SongService(storage, Settings.load())
+            service.bootstrap()
+            service.create_instrumental({"genre": "lullaby", "mood": "warm"})
+            service.create_melody({"vocal_style": "soft", "structure": "verse, chorus"})
+            service.create_lyrics({"theme": "sleep", "structure": "verse, chorus"})
+            created = service.create_set({"project_name": "Proyecto IA", "description": "Sugerencia"})
+            set_id = str(created["id"])
+
+            suggested = service.ai_suggest_project_phase(
+                set_id,
+                "music-plan",
+                {"data": {"musicPlan": {"bpm": 72}}},
+            )
+            saved = service.save_project_phase_data(
+                set_id,
+                "music-plan",
+                {"data": {"musicPlan": {"bpm": 72}}, "change_source": "MIXED"},
+            )
+
+            self.assertEqual(suggested["saved"]["phase_status"], "DRAFT")
+            self.assertEqual(suggested["saved"]["change_source"], "AI")
+            self.assertEqual(saved["saved"]["phase_status"], "COMPLETED")
+            self.assertEqual(saved["saved"]["change_source"], "MIXED")
+            events = storage.list_project_phase_events(set_id)
+            self.assertTrue(any(event["event_type"] == "AI_SUGGESTED" for event in events))
+
+    def test_project_ui_state_persists_last_active_phase(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            settings = Settings.load()
+            settings = replace(
+                settings,
+                local_models=replace(
+                    settings.local_models,
+                    full_song_command="",
+                    soundtrack_command="",
+                    singing_voice_command="",
+                ),
+            )
+            service = SongService(storage, settings)
+            service.bootstrap()
+            service.create_instrumental({"genre": "lullaby", "mood": "warm"})
+            service.create_melody({"vocal_style": "soft", "structure": "intro, verse, chorus"})
+            service.create_lyrics({"theme": "sleep", "structure": "intro, verse, chorus"})
+            created = service.create_set({"project_name": "Proyecto rehidratable", "description": "Estado completo"})
+            set_id = str(created["id"])
+
+            saved = service.save_project_active_phase(set_id, {"phase": "music-plan"})
+            loaded = service.get_project(set_id)
+
+            self.assertEqual(saved["ui_state"]["last_active_phase"], "music-plan")
+            self.assertEqual(loaded["ui_state"]["last_active_phase"], "music-plan")
+
+    def test_gemma_assistant_sees_saved_editor_phases_before_production(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            service = SongService(storage, Settings.load())
+            service.bootstrap()
+            service.create_instrumental({"genre": "lullaby", "mood": "warm"})
+            service.create_melody({"vocal_style": "soft", "structure": "intro, verse, chorus"})
+            service.create_lyrics({"theme": "sleep", "structure": "intro, verse, chorus"})
+            created = service.create_set({"project_name": "Cancion faseada", "description": "Cancion lista para Production"})
+            set_id = str(created["id"])
+
+            for phase in ("intent", "lyrics", "music-plan", "midi", "instrumental", "voice"):
+                service.save_project_phase_data(set_id, phase, {"data": {phase: {"saved": True}}})
+
+            answer = service.gemma_assistant(
+                {
+                    "set_id": set_id,
+                    "question": "Que sigue para terminar esta cancion?",
+                    "active_phase": "voice",
+                }
+            )
+
+            self.assertTrue(answer["readiness"]["editor_ready_for_production"])
+            self.assertIn("Intent", answer["message"])
+            self.assertIn("Voice", answer["message"])
+            self.assertIn("revision tecnica", answer["message"])
+            self.assertIn("lyrics.content", answer["message"])
+            self.assertIn("technical_validation", answer)
+            self.assertNotIn("Crea o carga un proyecto desde Biblioteca", answer["message"])
+
+    def test_gemma_assistant_distinguishes_editor_set_from_professional_project(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            service = SongService(storage, Settings.load())
+            service.bootstrap()
+            service.create_instrumental({"genre": "lullaby", "mood": "warm"})
+            service.create_melody({"vocal_style": "soft", "structure": "intro, verse, chorus"})
+            service.create_lyrics({"theme": "sleep", "structure": "intro, verse, chorus"})
+            created = service.create_set({"project_name": "Cancion faseada", "description": "Cancion lista para Production"})
+            set_id = str(created["id"])
+
+            answer = service.gemma_assistant(
+                {
+                    "set_id": set_id,
+                    "question": "no estoy en un proyecto activo?",
+                    "active_phase": "voice",
+                    "editor_phase_statuses": {
+                        "intent": "READY",
+                        "lyrics": "READY",
+                        "music-plan": "READY",
+                        "midi": "READY",
+                        "instrumental": "READY",
+                        "voice": "READY",
+                    },
+                }
+            )
+
+            self.assertFalse(answer["readiness"]["editor_ready_for_production"])
+            self.assertEqual(answer["mode"], "sqlite_guidance")
+            self.assertIn("Si: estas en el proyecto activo", answer["message"])
+            self.assertIn("revision tecnica", answer["message"])
+            self.assertIn("guardar fase:intent", answer["message"])
+            self.assertEqual(answer["technical_validation"]["source_of_truth"], "sqlite")
+
+    def test_production_project_created_from_active_set_is_prepared_for_export_tasks(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            service = SongService(storage, Settings.load())
+            service.bootstrap()
+            service.create_instrumental({"genre": "lullaby", "mood": "warm", "instruments": ["acoustic guitar"]})
+            service.create_melody({"vocal_style": "soft female vocal", "structure": "verse, chorus"})
+            service.create_lyrics({"theme": "sleep", "structure": "verse, chorus"})
+            created_set = service.create_set({"project_name": "Cancion de cuna", "description": "Cancion completa suave y cantada."})
+            set_id = str(created_set["id"])
+
+            service.save_project_phase_data(
+                set_id,
+                "intent",
+                {
+                    "data": {
+                        "intent": {
+                            "recipient": "Isabella",
+                            "language": "Spanish",
+                            "mood": "tender",
+                            "bpm": 72,
+                        }
+                    }
+                },
+            )
+            service.save_project_phase_data(
+                set_id,
+                "lyrics",
+                {
+                    "data": {
+                        "lyricSections": [
+                            {"type": "Verse 1", "text": "Duerme mi cielo\ncierra los ojos"},
+                            {"type": "Chorus", "text": "Aqui estoy contigo\nguardando tu sueno"},
+                            {"type": "Bridge", "text": "La noche respira\ncon dulce calma"},
+                            {"type": "Outro", "text": "Descansa mi vida\nmanana habra sol"},
+                        ]
+                    }
+                },
+            )
+            service.save_project_phase_data(
+                set_id,
+                "music-plan",
+                {
+                    "data": {
+                        "musicPlan": {
+                            "bpm": 72,
+                            "key": "C major",
+                            "sections": [
+                                {"name": "Verse 1", "duration": 24},
+                                {"name": "Chorus", "duration": 28},
+                                {"name": "Bridge", "duration": 22},
+                                {"name": "Outro", "duration": 18},
+                            ],
+                        }
+                    }
+                },
+            )
+            for phase in ("midi", "instrumental", "voice"):
+                service.save_project_phase_data(set_id, phase, {"data": {phase: {"saved": True}}})
+
+            created_pro = service.create_professional_project(
+                {
+                    "title": "Cancion de cuna",
+                    "user_id": f"set:{set_id}",
+                    "source_set_id": set_id,
+                }
+            )
+            song_id = str(created_pro["project"]["id"])
+            project_dir = Path(temp_dir) / "projects" / song_id
+
+            self.assertEqual(created_pro["project"]["current_phase"], "MIDI_GENERATION")
+            self.assertTrue(created_pro["project"]["spec"]["approved_by_qwen"])
+            self.assertTrue((project_dir / "song_spec.json").exists())
+            self.assertTrue((project_dir / "lyrics.md").exists())
+            self.assertTrue((project_dir / "lyrics_approved.json").exists())
+            self.assertTrue((project_dir / "music_plan.json").exists())
+            self.assertIn("Duerme mi cielo", (project_dir / "lyrics.md").read_text(encoding="utf-8"))
+
+            generated_plan = service.get_professional_music_plan(song_id)
+
+            self.assertEqual(generated_plan["music_plan"]["bpm"], 72)
+
+    def test_existing_linked_production_project_is_repaired_from_active_set(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            service = SongService(storage, Settings.load())
+            service.bootstrap()
+            service.create_instrumental({"genre": "lullaby", "mood": "warm"})
+            service.create_melody({"vocal_style": "soft female vocal", "structure": "verse, chorus"})
+            service.create_lyrics({"theme": "sleep", "structure": "verse, chorus"})
+            created_set = service.create_set({"project_name": "Cancion de cuna", "description": "Cancion lista."})
+            set_id = str(created_set["id"])
+            service.save_project_phase_data(set_id, "intent", {"data": {"intent": {"language": "Spanish", "bpm": 72}}})
+            service.save_project_phase_data(
+                set_id,
+                "lyrics",
+                {
+                    "data": {
+                        "lyricSections": [
+                            {"type": "Verse", "text": "Duerme mi cielo"},
+                            {"type": "Chorus", "text": "Aqui estoy contigo"},
+                        ]
+                    }
+                },
+            )
+            legacy = service.create_professional_project({"title": "Cancion de cuna", "user_id": f"set:{set_id}"})
+            song_id = str(legacy["project"]["id"])
+
+            self.assertIsNone(legacy["project"].get("spec"))
+
+            listed = service.list_professional_projects()
+            repaired = next(project for project in listed["projects"] if project["id"] == song_id)
+            generated_plan = service.generate_professional_music_plan(song_id)
+
+            self.assertTrue(repaired["spec"]["approved_by_qwen"])
+            self.assertEqual(generated_plan["music_plan"]["bpm"], 72)
+
+    def test_audio_export_contains_song_mock_context_and_local_pipeline_status(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            storage = StorageManager(Path(temp_dir))
+            settings = Settings.load()
+            settings = replace(
+                settings,
+                local_models=replace(
+                    settings.local_models,
+                    full_song_command="",
+                    soundtrack_command="",
+                    singing_voice_command="",
+                ),
+            )
+            service = SongService(storage, settings)
             service.bootstrap()
 
             pipeline = service.local_pipeline_status()
@@ -885,7 +1219,7 @@ class AudioExportTest(unittest.TestCase):
             phases = service.project_phase_status()
             self.assertFalse(pipeline["ready"])
             self.assertIn("full_song", pipeline["missing"])
-            self.assertIn("soundtrack/singing_voice", pipeline["missing"])
+            self.assertIn("mix_and_export", pipeline["missing"])
             self.assertTrue(system["components"])
             self.assertTrue(phases["phases"])
 

@@ -1,19 +1,19 @@
 # Song AI
 
-Song AI es un estudio musical local asistido por IA para crear canciones completas desde una idea creativa hasta exportables finales. La aplicacion corre en Docker, guarda el trabajo en SQLite y volumenes persistentes, y mantiene separados los artefactos de letra, plan musical, MIDI, audio y exportacion.
+Song AI es un estudio musical local asistido por IA para crear canciones completas desde una idea creativa hasta exportables finales. La aplicacion corre localmente sin Docker, guarda el trabajo en SQLite dentro de `data/` y mantiene separados los artefactos de letra, plan musical, MIDI, audio y exportacion.
 
 El objetivo actual es generar canciones locales con herramientas gratuitas. El modo pro/pago esta pausado.
 
 ## Estado Actual
 
-La ruta local principal es **Full Song con ACE-Step**:
+La ruta principal es **local-first con Full Song / ACE-Step**:
 
 - ACE-Step genera una cancion completa con instrumental y voz cantada integrada.
 - La fase de Mastering del pipeline profesional puede usar `SONG_AI_FULL_SONG_COMMAND`.
 - Si Full Song esta listo, `soundtrack` y `singing_voice` separados son opcionales.
 - Si el sistema cae en `procedural_vocal_guide`, la app bloquea la descarga como final.
 
-Estado esperado en Docker cuando ACE-Step esta importable:
+Estado esperado local cuando ACE-Step esta importable:
 
 ```text
 full_song: ready
@@ -23,7 +23,108 @@ singing_voice: optional
 mix_and_export: ready
 ```
 
-Importante: Song AI ya esta preparado para generar voz cantada real por ACE-Step, pero la calidad final depende de que ACE-Step pueda ejecutar realmente en el contenedor. Con GPU es lo recomendado; por CPU puede tardar mucho.
+Importante: Song AI ya esta preparado para generar voz cantada real por ACE-Step, pero la calidad final depende de que ACE-Step pueda ejecutar realmente en el entorno local. Con aceleracion GPU compatible es lo recomendado; por CPU puede tardar mucho.
+
+## Por Que Sin Docker
+
+Docker Desktop no expuso la iGPU Intel ni la NPU Intel AI Boost al contenedor. En la laptop verificada, Windows detecta Intel Graphics e Intel AI Boost, pero el contenedor no ve `/dev/dri`, `/dev/dxg`, `/dev/accel` ni CUDA. Eso obliga a ACE-Step/PyTorch a correr por CPU dentro de Docker y produjo ejecuciones de mas de 4 horas sin salida final.
+
+La ruta local evita esa capa de virtualizacion y permite probar backends nativos de Windows, Intel XPU, DirectML u OpenVINO mediante providers CLI intercambiables. Docker fue retirado de la ruta operativa del proyecto.
+
+## Ejecucion Local
+
+Requisitos:
+
+- Python 3.11.
+- Node.js 20 o superior.
+- ffmpeg en `PATH`.
+- Git si vas a instalar ACE-Step desde su repositorio.
+
+Preparar:
+
+```powershell
+scripts\setup-local.ps1
+```
+
+Verificar prerequisitos:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\check-local-prereqs.ps1
+```
+
+Instalar prerequisitos locales, incluyendo ffmpeg con `winget` y dependencias de audio:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\install-local-prereqs.ps1 -InstallFfmpeg
+```
+
+Comando principal para ejecutar la aplicacion:
+
+```powershell
+scripts\run-local.ps1 -Port 8000
+```
+
+Abrir:
+
+```text
+http://127.0.0.1:8000
+```
+
+Si ya tienes `.venv`, dependencias y frontend preparados, ese es el unico comando necesario para levantar Song AI en modo local nativo.
+
+Modo desarrollo con Vite:
+
+```powershell
+scripts\run-local-dev.ps1
+```
+
+Prueba pequena de dos estrofas:
+
+```powershell
+.\.venv\Scripts\python.exe tools\run_small_local_song_flow.py --duration 20
+```
+
+Prueba completa rapida de todas las fases con provider local controlado:
+
+```powershell
+.\.venv\Scripts\python.exe tools\run_small_local_song_flow.py --duration 12 --run-master --fast-full-song-provider
+```
+
+Esta prueba crea un set con instrumental, melodia y letra, materializa el proyecto profesional desde SQLite, ejecuta MIDI, Instrumental, Voice, Voice Conversion, Mix, Mastering y Export, y genera `final_song.wav`, `final_song.mp3`, `final_song.flac`, `export_manifest.json` y `project_export.zip` sin invocar ACE-Step pesado.
+
+Cuando `check-local-prereqs.ps1` diga `ready: True`, ejecutar tambien Mastering real con ACE-Step:
+
+```powershell
+.\.venv\Scripts\python.exe tools\run_small_local_song_flow.py --duration 20 --run-master
+```
+
+Diagnostico ACE-Step verificado:
+
+- La integracion usa `tools/acestep_generate.py` como proceso CLI local que importa `acestep.pipeline_ace_step.ACEStepPipeline`; no usa servicio HTTP.
+- Cada corrida guarda `ace_step_diagnostics.json` con prompt completo, letra completa, idioma detectado, secciones, parametros de inferencia, modelo/checkpoint, tipo de salida, recursos RAM/SWAP/CPU/VRAM y error si ocurre.
+- El wrapper agrega `data/provider-cache/python` al `sys.path` para que funcione desde el backend y manualmente.
+- En prueba controlada con `[es]`, ACE-Step conserva acentos y Unicode, pero su tokenizador puede clasificar lineas espanolas de forma mixta (`en`/`es`) y etiquetas como `zh`; revisar `docs/ACE_STEP_DIAGNOSTIC_REPORT.md` antes de ajustar prompts.
+- En Docker Desktop no hubo CUDA/iGPU/NPU visible; por eso la ruta principal se movio a local sin Docker.
+- Gemma ahora trata el set/proyecto activo y Production como el mismo proyecto del usuario: las fases definen la intencion y Production ejecuta tareas/exportables. Para preguntas de estado como "que sigue" o "estoy en un proyecto activo", responde desde SQLite y los checks de la UI, no desde una suposicion libre del LLM.
+- La conversacion inferior usa un layout mas amplio: 60% para respuesta y 40% para escritura. Se retiro la repeticion de nombre/contexto porque esa informacion ya vive en el sidebar.
+- Production se prepara automaticamente para el proyecto activo al cargarlo desde Biblioteca. Si falta el registro interno de ejecucion, muestra `Preparar Production`, pero para el usuario sigue siendo el mismo proyecto: definicion por fases primero, ejecucion/exportables despues.
+- Al preparar Production desde un set activo, el backend materializa `song_spec.json`, `lyrics.md` y `lyrics_approved.json` desde las fases guardadas en SQLite. Tambien repara automaticamente proyectos de Production enlazados (`user_id=set:<id>`) creados antes de este cambio, asi no vuelve a bloquear `Generar letra` o `Generar plan` con "la especificacion debe estar aprobada" cuando el proyecto ya fue definido en el editor.
+- La carga desde Biblioteca rehidrata el proyecto desde SQLite: fases guardadas, formularios del editor, estado visual por fase, datos de Production, exportables, actividad y la ultima fase activa. Si no hay ultima fase, abre la primera fase incompleta.
+- El `ModelOrchestrator` ahora incluye una revision tecnica interna desde snapshot SQLite antes de que Gemma responda estado del proyecto. El backend entrega proyecto, set, assets, fases, estado UI y Production al rol tecnico; la validacion devuelve faltantes/advertencias/siguiente accion y Gemma lo comunica al usuario en lenguaje natural.
+- Production respeta el orden de artefactos: no permite ejecutar MIDI, Instrumental, Voz, Mezcla, Mastering o Export antes de que existan los archivos previos requeridos. Si la fase Music Plan esta guardada en SQLite, el backend puede materializar `music_plan.json`; si no, la accion correcta es `Generar plan`.
+- El puente de Production es idempotente: listar proyectos ya no vuelve a crear eventos de preparacion si `song_spec.json`/spec aprobada existen. La actividad de Production tambien colapsa mensajes duplicados historicos para que se vea el estado real sin ruido.
+- La fase actual de Production muestra `Listo para ejecutar` cuando el backend esta en `ready`; solo muestra `En curso` si el estado real del proyecto indica ejecucion o carga activa.
+- Las acciones de Production bloquean doble click mientras ejecutan y muestran `Generando...` de inmediato. SQLite usa `busy_timeout` y WAL en repositorios activos para reducir bloqueos durante generaciones largas.
+- `Generar voz` ahora registra etapas detalladas: prompt vocal preparado, provider seleccionado, si usa ACE-Step o no, recursos, inicio de comando/inferencia, progreso periodico y resultado. La tarjeta de Production muestra el ultimo mensaje tecnico de cada fase con actor y hora.
+- `Masterizar` con ACE-Step marca el proyecto como `MASTERING/running`, registra inicio de proceso local, progreso periodico con tiempo/RAM/SWAP/CPU y fallo si ocurre. Production refresca eventos junto con recursos, muestra hora de inicio y tiempo transcurrido, y el diagnostico ahora muestra `swap libre / total` para detectar configuraciones de 2 GB frente a los 4 GB recomendados.
+- Los timeouts de ACE-Step ahora terminan el grupo completo del proceso local para evitar que `acestep_generate.py` quede huérfano consumiendo CPU/RAM despues de fallar la fase.
+- El timeout local de ACE-Step subio a 14400 segundos y la duracion maxima enviada al provider queda configurable con `SONG_AI_MAX_FULL_SONG_DURATION_SECONDS` para evitar limites ocultos en codigo.
+- Production muestra antes de generar la duracion enviada a ACE-Step, el limite configurado de cancion, el timeout maximo y un estimado de tiempo de Mastering segun el runtime local. Si el estimado supera el timeout o la duracion se recorta por limite, la UI lo advierte para que el usuario pueda quitar secciones o reducir duracion.
+- Si la app local se reinicia mientras una fase esta `running`, el arranque marca esa fase como interrumpida en SQLite. La UI toma el ultimo evento real de cada fase, asi no muestra `En curso` por eventos antiguos cuando ACE-Step ya no esta corriendo.
+- Limpieza post-Docker: se retiraron los archivos `Dockerfile`, `docker-compose*.yml`, `.dockerignore` y el helper de contenedores LLM. El monitor de recursos usa `visible_memory_limit_mb` para describir memoria visible sin terminologia Docker y migra snapshots antiguos de SQLite de forma compatible.
+- Smoke completo local: `tools/run_small_local_song_flow.py` incluye `--fast-full-song-provider` para validar todas las fases y exportables con un provider local rapido, sin instalar dependencias ni modificar `.env`.
+- Steering de runtime documentado: `docs/RUNTIME_DEPLOYMENT_STRATEGY.md` define una guia reutilizable para elegir Docker, nativo o hibrido al inicio de futuros proyectos. Aplicado a Song-AI, confirma `local_hardware` y no reintroduce Docker como ruta operativa.
+- Flujo de informacion por fases documentado e implementado: `docs/PHASE_INFORMATION_FLOW.md` define SQLite como fuente de verdad, archivos como artefactos derivados, estados separados de fase/ejecucion/artefacto, eventos importantes por fase, verificacion por checksum y regeneracion puntual cuando el builder/provider lo permite.
 
 ## Arquitectura
 
@@ -43,10 +144,10 @@ Flujo conceptual:
 Usuario -> Gemma -> Qwen -> Gemma -> Usuario
 ```
 
-Estado verificado en Docker:
+Estado esperado local:
 
-- Gemma corre como provider creativo en `llama-gemma:8080`.
-- Qwen corre como provider tecnico en `llama-qwen:8080`.
+- Gemma puede correr como provider creativo en `localhost:8081`.
+- Qwen puede correr como provider tecnico en `localhost:8082`.
 - El endpoint de Gemma registra un handoff tecnico interno con `provider_handoff` cuando Qwen responde.
 - Qwen usa respuestas cortas y `/no_think` para evitar bloqueos largos por razonamiento interno en CPU.
 - Si Qwen no responde, el handoff queda persistido como fallback local y conserva la causa del error.
@@ -122,16 +223,16 @@ Si `vocals.wav` viene de `procedural_vocal_guide`, se trata como preview tecnico
 
 ## Persistencia
 
-Volumenes Docker:
+Directorios locales:
 
 ```text
-song_ai_data            SQLite, proyectos, letras, MIDI, audio y exports
-song_ai_models          modelos locales: llm, music, voice, stems, huggingface
-song_ai_providers       repos/adaptadores locales
-song_ai_provider_cache  paquetes Python pesados instalados en runtime
+data/                   SQLite, proyectos, letras, MIDI, audio y exports
+data/models             modelos locales: llm, music, voice, stems, huggingface
+data/providers          repos/adaptadores locales
+data/provider-cache     paquetes Python pesados instalados por bootstrap local
 ```
 
-Estructura relevante dentro de `/app/data`:
+Estructura relevante dentro de `data/`:
 
 ```text
 projects/<song_id>/
@@ -159,71 +260,39 @@ SQLite guarda:
 - artefactos,
 - especificacion,
 - ejecuciones/model runs,
-- rutas JSON indexadas.
+- rutas JSON indexadas,
+- datos persistidos de formularios por fase (`project_phase_data`),
+- eventos historicos de fase (`project_phase_events`),
+- metadata verificable de artefactos (`project_artifacts`).
 
-## Docker
+## Flujo De Informacion Por Fases
 
-Levantar la app:
+Song AI funciona como un estudio persistente. El usuario puede diligenciar formularios por fases, guardar avance, cerrar la app y volver al proyecto con los controles hidratados desde SQLite.
 
-```powershell
-docker compose up -d --build
-```
+Reglas principales:
 
-Abrir:
+- SQLite es la fuente de verdad del trabajo activo.
+- Los archivos `json`, `md`, `mid`, `wav`, `mp3`, `flac` y `zip` son artefactos derivados.
+- Guardar una fase solo persiste configuracion; no ejecuta MIDI, audio, ACE-Step ni export.
+- Production concentra la ejecucion pesada y los exportables.
+- Las sugerencias de IA quedan como `DRAFT` con `change_source=AI` o `MIXED`; el usuario debe presionar Guardar para pasar la fase a `COMPLETED`.
+- El backend registra eventos importantes como `PHASE_SAVED`, `AI_SUGGESTED`, `ARTIFACT_GENERATED`, `ARTIFACT_MISSING` y `ARTIFACT_CORRUPTED`.
+- Todo artefacto descargable se verifica contra SQLite antes de descargar.
+- Si un archivo derivado falta o se corrompe, el sistema lo marca y puede regenerarlo cuando existan datos, parametros y provider suficientes.
 
-```text
-http://localhost:8000
-```
+Referencia completa: `docs/PHASE_INFORMATION_FLOW.md`.
 
-Ver logs:
+## Aceleracion Local
 
-```powershell
-docker logs -f song-ai-app
-```
+Hardware verificado en la laptop de desarrollo:
 
-Reiniciar sin perder modelos ni datos:
+- CPU: Intel Core Ultra 5 125U, 12 nucleos / 14 hilos logicos.
+- iGPU: Intel Graphics integrada.
+- NPU: Intel AI Boost.
+- La iGPU y la NPU existen en Windows, pero ACE-Step/PyTorch no las usa automaticamente.
+- Para aprovechar iGPU/NPU hace falta un provider local especifico, por ejemplo DirectML, OpenVINO, Intel Extension for PyTorch/XPU o un wrapper CLI compatible. La arquitectura de providers permite agregarlo sin acoplar ACE-Step al resto del pipeline.
 
-```powershell
-docker compose restart app
-```
-
-Reconstruir conservando volumenes:
-
-```powershell
-docker compose up -d --build
-```
-
-No uses `docker compose down -v` salvo que quieras borrar modelos, cache y datos.
-
-## Aceleracion GPU / iGPU
-
-La aceleracion recomendada para ACE-Step es NVIDIA CUDA. Para intentarlo, usa el override GPU:
-
-```powershell
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
-```
-
-Validar dentro del contenedor:
-
-```powershell
-docker compose exec -T app sh -lc "nvidia-smi || true; ls -la /dev/nvidia* 2>/dev/null || true"
-```
-
-Tambien existe un override experimental para iGPU en hosts Linux que exponen `/dev/dri`:
-
-```powershell
-docker compose -f docker-compose.yml -f docker-compose.igpu.yml up -d --build
-```
-
-Validar:
-
-```powershell
-docker compose exec -T app sh -lc "ls -la /dev/dri 2>/dev/null || true"
-```
-
-Importante: en Docker Desktop sobre Windows, una Intel iGPU puede existir en el sistema, pero normalmente no queda disponible para PyTorch/ACE-Step dentro del contenedor Linux. Si dentro del contenedor no aparecen `/dev/dri`, `/dev/dxg` ni `/dev/nvidia*`, la generacion real solo puede correr por CPU o con una GPU NVIDIA correctamente expuesta.
-
-Nota de rendimiento: ACE-Step en CPU es funcional pero extremadamente lento. En una prueba real dentro de Docker, el modelo cargo correctamente y descargo checkpoints a `/app/models/music/ace-step`, pero 60 segundos con 10 pasos no completo en 3600 segundos. Por eso el comando local usa `{duration_seconds}` y pocos `--oss-steps` para validar flujo en CPU; para calidad final usa GPU y mas pasos.
+Nota de rendimiento: ACE-Step en CPU es funcional pero extremadamente lento. En una prueba real con virtualizacion, 60 segundos con 10 pasos no completo en 3600 segundos. Por eso el comando local usa `{duration_seconds}` y pocos `--oss-steps` para validar flujo en CPU; para calidad final usa un provider acelerado y mas pasos.
 
 Verificacion adicional: una prueba de 5 segundos con 4 `oss_steps` cargo el modelo en 810 segundos y siguio siendo demasiado lenta para uso interactivo por CPU. La app ahora reporta `runtime=cpu_extremely_slow` y escribe `full_song_generation.log` en vivo mientras ACE-Step corre.
 
@@ -238,9 +307,14 @@ Archivo base:
 Full Song local con ACE-Step:
 
 ```text
-SONG_AI_FULL_SONG_COMMAND=python tools/acestep_generate.py --prompt {prompt_path} --lyrics {lyrics_path} --output {output_path} --checkpoint-path /app/models/music/ace-step --duration {duration_seconds} --infer-step 4 --oss-steps 16,96,172,200 --cpu-offload true --overlapped-decode true
+SONG_AI_MODEL_ROOT=data/models
+SONG_AI_PROVIDER_ROOT=data/providers
+SONG_AI_PROVIDER_CACHE=data/provider-cache
+SONG_AI_FULL_SONG_COMMAND=python tools/acestep_generate.py --prompt {prompt_path} --lyrics {lyrics_path} --output {output_path} --checkpoint-path data/models/music/ace-step --duration {duration_seconds} --infer-step 4 --oss-steps 16,96,172,200 --cpu-offload true --overlapped-decode true --torch-threads 14 --torch-interop-threads 4 --diagnostics {diagnostics_path} --output-type full_song_with_vocals
 SONG_AI_INSTALL_ACE_STEP=true
 SONG_AI_ALLOW_CPU_FULL_SONG=true
+SONG_AI_LOCAL_COMMAND_TIMEOUT_SECONDS=14400
+SONG_AI_MAX_FULL_SONG_DURATION_SECONDS=360
 SONG_AI_IGPU_EXPERIMENTAL=false
 LIBVA_DRIVER_NAME=iHD
 ```
@@ -262,8 +336,8 @@ Gemma y Qwen estan preparados para llama.cpp, pero no son obligatorios para que 
 Rutas persistentes:
 
 ```text
-SONG_AI_GEMMA_GGUF_PATH=/app/models/llm/gemma/gemma.gguf
-SONG_AI_QWEN_GGUF_PATH=/app/models/llm/qwen/qwen.gguf
+SONG_AI_GEMMA_GGUF_PATH=data/models/llm/gemma/gemma.gguf
+SONG_AI_QWEN_GGUF_PATH=data/models/llm/qwen/qwen.gguf
 ```
 
 URLs opcionales de descarga:
@@ -276,41 +350,42 @@ SONG_AI_QWEN_GGUF_URL=https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwe
 Endpoints por rol:
 
 ```text
-SONG_AI_LLAMA_CPP_INTERPRETER_BASE_URL=http://llama-gemma:8080
-SONG_AI_LLAMA_CPP_TECHNICAL_BASE_URL=http://llama-qwen:8080
+SONG_AI_LLAMA_CPP_INTERPRETER_BASE_URL=http://localhost:8081
+SONG_AI_LLAMA_CPP_TECHNICAL_BASE_URL=http://localhost:8082
 SONG_AI_LLAMA_CPP_TIMEOUT_SECONDS=240
 SONG_AI_LLAMA_CPP_INTERPRETER_N_PREDICT=160
 SONG_AI_LLAMA_CPP_TECHNICAL_N_PREDICT=96
 ```
 
-Levantar llama.cpp con los GGUF ya descargados:
+Ejemplo para levantar llama.cpp con los GGUF ya descargados:
 
 ```powershell
-docker compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build
+llama-server -m data\models\llm\gemma\gemma.gguf --port 8081 --ctx-size 4096
+llama-server -m data\models\llm\qwen\qwen.gguf --port 8082 --ctx-size 4096
 ```
 
 No hay que activar Gemma/Qwen con una variable adicional: Song AI intenta usarlos automaticamente cuando los servidores llama.cpp estan disponibles. Si no responden o faltan los `.gguf`, conserva guia local.
 
-Si el estado indica que faltan modelos, `Preparar/reiniciar` o `Actualizar dependencias` descargan los GGUF cuando esas URLs estan configuradas. Los botones `Recrear Gemma` y `Recrear Qwen` eliminan el peso existente y lo vuelven a descargar en el volumen Docker.
+Si el estado indica que faltan modelos, `Preparar/reiniciar` o `Actualizar dependencias` descargan los GGUF cuando esas URLs estan configuradas. Los botones `Recrear Gemma` y `Recrear Qwen` eliminan el peso existente y lo vuelven a descargar en `data/models/llm`.
 
 ```text
 POST /api/system/models/gemma/refresh
 POST /api/system/models/qwen/refresh
 ```
 
-Tambien puedes colocar manualmente los archivos en el volumen Docker:
+Tambien puedes colocar manualmente los archivos en:
 
 ```text
-/app/models/llm/gemma/gemma.gguf
-/app/models/llm/qwen/qwen.gguf
+data/models/llm/gemma/gemma.gguf
+data/models/llm/qwen/qwen.gguf
 ```
 
 ## Bootstrap
 
-El bootstrap corre dentro del contenedor y prepara volumenes:
+El bootstrap corre localmente y prepara `data/`:
 
 - crea directorios de modelos,
-- instala dependencias pesadas en `/app/provider-cache/python`,
+- instala dependencias pesadas en `data/provider-cache/python`,
 - instala ACE-Step si esta activado,
 - descarga modelos por URL si se configuran,
 - clona providers si se configuran.
@@ -331,11 +406,11 @@ Actualizar dependencias internas bajo demanda:
 POST /api/system/bootstrap/upgrade
 ```
 
-La politica por defecto evita reinstalar paquetes pesados si ya son importables y hay marcador compatible en el volumen.
+La politica por defecto evita reinstalar paquetes pesados si ya son importables y hay marcador compatible en `data/provider-cache`.
 
 ## ResourceMonitor
 
-Song AI mide recursos dentro del contenedor antes, durante y despues de audio pesado como ACE-Step o providers de voz cantada. Los snapshots se guardan en SQLite en `resource_snapshots` y la UI de Production muestra RAM, CPU, disco, decision y recomendaciones.
+Song AI mide recursos del proceso local antes, durante y despues de audio pesado como ACE-Step o providers de voz cantada. Los snapshots se guardan en SQLite en `resource_snapshots` y la UI de Production muestra RAM, CPU, disco, decision y recomendaciones.
 
 Variables:
 
@@ -347,8 +422,8 @@ SONG_AI_MIN_FREE_DISK_MB_FOR_AUDIO=15000
 SONG_AI_MAX_CPU_PERCENT_BEFORE_AUDIO=85
 SONG_AI_AUDIO_START_DELAY_SECONDS=45
 SONG_AI_RELEASE_LLM_BEFORE_AUDIO=true
-SONG_AI_STOP_LLM_COMMAND=python tools/manage_llm_containers.py stop
-SONG_AI_START_LLM_COMMAND=python tools/manage_llm_containers.py start
+SONG_AI_STOP_LLM_COMMAND=
+SONG_AI_START_LLM_COMMAND=
 ```
 
 Endpoints:
@@ -359,15 +434,15 @@ GET  /api/resources/history
 POST /api/resources/check-audio-readiness
 ```
 
-Antes de ejecutar `SONG_AI_FULL_SONG_COMMAND` o `SONG_AI_SINGING_VOICE_COMMAND`, el backend registra `before_audio`, opcionalmente ejecuta `SONG_AI_STOP_LLM_COMMAND`, espera `SONG_AI_AUDIO_START_DELAY_SECONDS`, registra `after_llm_release` y muestra RAM, CPU, swap, disco y limite de memoria Docker como diagnostico. RAM/CPU/swap son advertencias, no bloqueos preventivos. La generacion solo se detiene por errores reales: dependencia obligatoria faltante, archivo de entrada ausente, ruta/permisos invalidos o error del provider.
+Antes de ejecutar `SONG_AI_FULL_SONG_COMMAND` o `SONG_AI_SINGING_VOICE_COMMAND`, el backend registra `before_audio`, opcionalmente ejecuta `SONG_AI_STOP_LLM_COMMAND`, espera `SONG_AI_AUDIO_START_DELAY_SECONDS`, registra `after_llm_release` y muestra RAM, CPU, swap, disco y memoria visible como diagnostico. RAM/CPU/swap son advertencias, no bloqueos preventivos. La generacion solo se detiene por errores reales: dependencia obligatoria faltante, archivo de entrada ausente, ruta/permisos invalidos o error del provider.
 
-En Docker Compose, la app monta `/var/run/docker.sock` y usa `tools/manage_llm_containers.py` para detener temporalmente `song-ai-llama-gemma` y `song-ai-llama-qwen` antes de ACE-Step. Al terminar, ejecuta `SONG_AI_START_LLM_COMMAND` para dejarlos disponibles de nuevo. Si el socket Docker no esta disponible, el helper lo reporta y la generacion continua.
+En local, `SONG_AI_STOP_LLM_COMMAND` y `SONG_AI_START_LLM_COMMAND` quedan vacios por defecto. Si usas servidores llama.cpp propios, puedes poner scripts locales para detenerlos antes de ACE-Step y restaurarlos al terminar.
 
-Nota de sprint: ACE-Step dentro de Docker necesita `torchcodec`/`pytorchcodec` para guardar WAV con versiones recientes de `torchaudio`. `backend/requirements-local-audio.txt` lo declara y el bootstrap lo valida como dependencia persistente en `/app/provider-cache/python`. Si falta, la app muestra: `Falta pytorchcodec. Instala la dependencia antes de generar con ACE-Step.`
+Nota de sprint: ACE-Step local necesita `torchcodec` para guardar WAV con versiones recientes de `torchaudio`. En Windows, `torchcodec` necesita ffmpeg full/shared en PATH para cargar sus DLL; el paquete `Gyan.FFmpeg` estatico no basta, usa `Gyan.FFmpeg.Shared`. La app prioriza `data/provider-cache/python`, donde ACE-Step, Torch y TorchCodec deben quedar instalados como stack compatible.
 
 UX ResourceMonitor: Production incluye refresco manual, revision explicita de recursos, auto-actualizacion cada 10 segundos mientras la vista esta activa, timestamp de ultima lectura e historial compacto con RAM, swap y CPU.
 
-UX Infraestructura local: Production muestra un resumen limpio con modelos de texto, audio local, almacenamiento Docker y preparacion. Los componentes tecnicos y acciones de recreacion quedan en modo avanzado.
+UX Infraestructura local: Production muestra un resumen limpio con modelos de texto, audio local, almacenamiento local y preparacion. Los componentes tecnicos y acciones de recreacion quedan en modo avanzado.
 
 UX Production: la vista principal se ordena como Proyecto activo -> Orden logico -> Exportables. Recursos e infraestructura quedan como diagnosticos colapsables para no distraer del flujo de generacion.
 
@@ -391,6 +466,16 @@ sudo chmod 600 /swapfile
 sudo mkswap /swapfile
 sudo swapon /swapfile
 ```
+
+Si decides usar WSL2 para pruebas locales, la swap se define fuera del repo en `C:\Users\<usuario>\.wslconfig`:
+
+```ini
+[wsl2]
+memory=8GB
+swap=4GB
+```
+
+Despues de cambiarlo hay que ejecutar `wsl --shutdown` y volver a abrir la terminal.
 
 ## Como Generar Una Cancion
 
@@ -493,18 +578,18 @@ cd frontend
 npm.cmd run build
 ```
 
-Docker:
+Estado local:
 
 ```powershell
-docker compose up -d --build
-docker compose exec -T app python -c "import sys; sys.path.insert(0, '/app/backend'); from config.settings import Settings; from audio.local_song_pipeline import LocalSongPipeline; s=Settings.load(); print(LocalSongPipeline(s.local_models).status())"
+scripts\run-local.ps1 -Port 8000
+python -c "import sys; sys.path.insert(0, 'backend'); from config.settings import Settings; from audio.local_song_pipeline import LocalSongPipeline; s=Settings.load(); print(LocalSongPipeline(s.local_models).status())"
 ```
 
 ## Limitaciones Actuales
 
-- La voz real depende de que ACE-Step ejecute correctamente en Docker.
+- La voz real depende de que ACE-Step ejecute correctamente en el entorno local.
 - Con CPU, ACE-Step puede tardar mucho.
-- Con GPU, usa un compose GPU cuando el entorno Docker/WSL la exponga correctamente.
+- Con iGPU/NPU, hace falta un provider nativo compatible con Windows, Intel XPU, DirectML u OpenVINO; PyTorch/ACE-Step no usa la NPU automaticamente.
 - Gemma/Qwen reales requieren modelos GGUF y servidores llama.cpp activos.
 - La ruta por stems separados sigue preparada, pero la ruta final recomendada es Full Song.
 

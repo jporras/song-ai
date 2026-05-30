@@ -84,7 +84,7 @@ class ExportBuilder:
 
         if not mp3_generated:
             pending_path.write_text(
-                "MP3 pendiente: instala ffmpeg o usa el contenedor con ffmpeg para convertir final_mix.wav.\n",
+                "MP3 pendiente: instala ffmpeg y vuelve a generar el export para convertir final_mix.wav.\n",
                 encoding="utf-8",
             )
 

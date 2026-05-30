@@ -18,7 +18,7 @@ from builders.template_builder import TemplateBuilder
 from core import creative_options as options
 from core.storage import StorageManager
 from explorers.mock_explorers import MockExplorerSuite
-from models.song_workflow import PHASE_LABELS, PHASE_SEQUENCE
+from models.song_workflow import PHASE_LABELS, PHASE_SEQUENCE, SongPhaseStatus
 from providers.registry import ProviderRegistry
 from config.settings import Settings
 
@@ -83,6 +83,30 @@ class SongService:
 
     def bootstrap(self) -> None:
         self.storage.ensure_project_layout()
+        self._mark_interrupted_professional_runs()
+
+    def _mark_interrupted_professional_runs(self) -> None:
+        for project in self.storage.list_song_projects():
+            status = str(project.get("status", "")).lower()
+            if status not in {SongPhaseStatus.RUNNING.value, SongPhaseStatus.LOADING_MODEL.value}:
+                continue
+            song_id = str(project.get("id", ""))
+            phase = str(project.get("current_phase") or "MASTERING")
+            if not song_id:
+                continue
+            self.storage.create_song_event(
+                song_id=song_id,
+                phase=phase,
+                status=SongPhaseStatus.FAILED.value,
+                progress=100,
+                message=(
+                    "La tarea quedo interrumpida porque el servidor se reinicio o el proceso local "
+                    "termino sin cerrar la fase. Vuelve a ejecutar esta fase para continuar."
+                ),
+                active_model="startup-recovery",
+                payload={"previous_status": status},
+            )
+            self.storage.update_song_project_phase(song_id, phase, SongPhaseStatus.FAILED.value)
 
     def options(self) -> dict[str, object]:
         return {
@@ -196,6 +220,15 @@ class SongService:
 
     def professional_artifact_download_file(self, song_id: str, artifact_type: str) -> tuple[Path, str, str]:
         return self.professional_songs.artifact_download_file(song_id, artifact_type)
+
+    def list_professional_artifacts(self, song_id: str) -> dict[str, object]:
+        return self.professional_songs.list_artifacts(song_id)
+
+    def verify_professional_artifact(self, song_id: str, artifact_type: str) -> dict[str, object]:
+        return self.professional_songs.verify_artifact(song_id, artifact_type)
+
+    def regenerate_professional_artifact(self, song_id: str, artifact_type: str) -> dict[str, object]:
+        return self.professional_songs.regenerate_artifact(song_id, artifact_type)
 
     def create_instrumental(self, payload: dict[str, object]) -> dict[str, str]:
         path = self.explorers.instrumentals.create_from_intent(
@@ -314,6 +347,10 @@ class SongService:
         instrumental = self.storage.get_asset_draft_detail(str(song_set["instrumental_id"]))
         melody = self.storage.get_asset_draft_detail(str(song_set["melody_id"]))
         lyrics = self.storage.get_asset_draft_detail(str(song_set["lyrics_id"]))
+        phase_data = self.storage.list_project_phase_data(set_id)
+        if "music_plan" in phase_data and "music-plan" not in phase_data:
+            phase_data["music-plan"] = dict(phase_data["music_plan"], phase="music-plan")
+        phases = self._hydrate_project_phases(phase_data)
         return {
             "project": {
                 "project_id": song_set["set_id"],
@@ -331,7 +368,10 @@ class SongService:
             "samples": self.storage.list_samples_for_set(set_id),
             "songs": self.storage.list_songs_for_set(set_id),
             "events": self.storage.list_project_events(str(song_set["project_name"])),
-            "phase_data": self.storage.list_project_phase_data(set_id),
+            "phase_events": self.storage.list_project_phase_events(set_id),
+            "phases": phases,
+            "phase_data": phase_data,
+            "ui_state": self.storage.get_project_ui_state(set_id),
             "source_of_truth": "sqlite",
             "snapshot_files": {
                 "set_json": song_set.get("json_path", ""),
@@ -340,6 +380,20 @@ class SongService:
                 "lyrics_intent": lyrics.get("intent", {}),
             },
         }
+
+    def _hydrate_project_phases(self, phase_data: dict[str, object]) -> dict[str, object]:
+        phases: dict[str, object] = {}
+        for phase in ("intent", "lyrics", "music-plan", "midi", "instrumental", "voice", "voice-conversion", "mix", "mastering", "export", "production"):
+            data = dict(phase_data.get(phase, {}))
+            phases[phase] = {
+                "phase_status": str(data.get("phase_status", "NOT_CREATED")),
+                "change_source": str(data.get("change_source", "DEFAULT")),
+                "validation_status": str(data.get("validation_status", "unknown")),
+                "data": dict(data.get("data", {})),
+                "updated_at": str(data.get("updated_at", "")),
+                "completed_at": str(data.get("completed_at", "")),
+            }
+        return phases
 
     def update_project_description(self, set_id: str, payload: dict[str, object] | None = None) -> dict[str, object]:
         payload = payload or {}
@@ -351,7 +405,8 @@ class SongService:
 
     def save_project_phase_data(self, set_id: str, phase: str, payload: dict[str, object] | None = None) -> dict[str, object]:
         payload = payload or {}
-        allowed_phases = {"intent", "lyrics", "music-plan", "midi", "instrumental", "voice", "production"}
+        phase = self._canonical_editor_phase(phase)
+        allowed_phases = {"intent", "lyrics", "music-plan", "midi", "instrumental", "voice", "voice-conversion", "mix", "mastering", "export", "production"}
         if phase not in allowed_phases:
             raise ValueError("Fase no soportada.")
         phase_status = {
@@ -361,16 +416,84 @@ class SongService:
             "midi": "midi_saved",
             "instrumental": "style_saved",
             "voice": "voice_saved",
+            "voice-conversion": "voice_conversion_saved",
+            "mix": "mix_saved",
+            "mastering": "mastering_saved",
+            "export": "export_saved",
             "production": "production_saved",
         }[phase]
-        saved = self.storage.save_project_phase_data(set_id, phase, dict(payload.get("data", {})), phase_status)
+        requested_phase_status = str(payload.get("phase_status", "COMPLETED")).upper()
+        if requested_phase_status not in {"INITIALIZED", "DRAFT", "COMPLETED"}:
+            requested_phase_status = "COMPLETED"
+        change_source = str(payload.get("change_source", "USER")).upper()
+        if change_source not in {"DEFAULT", "USER", "AI", "MIXED"}:
+            change_source = "USER"
+        saved = self.storage.save_project_phase_data(
+            set_id,
+            phase,
+            dict(payload.get("data", {})),
+            phase_status,
+            phase_status=requested_phase_status,
+            change_source=change_source,
+            validation_status=str(payload.get("validation_status", "valid")),
+        )
         if saved is None:
             raise ValueError("Set no encontrado.")
         return {"saved": saved, "project": self.get_project(set_id)}
 
+    def initialize_project_phase(self, set_id: str, phase: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+        payload = payload or {}
+        phase = self._canonical_editor_phase(phase)
+        saved = self.storage.initialize_project_phase_data(set_id, phase, dict(payload.get("data", {})))
+        if saved is None:
+            raise ValueError("Set no encontrado.")
+        return {"saved": saved, "project": self.get_project(set_id)}
+
+    def reset_project_phase(self, set_id: str, phase: str) -> dict[str, object]:
+        phase = self._canonical_editor_phase(phase)
+        saved = self.storage.initialize_project_phase_data(set_id, phase, {})
+        if saved is None:
+            raise ValueError("Set no encontrado.")
+        self.storage.create_project_phase_event(
+            project_id=set_id,
+            phase_name=phase,
+            event_type="PHASE_RESET",
+            source="USER",
+            after=saved,
+            message=f"Fase {phase} reiniciada a valores default.",
+        )
+        return {"saved": saved, "project": self.get_project(set_id)}
+
+    def ai_suggest_project_phase(self, set_id: str, phase: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+        payload = payload or {}
+        payload["phase_status"] = "DRAFT"
+        payload["change_source"] = payload.get("change_source", "AI")
+        return self.save_project_phase_data(set_id, phase, payload)
+
+    def _canonical_editor_phase(self, phase: str) -> str:
+        return {
+            "music_plan": "music-plan",
+            "musicPlan": "music-plan",
+            "voice_conversion": "voice-conversion",
+            "voiceConversion": "voice-conversion",
+        }.get(str(phase), str(phase))
+
+    def save_project_active_phase(self, set_id: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+        payload = payload or {}
+        phase = str(payload.get("phase", "")).strip()
+        allowed_phases = {"library", "intent", "lyrics", "music-plan", "midi", "instrumental", "voice", "production"}
+        if phase not in allowed_phases:
+            raise ValueError("Fase activa no soportada.")
+        saved = self.storage.save_project_ui_state(set_id, phase)
+        if saved is None:
+            raise ValueError("Set no encontrado.")
+        return {"ui_state": saved}
+
     def gemma_assistant(self, payload: dict[str, object] | None = None) -> dict[str, object]:
         payload = payload or {}
         set_id = str(payload.get("set_id", "")).strip()
+        song_id = str(payload.get("song_id", "")).strip()
+        active_professional_project = self.storage.get_song_project(song_id) if song_id else None
         project: dict[str, object] | None = None
         if set_id:
             project = self.get_project(set_id)
@@ -379,7 +502,7 @@ class SongService:
             if sets:
                 project = self.get_project(str(sets[0]["set_id"]))
 
-        readiness = self._workflow_readiness(project)
+        readiness = self._workflow_readiness(project, active_professional_project, dict(payload.get("editor_phase_statuses", {})))
         if project is None:
             return {
                 "model": self.settings.local_models.interpreter_model if self.settings else "Gemma 2 2B IT GGUF",
@@ -399,7 +522,47 @@ class SongService:
         assets = dict(project["assets"])
         question = str(payload.get("question", "Que sigue para terminar esta cancion?")).strip()
         prompt = self._build_gemma_prompt(project, payload, readiness)
-        gemma_message = self._run_gemma_or_fallback(prompt, readiness)
+        grounded_status = self._asks_for_grounded_status(question)
+        technical_review = self.model_orchestrator.review_sqlite_project_state(
+            {
+                "phase": "technical_review",
+                "project_id": str(set_data["set_id"]),
+                "project_name": str(set_data["project_name"]),
+                "description": f"Revision tecnica interna para Gemma: {question}",
+                "question": question,
+                "context": self._technical_project_context(project, readiness),
+            }
+        )
+        gemma_message = (
+            self._deterministic_gemma_guidance(readiness, dict(technical_review.get("validation", {})))
+            if grounded_status
+            else self._run_gemma_or_fallback(prompt, readiness)
+        )
+        if grounded_status:
+            return {
+                "model": self.settings.local_models.interpreter_model if self.settings else "Gemma 2 2B IT GGUF",
+                "mode": "sqlite_guidance",
+                "status": "active_project_loaded",
+                "question": question,
+                "project_name": set_data["project_name"],
+                "set_id": set_data["set_id"],
+                "message": gemma_message,
+                "context_used": [
+                    "project_name",
+                    "description",
+                    "saved editor phases",
+                    "professional project status",
+                    "set.json snapshot",
+                ],
+                "recommendations": readiness["recommendations"],
+                "missing_before_final": readiness["missing"],
+                "readiness": readiness,
+                "llama_cpp": self.provider_registry.llama_cpp_status(),
+                "handoff": None,
+                "technical_handoff": technical_review["handoff"],
+                "technical_validation": technical_review["validation"],
+                "technical_handoff_note": "Gemma respondio con base en SQLite y en una revision tecnica interna persistida por el orquestador.",
+            }
         handoff = self.model_orchestrator.run_handoff(
             {
                 "model_role": "assistant",
@@ -413,6 +576,8 @@ class SongService:
                     "instrumental_intent": assets["instrumental"].get("intent", {}),
                     "melody_intent": assets["melody"].get("intent", {}),
                     "lyrics_intent": assets["lyrics"].get("intent", {}),
+                    "saved_editor_phases": readiness.get("saved_editor_phases", {}),
+                    "active_professional_project": readiness.get("professional_project", {}),
                     "set": set_data,
                 },
             }
@@ -428,13 +593,16 @@ class SongService:
                 "question": question,
                 "context": {
                     "missing_before_final": readiness["missing"],
+                    "saved_editor_phases": readiness.get("saved_editor_phases", {}),
+                    "active_professional_project": readiness.get("professional_project", {}),
                     "local_pipeline": self.local_pipeline_status(),
+                    "sqlite_technical_validation": technical_review["validation"],
                 },
             }
         )
         return {
             "model": self.settings.local_models.interpreter_model if self.settings else "Gemma 2 2B IT GGUF",
-            "mode": "llama_cpp" if self.provider_registry.llama_cpp_status().get("available") else "local_guidance",
+            "mode": "sqlite_guidance" if grounded_status else "llama_cpp" if self.provider_registry.llama_cpp_status().get("available") else "local_guidance",
             "status": "active_project_loaded",
             "question": question,
             "project_name": set_data["project_name"],
@@ -447,6 +615,8 @@ class SongService:
                 "vocal/melody intent",
                 "lyrical intent",
                 "selected assets",
+                "saved editor phases",
+                "professional project status",
                 "set.json snapshot",
                 "manifest.json",
                 "intent.json",
@@ -457,6 +627,7 @@ class SongService:
             "llama_cpp": self.provider_registry.llama_cpp_status(),
             "handoff": handoff,
             "technical_handoff": technical_handoff,
+            "technical_validation": technical_review["validation"],
             "technical_handoff_note": "Gemma conversa con el usuario y envio un handoff interno al director tecnico para revisar el pipeline.",
         }
 
@@ -502,7 +673,12 @@ class SongService:
             "handoff": handoff,
         }
 
-    def _workflow_readiness(self, project: dict[str, object] | None) -> dict[str, object]:
+    def _workflow_readiness(
+        self,
+        project: dict[str, object] | None,
+        selected_professional_project: dict[str, object] | None = None,
+        ui_editor_phase_statuses: dict[str, object] | None = None,
+    ) -> dict[str, object]:
         drafts = self.list_drafts()
         counts = {
             "instrumental": len([item for item in drafts if item["asset_type"] == "instrumental"]),
@@ -512,16 +688,33 @@ class SongService:
         sets = self.list_sets()
         samples = list(project["samples"]) if project is not None else []
         songs = list(project["songs"]) if project is not None else []
+        phase_data = dict(project.get("phase_data", {})) if project is not None else {}
+        ui_editor_phase_statuses = ui_editor_phase_statuses or {}
+        saved_editor_phases = {
+            phase: bool(dict(phase_data.get(phase, {})).get("status"))
+            for phase in ("intent", "lyrics", "music-plan", "midi", "instrumental", "voice", "production")
+        }
+        ui_ready_phases = {
+            phase: str(ui_editor_phase_statuses.get(phase, "")).upper() == "READY"
+            for phase in ("intent", "lyrics", "music-plan", "midi", "instrumental", "voice", "production")
+        }
+        required_editor_phases = ("intent", "lyrics", "music-plan", "midi", "instrumental", "voice")
+        editor_ready_for_production = all(saved_editor_phases.get(phase, False) for phase in required_editor_phases)
         professional_projects = self.storage.list_song_projects()
-        active_professional_project = next(
-            (item for item in professional_projects if str(item.get("status")) != "completed"),
-            professional_projects[0] if professional_projects else None,
+        active_professional_project = (
+            selected_professional_project
+            or next(
+                (item for item in professional_projects if str(item.get("status")) != "completed"),
+                professional_projects[0] if professional_projects else None,
+            )
         )
         professional_next = self._professional_next_step(active_professional_project)
         missing: list[str] = []
         if active_professional_project is not None:
             if professional_next["status"] != "completed":
                 missing.append(str(professional_next["missing_label"]))
+        elif editor_ready_for_production:
+            missing.append("Production")
         else:
             if counts["instrumental"] == 0:
                 missing.append("instrumental")
@@ -539,6 +732,11 @@ class SongService:
         ]
         if active_professional_project is not None:
             recommendations.insert(0, str(professional_next["recommendation"]))
+        elif editor_ready_for_production:
+            recommendations.insert(
+                0,
+                "Ya tienes Intent, Lyrics, Music Plan, MIDI, Instrumental y Voice guardados. Ve a Production y ejecuta Enviar intent, Mastering/Full Song y Export sobre el proyecto activo.",
+            )
         else:
             recommendations.insert(1, "Crea o carga un proyecto profesional desde Biblioteca y continua por fases.")
             if "instrumental" in missing:
@@ -553,6 +751,10 @@ class SongService:
             "sets": len(sets),
             "samples": len(samples),
             "songs": len(songs),
+            "saved_editor_phases": saved_editor_phases,
+            "ui_ready_phases": ui_ready_phases,
+            "ui_editor_phase_statuses": ui_editor_phase_statuses,
+            "editor_ready_for_production": editor_ready_for_production,
             "professional_project": active_professional_project,
             "professional_next": professional_next,
             "missing": missing,
@@ -595,6 +797,26 @@ class SongService:
             "recommendation": phase_actions.get(current_phase, f"Continua la fase profesional: {label}."),
         }
 
+    def _technical_project_context(
+        self,
+        project: dict[str, object],
+        readiness: dict[str, object],
+    ) -> dict[str, object]:
+        return {
+            "project": dict(project.get("project", {})),
+            "set": dict(project.get("set", {})),
+            "assets": dict(project.get("assets", {})),
+            "phase_data": dict(project.get("phase_data", {})),
+            "ui_state": dict(project.get("ui_state", {})),
+            "saved_editor_phases": dict(readiness.get("saved_editor_phases", {})),
+            "ui_ready_phases": dict(readiness.get("ui_ready_phases", {})),
+            "ui_editor_phase_statuses": dict(readiness.get("ui_editor_phase_statuses", {})),
+            "active_professional_project": dict(readiness.get("professional_project") or {}),
+            "professional_next": dict(readiness.get("professional_next") or {}),
+            "missing_before_final": list(readiness.get("missing", [])),
+            "local_pipeline": self.local_pipeline_status(),
+        }
+
     def _build_gemma_prompt(
         self,
         project: dict[str, object] | None,
@@ -622,10 +844,85 @@ class SongService:
             f"Melodia intent: {dict(assets['melody']).get('intent', {})}\n"
             f"Letra intent: {dict(assets['lyrics']).get('intent', {})}\n"
             f"Letra editable lyrics.md:\n{lyrics}\n"
+            f"Fases del editor guardadas: {readiness.get('saved_editor_phases', {})}\n"
+            f"Proyecto profesional activo: {readiness.get('professional_project', {})}\n"
             f"Estado del flujo: {readiness}\n"
             "Responde en espanol, breve y accionable. Debes ayudar desde inicio de proyecto hasta MP3 final. "
             "No propongas cambios que rompan la intencion instrumental, vocal o lirica."
         )
+
+    def _asks_for_grounded_status(self, question: str) -> bool:
+        normalized = question.lower()
+        return any(
+            token in normalized
+            for token in (
+                "que sigue",
+                "qué sigue",
+                "siguiente",
+                "terminar",
+                "final",
+                "completa",
+                "proyecto activo",
+                "estoy en",
+                "estado",
+                "falta",
+                "faltan",
+                "production",
+                "seleccionado",
+                "seleccionados",
+                "cargar proyecto",
+            )
+        )
+
+    def _deterministic_gemma_guidance(
+        self,
+        readiness: dict[str, object],
+        technical_validation: dict[str, object] | None = None,
+    ) -> str:
+        technical_validation = technical_validation or {}
+        saved = dict(readiness.get("saved_editor_phases", {}))
+        saved_labels = [
+            label
+            for phase, label in (
+                ("intent", "Intent"),
+                ("lyrics", "Lyrics"),
+                ("music-plan", "Music Plan"),
+                ("midi", "MIDI"),
+                ("instrumental", "Instrumental"),
+                ("voice", "Voice"),
+            )
+            if saved.get(phase)
+        ]
+        prefix = ""
+        if saved_labels:
+            prefix = f"Si: veo guardado {', '.join(saved_labels)}. "
+        instruction = str(technical_validation.get("gemma_instruction") or "").strip()
+        next_action = str(technical_validation.get("next_action") or "").strip()
+        missing_items = [str(item) for item in list(technical_validation.get("missing_items", []))]
+        if instruction:
+            action_text = f" Siguiente paso: {next_action}" if next_action else ""
+            if next_action and next_action not in instruction:
+                return f"{prefix}{instruction}.{action_text}".strip()
+            return f"{prefix}{instruction}".strip()
+        if readiness.get("professional_project"):
+            project = dict(readiness["professional_project"])
+            return (
+                f"{prefix}Tambien hay un proyecto profesional activo: {project.get('title', project.get('id'))}. "
+                f"El siguiente paso real es: {readiness['recommendations'][0]}"
+            )
+        if readiness.get("editor_ready_for_production"):
+            return (
+                f"{prefix}Si: estas en el proyecto activo. Las fases creativas ya estan definidas; ahora Production debe ejecutar "
+                "las tareas sobre este mismo proyecto. Sigue con Enviar intent, luego Mastering/Full Song y Export para que "
+                "ACE-Step intente generar la cancion completa final."
+            )
+        if readiness.get("sets", 0):
+            return (
+                f"{prefix}Si estas en un proyecto activo. Para convertirlo en cancion completa falta resolver "
+                f"{', '.join(str(item) for item in readiness['missing']) or 'Production'}. "
+                f"Siguiente accion: {readiness['recommendations'][0]}"
+            )
+        return f"{prefix}Pendiente: {', '.join(str(item) for item in readiness['missing'])}. Siguiente accion: {readiness['recommendations'][0]}"
 
     def _run_gemma_or_fallback(self, prompt: str, readiness: dict[str, object]) -> str:
         try:
@@ -706,6 +1003,11 @@ class SongService:
             "requirements": status.requirements,
             "mode": "local_only",
             "pro_mode": "disabled",
+            "limits": {
+                "local_command_timeout_seconds": self.settings.local_models.local_command_timeout_seconds if self.settings else 3600,
+                "max_full_song_duration_seconds": self.settings.local_models.max_full_song_duration_seconds if self.settings else 360,
+                "allow_cpu_full_song": self.settings.local_models.allow_cpu_full_song if self.settings else False,
+            },
         }
 
     def system_status(self, bootstrap_status: dict[str, object] | None = None) -> dict[str, object]:
@@ -724,14 +1026,14 @@ class SongService:
                 "id": "ffmpeg",
                 "label": "ffmpeg mezcla/export",
                 "status": "ready" if shutil.which("ffmpeg") else "missing",
-                "detail": shutil.which("ffmpeg") or "No disponible en PATH del contenedor.",
+                "detail": shutil.which("ffmpeg") or "No disponible en PATH local.",
                 "restartable": False,
             },
             {
                 "id": "bootstrap",
-                "label": "Bootstrap Docker",
+                "label": "Bootstrap local",
                 "status": str(bootstrap_status.get("status", "idle")),
-                "detail": str(bootstrap_status.get("message", "Preparacion de modelos/providers en volumenes.")),
+                "detail": str(bootstrap_status.get("message", "Preparacion de modelos/providers en data/.")),
                 "restartable": True,
             },
         ]
@@ -917,7 +1219,7 @@ class SongService:
             if safe_extension == "mp3":
                 pending_path = song_dir / "exports" / "final_mix.mp3.pending.txt"
                 if pending_path.exists():
-                    raise ValueError("El MP3 aun no esta disponible. Genera el export dentro de Docker o instala ffmpeg.")
+                    raise ValueError("El MP3 aun no esta disponible. Instala ffmpeg y vuelve a generar el export.")
             raise ValueError(f"No existe final_mix.{safe_extension}. Genera WAV/MP3 antes de descargar.")
         if not local_final_manifest.exists():
             raise ValueError(

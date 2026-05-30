@@ -236,6 +236,7 @@ createApp({
       activeProject: null,
       professionalProjects: [],
       productionProjectId: "",
+      productionRunningPhase: "",
       exportManifest: { artifacts: [] },
       favoriteProjects: {},
       archived: [],
@@ -257,6 +258,8 @@ createApp({
       resourceAutoRefresh: true,
       resourceLastUpdated: "",
       resourceRefreshTimer: null,
+      uiClockNow: Date.now(),
+      uiClockTimer: null,
       localFinalJob: { status: "idle", message: "Generacion final local no iniciada.", result: {} },
       localFinalPollTimer: null,
       projectPhases: { phases: [] },
@@ -285,13 +288,86 @@ createApp({
       return this.activeProject?.set?.set_id || this.selectedSet?.set_id || "";
     },
     activeProfessionalProject() {
-      return this.professionalProjects.find((project) => project.id === this.productionProjectId) || this.professionalProjects[0] || null;
+      const linkedUserId = this.activeProjectId ? `set:${this.activeProjectId}` : "";
+      return (
+        this.professionalProjects.find((project) => project.id === this.productionProjectId)
+        || this.professionalProjects.find((project) => project.user_id === linkedUserId)
+        || this.professionalProjects[0]
+        || null
+      );
     },
     productionGlobalStatus() {
       if (this.exportManifest?.artifacts?.length) return "Export listo";
       if (this.activeProfessionalProject?.current_phase) return `${this.activeProfessionalProject.current_phase} / ${this.activeProfessionalProject.status}`;
-      if (this.activeProjectId) return "Set cargado, pendiente de proyecto profesional";
+      if (this.activeProjectId) return "Proyecto cargado, Production pendiente";
       return "Sin proyecto activo";
+    },
+    productionTimingEstimate() {
+      const spec = this.activeProfessionalProject?.spec?.json_spec || {};
+      const requestedSeconds = Number(spec.duration_seconds || this.musicPlanDuration || 0) || 0;
+      const limits = this.localPipeline?.limits || {};
+      const maxSeconds = Number(
+        limits.max_full_song_duration_seconds
+        || this.modelStatus?.local?.max_full_song_duration_seconds
+        || requestedSeconds
+        || 0,
+      );
+      const timeoutSeconds = Number(
+        limits.local_command_timeout_seconds
+        || this.modelStatus?.local?.local_command_timeout_seconds
+        || 0,
+      );
+      const clampedSeconds = maxSeconds ? Math.min(requestedSeconds || maxSeconds, maxSeconds) : requestedSeconds;
+      const fullSong = (this.localPipeline?.requirements || []).find((item) => item.role === "full_song") || {};
+      const runtime = String(fullSong.runtime || "").trim();
+      const cpuSlow = runtime.includes("cpu") || runtime.includes("slow") || this.localPipeline?.limits?.allow_cpu_full_song;
+      const gpuReady = runtime.includes("gpu");
+      let minMinutes = 0;
+      let maxMinutes = 0;
+      if (clampedSeconds > 0) {
+        if (gpuReady) {
+          minMinutes = Math.max(3, Math.ceil(clampedSeconds / 4));
+          maxMinutes = Math.max(minMinutes + 2, Math.ceil(clampedSeconds / 1.5));
+        } else if (cpuSlow) {
+          minMinutes = Math.max(45, Math.ceil(clampedSeconds * 1.0));
+          maxMinutes = Math.max(minMinutes + 30, Math.ceil(clampedSeconds * 2.5));
+        } else {
+          minMinutes = Math.max(10, Math.ceil(clampedSeconds / 2));
+          maxMinutes = Math.max(minMinutes + 10, Math.ceil(clampedSeconds * 1.25));
+        }
+      }
+      const maxEstimateSeconds = maxMinutes * 60;
+      return {
+        requestedSeconds,
+        clampedSeconds,
+        maxSeconds,
+        timeoutSeconds,
+        runtime: runtime || "local",
+        estimateLabel: minMinutes ? `${this.formatMinutes(minMinutes)} - ${this.formatMinutes(maxMinutes)}` : "Sin estimacion",
+        songLengthLabel: clampedSeconds ? this.formatDuration(clampedSeconds) : "Sin duracion",
+        requestedLabel: requestedSeconds ? this.formatDuration(requestedSeconds) : "Sin duracion",
+        maxLabel: maxSeconds ? this.formatDuration(maxSeconds) : "Sin limite visible",
+        timeoutLabel: timeoutSeconds ? this.formatDuration(timeoutSeconds) : "Sin timeout visible",
+        clipped: Boolean(requestedSeconds && maxSeconds && requestedSeconds > maxSeconds),
+        exceedsTimeout: Boolean(timeoutSeconds && maxEstimateSeconds > timeoutSeconds),
+        cpuSlow,
+      };
+    },
+    productionActivityLog() {
+      const projectEvents = (this.activeProfessionalProject?.events || []).map((event) => ({
+        id: event.event_id || event.id || `${event.created_at}-${event.phase}`,
+        time: this.formatResourceTime(event.created_at),
+        text: `${event.phase || "Production"}: ${event.message || event.status || ""}`,
+      }));
+      const seen = new Set();
+      return [...projectEvents, ...this.messages]
+        .filter((item) => {
+          const key = String(item.text || "");
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .slice(0, 40);
     },
     inspirationCatalog() {
       return INSPIRATION_CATALOG;
@@ -454,7 +530,19 @@ createApp({
       const currentPhase = this.activeProfessionalProject?.current_phase || "";
       const currentIndex = phaseOrder.indexOf(currentPhase);
       const projectStatus = String(this.activeProfessionalProject?.status || "").toLowerCase();
-      const artifactTypes = new Set((this.exportManifest?.artifacts || []).map((artifact) => artifact.type));
+      const latestEventByPhase = {};
+      const events = [...(this.activeProfessionalProject?.events || [])].sort((a, b) => {
+        const left = Date.parse(a.created_at || "") || 0;
+        const right = Date.parse(b.created_at || "") || 0;
+        return left - right;
+      });
+      for (const event of events) {
+        latestEventByPhase[event.phase] = event;
+      }
+      const artifactTypes = new Set([
+        ...(this.exportManifest?.artifacts || []).map((artifact) => artifact.type),
+        ...(this.activeProfessionalProject?.artifacts || []).map((artifact) => artifact.type),
+      ]);
       const completedByArtifact = {
         MIDI_GENERATION: ["midi"],
         INSTRUMENTAL_GENERATION: ["instrumental_wav"],
@@ -471,24 +559,44 @@ createApp({
         error: { icon: "✕", label: "Error" },
       };
       return this.productionPipelineSteps.map((step, index) => {
+        const latestEvent = latestEventByPhase[step.phase] || {};
+        const latestStatus = String(latestEvent.status || "").toLowerCase();
         const hasArtifact = (completedByArtifact[step.phase] || []).some((type) => artifactTypes.has(type));
         let state = "pending";
+        const isBeforeCurrent = currentIndex > -1 && index < currentIndex;
+        const isCurrent = currentIndex > -1 && index === currentIndex;
         if (!step.requires) {
           state = "disabled";
-        } else if (projectStatus.includes("failed") && currentPhase === step.phase) {
+        } else if (latestStatus === "failed" || (projectStatus.includes("failed") && currentPhase === step.phase)) {
           state = "error";
-        } else if (hasArtifact || projectStatus === "completed" || (currentIndex > -1 && index < currentIndex)) {
+        } else if (hasArtifact || latestStatus === "completed" || latestStatus === "skipped" || projectStatus === "completed" || isBeforeCurrent) {
           state = "complete";
-        } else if (currentPhase === step.phase) {
-          state = projectStatus.includes("running") ? "current" : "complete";
+        } else if (isCurrent) {
+          state = "current";
+        }
+        const localRunning = this.productionRunningPhase === step.phase;
+        const runningEvent = latestStatus === "running" ? latestEvent : null;
+        const closedStatus = ["completed", "failed", "skipped"].includes(latestStatus);
+        const projectClaimsRunning = isCurrent && !closedStatus && (projectStatus.includes("running") || projectStatus.includes("loading"));
+        const isActuallyRunning = Boolean(runningEvent) || localRunning || projectClaimsRunning;
+        if (isActuallyRunning && state !== "complete") {
+          state = "current";
         }
         const copy = statusCopy[state] || statusCopy.pending;
+        const stateLabel = state === "current" && !isActuallyRunning ? "Listo para ejecutar" : copy.label;
+        const canRun = Boolean(step.requires) && ["current", "complete", "error"].includes(state) && !this.productionRunningPhase && !isActuallyRunning;
         return {
           ...step,
           state,
+          canRun,
           stateIcon: copy.icon,
-          stateLabel: copy.label,
-          buttonLabel: state === "complete" ? "Rehacer" : step.action,
+          stateLabel,
+          statusDetail: latestEvent.message || step.summary,
+          statusTime: latestEvent.created_at ? this.formatResourceTime(latestEvent.created_at) : "",
+          startedAt: isActuallyRunning && runningEvent?.created_at ? this.formatResourceTime(runningEvent.created_at) : "",
+          elapsedLabel: isActuallyRunning && runningEvent?.created_at ? this.formatElapsedSince(runningEvent.created_at) : "",
+          activeModel: latestEvent.active_model || "",
+          buttonLabel: localRunning ? "Generando..." : state === "complete" ? "Rehacer" : step.action,
         };
       });
     },
@@ -522,12 +630,13 @@ createApp({
       ];
     },
     productionSpecMessage() {
+      const duration = this.productionTimingEstimate.clampedSeconds || this.musicPlanDuration || 120;
       return [
         this.intent.description,
         `Tipo: ${this.intent.songType}`,
         `Destinatario: ${this.intent.recipient}`,
         `Idioma: ${this.intent.language}`,
-        `Duracion 120 segundos`,
+        `Duracion ${duration} segundos`,
         `Voz ${this.voice.mainVoice || this.intent.vocalType}`,
         `Instrumentos ${this.intent.instruments.join(", ")}`,
         `${this.musicPlan.bpm} bpm en ${this.musicPlan.key}`,
@@ -560,6 +669,23 @@ createApp({
     },
     resourceRecommendations() {
       return this.resourceStatus?.readiness?.recommendations || [];
+    },
+    acceleratorSummary() {
+      const accelerators = this.resourceSnapshot.accelerators || {};
+      const nodes = accelerators.device_nodes || {};
+      const driCount = (nodes.dri || []).length;
+      const dxgCount = (nodes.dxg || []).length;
+      const nvidiaCount = (nodes.nvidia || []).length;
+      const accelCount = (nodes.accel || []).length;
+      if (accelerators.cuda_available) return `CUDA disponible (${nvidiaCount || 1} dispositivo)`;
+      if (driCount || dxgCount) return `iGPU visible (${driCount + dxgCount} dispositivo Linux)`;
+      if (accelCount) return `Acelerador visible (${accelCount} dispositivo)`;
+      return "Sin acelerador visible";
+    },
+    acceleratorDetail() {
+      const accelerators = this.resourceSnapshot.accelerators || {};
+      const cpu = accelerators.cpu_affinity_count || accelerators.visible_cpu_count || 0;
+      return `${cpu || "--"} CPUs visibles. ${accelerators.note || "Sin diagnostico de aceleradores."}`;
     },
     resourceDecisionClass() {
       const decision = String(this.resourceStatus?.readiness?.decision || "");
@@ -611,15 +737,15 @@ createApp({
         },
         {
           id: "storage",
-          label: "Almacenamiento Docker",
+          label: "Almacenamiento local",
           status: storageReady ? "ready" : "missing",
-          detail: storageReady ? "Modelos y cache persistentes en volúmenes Docker." : "Revisa volúmenes de modelos/cache.",
+          detail: storageReady ? "Modelos y cache persistentes en data/." : "Revisa data/models y data/provider-cache.",
         },
         {
           id: "bootstrap",
           label: "Preparación",
           status: bootstrap.status === "running" ? "running" : "ready",
-          detail: bootstrap.detail || "Dependencias y modelos se preparan dentro del contenedor.",
+          detail: bootstrap.detail || "Dependencias y modelos se preparan localmente.",
         },
       ];
     },
@@ -642,9 +768,11 @@ createApp({
     await this.loadOrchestration();
     await this.loadJsonConfigs();
     this.startResourceAutoRefresh();
+    this.startUiClock();
   },
   beforeUnmount() {
     this.stopResourceAutoRefresh();
+    this.stopUiClock();
   },
   methods: {
     addMessage(text) {
@@ -672,6 +800,7 @@ createApp({
       this.activeTab = tab;
       if (push) window.history.pushState({}, "", ROUTE_BY_TAB[tab]);
       if (tab === "production") this.loadResources({ silent: true });
+      this.persistActivePhase(tab);
     },
     requestNavigation(tab) {
       if (tab === this.activeTab) return;
@@ -707,7 +836,9 @@ createApp({
     phaseStatus(phaseId) {
       if (this.dirty && this.dirtyPhase === phaseId) return "DIRTY";
       if (this.outdatedPhases.includes(phaseId)) return "OUTDATED";
-      if (this.savedPhaseData?.[phaseId]?.status) return "READY";
+      const persistedStatus = this.normalizePhaseStatus(this.savedPhaseData?.[phaseId]?.status || "");
+      if (persistedStatus) return persistedStatus;
+      if (this.activeProjectId && phaseId !== "production") return "EMPTY";
       if (phaseId === "intent") return this.activeProjectId || this.intent.description ? "READY" : "EMPTY";
       if (phaseId === "lyrics") return this.lyricSections.length > 0 || this.lyricsEditor.selectedAssetId ? "READY" : "EMPTY";
       if (phaseId === "music-plan") return this.musicPlan.sections.length > 0 && this.musicPlan.progression ? "READY" : "EMPTY";
@@ -718,7 +849,29 @@ createApp({
       return "EMPTY";
     },
     phaseUi(phaseId) {
-      return PHASE_STATUS[this.phaseStatus(phaseId)] || PHASE_STATUS.EMPTY;
+      const status = this.phaseStatus(phaseId);
+      const copy = PHASE_STATUS[status] || PHASE_STATUS.EMPTY;
+      const persistedLabel = this.phaseStatusLabel(this.savedPhaseData?.[phaseId]?.status || "");
+      return { ...copy, label: persistedLabel || copy.label };
+    },
+    normalizePhaseStatus(status) {
+      const value = String(status || "").toLowerCase();
+      if (!value) return "";
+      if (value.includes("error") || value.includes("failed")) return "ERROR";
+      if (value.includes("running") || value.includes("progress") || value.includes("processing")) return "PROCESSING";
+      if (value.includes("pending") || value.includes("pend")) return "EMPTY";
+      if (value.includes("saved") || value.includes("complete") || value.includes("ready") || value.includes("approved") || value.includes("aprob")) return "READY";
+      return "READY";
+    },
+    phaseStatusLabel(status) {
+      const value = String(status || "").toLowerCase();
+      if (!value) return "";
+      if (value.includes("error") || value.includes("failed")) return "Con errores";
+      if (value.includes("running") || value.includes("progress") || value.includes("processing")) return "En progreso";
+      if (value.includes("approved") || value.includes("aprob")) return "Aprobada por el usuario";
+      if (value.includes("pending") || value.includes("pend")) return "Pendiente";
+      if (value.includes("saved") || value.includes("complete") || value.includes("ready")) return "Completada";
+      return status;
     },
     async saveCurrentPhase() {
       if (this.activeTab === "production") {
@@ -780,6 +933,8 @@ createApp({
       this.resourceRefreshTimer = setInterval(() => {
         if (!this.resourceAutoRefresh || this.activeTab !== "production" || document.hidden) return;
         this.loadResources({ silent: true });
+        this.loadProfessionalProjects();
+        if (this.productionProjectId) this.loadProfessionalExport(this.productionProjectId);
       }, 10000);
     },
     stopResourceAutoRefresh() {
@@ -791,8 +946,20 @@ createApp({
       this.resourceAutoRefresh = !this.resourceAutoRefresh;
       if (this.resourceAutoRefresh) {
         this.loadResources({ silent: true });
+        this.loadProfessionalProjects();
         this.startResourceAutoRefresh();
       }
+    },
+    startUiClock() {
+      this.stopUiClock();
+      this.uiClockTimer = setInterval(() => {
+        this.uiClockNow = Date.now();
+      }, 1000);
+    },
+    stopUiClock() {
+      if (!this.uiClockTimer) return;
+      clearInterval(this.uiClockTimer);
+      this.uiClockTimer = null;
     },
     async loadLocalFinalJob() {
       const response = await fetch(apiUrl("/api/local-final-song/status"));
@@ -826,8 +993,13 @@ createApp({
       const response = await fetch(apiUrl("/api/pro/projects"));
       const payload = await this.readApiPayload(response, { projects: [] });
       this.professionalProjects = payload.data.projects || [];
+      if (this.productionProjectId && !this.professionalProjects.some((project) => project.id === this.productionProjectId)) {
+        this.productionProjectId = "";
+      }
       if (!this.productionProjectId && this.professionalProjects.length > 0) {
-        this.productionProjectId = this.professionalProjects[0].id;
+        const linkedUserId = this.activeProjectId ? `set:${this.activeProjectId}` : "";
+        const linkedProject = this.professionalProjects.find((project) => project.user_id === linkedUserId);
+        this.productionProjectId = (linkedProject || this.professionalProjects[0]).id;
         await this.loadProfessionalExport(this.productionProjectId);
       }
     },
@@ -872,7 +1044,64 @@ createApp({
       this.projectEvents = payload.data.events;
       this.addMessage(`Proyecto cargado con datos guardados: ${payload.data.project.project_name}`);
       await this.loadProviders();
-      this.requestNavigation("production");
+      const productionId = await this.ensureProductionProjectForActiveSet();
+      if (productionId) await this.loadProfessionalExport(productionId);
+      const targetPhase = this.phaseToOpenAfterLoad(payload.data);
+      this.activateFromPath(ROUTE_BY_TAB[targetPhase] || ROUTE_BY_TAB.intent, true);
+    },
+    phaseToOpenAfterLoad(projectData) {
+      const savedLast = String(projectData?.ui_state?.last_active_phase || "").trim();
+      if (savedLast && ROUTE_BY_TAB[savedLast]) return savedLast;
+      const phaseData = projectData?.phase_data || {};
+      const firstIncomplete = this.phaseDefinitions.find((phase) => !phaseData?.[phase.id]?.status);
+      return firstIncomplete?.id || "production";
+    },
+    async persistActivePhase(phase = this.activeTab) {
+      if (!this.activeProjectId || !ROUTE_BY_TAB[phase]) return;
+      fetch(apiUrl(`/api/projects/${this.activeProjectId}/ui-state`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phase }),
+      }).catch(() => {});
+    },
+    async ensureProductionProjectForActiveSet() {
+      if (!this.activeProjectId) return "";
+      await this.loadProfessionalProjects();
+      const linkedUserId = `set:${this.activeProjectId}`;
+      const existing = this.professionalProjects.find((project) => project.user_id === linkedUserId);
+      if (existing) {
+        this.productionProjectId = existing.id;
+        return existing.id;
+      }
+      return this.createProfessionalProjectFromActiveSet({ quiet: true });
+    },
+    async createProfessionalProjectFromActiveSet(options = {}) {
+      if (!this.activeProjectId) {
+        this.addMessage("Carga un set desde Biblioteca antes de crear el proyecto profesional.");
+        return;
+      }
+      const response = await fetch(apiUrl("/api/pro/projects"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: this.activeProjectTitle,
+          project_name: this.activeProjectTitle,
+          user_id: `set:${this.activeProjectId}`,
+          source_set_id: this.activeProjectId,
+          description: this.activeProjectDescription,
+        }),
+      });
+      const payload = await this.readApiPayload(response, {});
+      if (!payload.ok) {
+        this.addMessage(payload.detail || "No se pudo crear el proyecto profesional.");
+        return;
+      }
+      this.productionProjectId = payload.data.project?.id || "";
+      await this.loadProfessionalProjects();
+      if (!options.quiet) {
+        this.addMessage("Production preparado para el proyecto activo. Ejecuta 'Enviar intent' para aprobar la especificacion y continuar el cierre completo.");
+      }
+      return this.productionProjectId;
     },
     async createSet() {
       const response = await fetch(apiUrl("/api/sets"), {
@@ -1257,6 +1486,14 @@ createApp({
             sections: { ...this.voice.sections },
           },
         },
+        production: {
+          production: {
+            projectSet: { ...this.projectSet },
+            productionProjectId: this.productionProjectId,
+            exportManifest: this.exportManifest,
+            productionGlobalStatus: this.productionGlobalStatus,
+          },
+        },
       };
       return payloads[phase] || {};
     },
@@ -1278,6 +1515,7 @@ createApp({
       this.activeProject = payload.data.project;
       this.selectedSet = payload.data.project.set;
       this.savedPhaseData = payload.data.project.phase_data || {};
+      this.outdatedPhases = this.outdatedPhases.filter((item) => item !== phase);
       this.dirty = false;
       this.dirtyPhase = "";
       if (!options.quiet) this.addMessage(`${this.phaseLabel(phase)} guardado`);
@@ -1310,6 +1548,10 @@ createApp({
       if (instrumentalData) this.instrumental = { ...this.instrumental, ...instrumentalData, stems: instrumentalData.stems || this.instrumental.stems };
       const voiceData = read("voice").voice;
       if (voiceData) this.voice = { ...this.voice, ...voiceData, layers: voiceData.layers || this.voice.layers, sectionDirection: voiceData.sectionDirection || this.voice.sectionDirection };
+      const productionData = read("production").production;
+      if (productionData?.projectSet) this.projectSet = { ...this.projectSet, ...productionData.projectSet };
+      if (productionData?.productionProjectId) this.productionProjectId = productionData.productionProjectId;
+      if (productionData?.exportManifest) this.exportManifest = productionData.exportManifest;
       this.dirty = false;
       this.dirtyPhase = "";
     },
@@ -1330,31 +1572,56 @@ createApp({
       }
       this.activeProject = payload.data;
       this.selectedSet = payload.data.set;
+      await this.savePhaseData("production", { quiet: true });
       await this.loadSets();
       this.dirty = false;
       this.dirtyPhase = "";
       this.addMessage("Descripcion del proyecto activo guardada.");
     },
     async runProductionStep(step) {
+      if (this.productionRunningPhase) {
+        this.addMessage("Production ya esta ejecutando una accion. Espera a que termine antes de lanzar otra.");
+        return;
+      }
+      if (step.canRun === false) {
+        this.addMessage("Ejecuta primero la fase actual de Production; las fases posteriores se habilitan cuando existan sus artefactos.");
+        return;
+      }
       if (!step.requires) {
-        this.addMessage("Crea o selecciona un proyecto profesional primero.");
+        const preparedId = await this.ensureProductionProjectForActiveSet();
+        if (preparedId) {
+          this.addMessage("Production preparado. Pulsa de nuevo la accion para ejecutarla.");
+        } else {
+          this.addMessage("Selecciona un proyecto desde Biblioteca primero.");
+        }
         return;
       }
-      const response = await fetch(apiUrl(step.url), {
-        method: step.method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(step.phase === "SONG_SPEC_COLLECTION" ? { message: this.productionSpecMessage } : {}),
-      });
-      const payload = await this.readApiPayload(response, {});
-      if (!payload.ok) {
-        this.addMessage(payload.detail || `No se pudo ejecutar ${step.label}.`);
+      this.productionRunningPhase = step.phase;
+      this.addMessage(`${step.label}: ejecutando...`);
+      try {
+        const response = await fetch(apiUrl(step.url), {
+          method: step.method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(step.phase === "SONG_SPEC_COLLECTION" ? { message: this.productionSpecMessage } : {}),
+        });
+        const payload = await this.readApiPayload(response, {});
+        if (!payload.ok) {
+          this.addMessage(payload.detail || `No se pudo ejecutar ${step.label}.`);
+          await this.loadProfessionalProjects();
+          await this.loadResources();
+          return;
+        }
+        await this.loadProfessionalProjects();
         await this.loadResources();
-        return;
+        if (step.requires) await this.loadProfessionalExport(step.requires);
+        this.addMessage(`${step.label}: ${payload.data?.project?.current_phase || "completado"}`);
+      } catch (error) {
+        this.addMessage(`${step.label}: la accion no respondio. Revisa la actividad y vuelve a intentar.`);
+        await this.loadProfessionalProjects();
+        await this.loadResources();
+      } finally {
+        this.productionRunningPhase = "";
       }
-      await this.loadProfessionalProjects();
-      await this.loadResources();
-      if (step.phase === "EXPORT") await this.loadProfessionalExport(step.requires);
-      this.addMessage(`${step.label}: ${payload.data?.project?.current_phase || "completado"}`);
     },
     async refreshSystemStatus() {
       await this.loadProviders();
@@ -1486,6 +1753,9 @@ createApp({
           song_id: this.activeProfessionalProject?.id || "",
           question: this.gemmaAssistant.question,
           active_phase: this.activeTab,
+          active_project_title: this.activeProjectTitle,
+          active_project_description: this.activeProjectDescription,
+          editor_phase_statuses: Object.fromEntries(this.phaseDefinitions.map((phase) => [phase.id, this.phaseStatus(phase.id)])),
         }),
       });
       const payload = await response.json();
@@ -1599,6 +1869,21 @@ createApp({
       if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
       return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     },
+    formatDuration(seconds) {
+      const value = Math.max(0, Math.round(Number(seconds) || 0));
+      const minutes = Math.floor(value / 60);
+      const remainingSeconds = value % 60;
+      if (minutes >= 60) {
+        const hours = Math.floor(minutes / 60);
+        const restMinutes = minutes % 60;
+        return restMinutes ? `${hours}h ${restMinutes}m` : `${hours}h`;
+      }
+      if (minutes > 0) return remainingSeconds ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+      return `${remainingSeconds}s`;
+    },
+    formatMinutes(minutes) {
+      return this.formatDuration(Math.max(0, Math.round(Number(minutes) || 0)) * 60);
+    },
     formatResourceTime(value) {
       if (!value) return "--";
       const parsed = new Date(value);
@@ -1611,6 +1896,16 @@ createApp({
         minute: "2-digit",
         second: "2-digit",
       });
+    },
+    formatElapsedSince(value) {
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return "";
+      const seconds = Math.max(0, Math.floor((this.uiClockNow - parsed.getTime()) / 1000));
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const remainingSeconds = seconds % 60;
+      if (hours > 0) return `${hours}h ${minutes}m ${remainingSeconds}s`;
+      return `${minutes}m ${remainingSeconds}s`;
     },
   },
 }).mount("#app");

@@ -42,15 +42,53 @@ class VocalSynthesisService:
         prompt_path = project_dir / "vocal_prompt.txt"
         log_path = project_dir / "vocal_synthesis.log"
         prompt_path.write_text(self._prompt(lyrics_approved, voice_style), encoding="utf-8")
+        self._event(
+            song_id,
+            10,
+            "Voz: prompt vocal preparado desde lyrics_approved.json, MIDI y direccion vocal.",
+            {
+                "prompt_path": str(prompt_path),
+                "lyrics_path": str(project_dir / "lyrics_approved.json"),
+                "midi_metadata_path": str(project_dir / "midi_metadata.json"),
+                "voice_style": voice_style,
+            },
+        )
 
         if self.command_template:
             mode = "local_command"
             quality_status = "final_candidate"
+            self._event(
+                song_id,
+                18,
+                f"Voz: provider externo configurado ({self._provider_label()}); se ejecutara comando local.",
+                {
+                    "provider": self._provider_label(),
+                    "uses_ace_step": self._uses_ace_step(),
+                    "command_configured": True,
+                },
+            )
             self._run_command(song_id, project_dir, prompt_path, vocals_path, log_path)
             self.resource_monitor.capture(phase="after_audio", persist=True)
         else:
             mode = "procedural_vocal_guide"
             quality_status = "preview_only"
+            self._event(
+                song_id,
+                18,
+                "Voz: SONG_AI_SINGING_VOICE_COMMAND no esta configurado; se generara guia vocal procedural, no ACE-Step.",
+                {
+                    "provider": "local-procedural-guide",
+                    "uses_ace_step": False,
+                    "command_configured": False,
+                    "next_real_voice_option": "Configura SONG_AI_SINGING_VOICE_COMMAND o usa Full Song con SONG_AI_FULL_SONG_COMMAND.",
+                },
+            )
+            self._event(
+                song_id,
+                35,
+                "Voz: renderizando guia vocal local desde melodia MIDI y silabas de la letra.",
+                {"mode": mode},
+            )
             self._render_procedural(lyrics_approved, midi_metadata, vocals_path)
             log_path.write_text(
                 "Voz guia procedural generada desde lyrics_approved.json y midi_metadata.json.\n",
@@ -127,6 +165,12 @@ class VocalSynthesisService:
             instrumental_path=str(project_dir / "instrumental.wav"),
             work_dir=str(project_dir),
         )
+        self._event(
+            song_id,
+            22,
+            f"Voz: preparando recursos antes de ejecutar {self._provider_label()}.",
+            {"provider": self._provider_label(), "uses_ace_step": self._uses_ace_step()},
+        )
         prep = self.resource_monitor.prepare_for_audio(
             phase=SongPhase.VOCAL_SYNTHESIS.value,
             event_callback=lambda message: self.storage.create_song_event(
@@ -140,13 +184,24 @@ class VocalSynthesisService:
             ),
         )
         with log_path.open("w", encoding="utf-8") as log_file:
-            log_file.write(f"$ {command}\n\nRESOURCE_READINESS: {prep['readiness']}\n\n")
+            log_file.write(f"$ {command}\n\n")
+            log_file.write(f"VOICE_PROVIDER: {self._provider_label()}\n")
+            log_file.write(f"USES_ACE_STEP: {self._uses_ace_step()}\n")
+            log_file.write(f"OUTPUT_TYPE: vocals_wav\n")
+            log_file.write(f"RESOURCE_READINESS: {prep['readiness']}\n\n")
             log_file.flush()
             process = None
             return_code = 1
             started_at = time.monotonic()
+            last_progress_event = started_at
             snapshots: list[dict[str, object]] = []
             try:
+                self._event(
+                    song_id,
+                    30,
+                    f"Voz: comando iniciado para generar vocals.wav con {self._provider_label()}.",
+                    {"log_path": str(log_path), "output_path": str(vocals_path)},
+                )
                 process = subprocess.Popen(command, shell=True, stdout=log_file, stderr=subprocess.STDOUT, text=True)
                 while True:
                     return_code = process.poll()
@@ -158,12 +213,35 @@ class VocalSynthesisService:
                         raise ValueError(f"El provider local de voz cantada tardo demasiado. Timeout: {self.timeout_seconds} segundos.")
                     snapshot = self.resource_monitor.capture(phase="audio_generation", persist=True)
                     snapshots.append(snapshot)
+                    elapsed = time.monotonic() - started_at
+                    if time.monotonic() - last_progress_event >= 30:
+                        last_progress_event = time.monotonic()
+                        self._event(
+                            song_id,
+                            55,
+                            (
+                                "Voz: inferencia en progreso. "
+                                f"{elapsed:.0f}s, RAM libre {float(snapshot['ram_available_mb']):.0f} MB, "
+                                f"swap libre {float(snapshot.get('swap_free_mb', 0)):.0f} MB, "
+                                f"CPU {float(snapshot['cpu_percent']):.0f}%."
+                            ),
+                            {
+                                "elapsed_seconds": elapsed,
+                                "ram_available_mb": snapshot["ram_available_mb"],
+                                "swap_free_mb": snapshot.get("swap_free_mb", 0),
+                                "cpu_percent": snapshot["cpu_percent"],
+                                "vram": snapshot.get("vram", []),
+                            },
+                        )
                     log_file.write(
                         "RESOURCE_SAMPLE: "
                         f"ram_available_mb={snapshot['ram_available_mb']} "
                         f"ram_used_percent={snapshot['ram_used_percent']} "
+                        f"ram_total_mb={snapshot['ram_total_mb']} "
+                        f"swap_used_mb={snapshot.get('swap_used_mb', 0)} "
                         f"swap_free_mb={snapshot.get('swap_free_mb', 0)} "
-                        f"cpu_percent={snapshot['cpu_percent']}\n"
+                        f"cpu_percent={snapshot['cpu_percent']} "
+                        f"vram={snapshot.get('vram', [])}\n"
                     )
                     log_file.flush()
             finally:
@@ -182,6 +260,7 @@ class VocalSynthesisService:
                 duration = time.monotonic() - started_at
                 min_ram = min(float(item["ram_available_mb"]) for item in snapshots)
                 min_swap = min(float(item.get("swap_free_mb", 0)) for item in snapshots)
+                peak_swap_used = max(float(item.get("swap_used_mb", 0)) for item in snapshots)
                 avg_cpu = sum(float(item["cpu_percent"]) for item in snapshots) / len(snapshots)
                 self.storage.create_song_event(
                     song_id=song_id,
@@ -190,13 +269,25 @@ class VocalSynthesisService:
                     progress=75,
                     message=f"ResourceMonitor voz: RAM minima {min_ram:.0f} MB, swap libre minimo {min_swap:.0f} MB, CPU promedio {avg_cpu:.0f}%, duracion {duration:.0f}s.",
                     active_model="resource-monitor",
-                    payload={"duration_seconds": duration, "min_ram_available_mb": min_ram, "min_swap_free_mb": min_swap, "avg_cpu_percent": avg_cpu},
+                    payload={
+                        "duration_seconds": duration,
+                        "min_ram_available_mb": min_ram,
+                        "min_swap_free_mb": min_swap,
+                        "peak_swap_used_mb": peak_swap_used,
+                        "avg_cpu_percent": avg_cpu,
+                    },
                 )
         if return_code != 0:
             detail = log_path.read_text(encoding="utf-8")[-4000:].strip()
             raise ValueError(f"El provider local de voz cantada fallo: {detail}")
         if not vocals_path.exists() or vocals_path.stat().st_size == 0:
             raise ValueError("El provider local de voz cantada no genero vocals.wav.")
+        self._event(
+            song_id,
+            90,
+            "Voz: provider termino y vocals.wav fue creado; registrando artefacto.",
+            {"output_path": str(vocals_path), "size_bytes": vocals_path.stat().st_size},
+        )
 
     def _render_procedural(
         self,
@@ -289,3 +380,25 @@ class VocalSynthesisService:
 
     def _clip(self, value: float) -> int:
         return max(-32767, min(32767, int(value)))
+
+    def _provider_label(self) -> str:
+        command = self.command_template.lower()
+        if not command:
+            return "local-procedural-guide"
+        if "acestep_generate.py" in command or "ace-step" in command or "acestep" in command:
+            return "ACE-Step voice command"
+        return "singing-voice-command"
+
+    def _uses_ace_step(self) -> bool:
+        return self._provider_label().startswith("ACE-Step")
+
+    def _event(self, song_id: str, progress: int, message: str, payload: dict[str, object] | None = None) -> None:
+        self.storage.create_song_event(
+            song_id=song_id,
+            phase=SongPhase.VOCAL_SYNTHESIS.value,
+            status=SongPhaseStatus.RUNNING.value,
+            progress=progress,
+            message=message,
+            active_model=self._provider_label(),
+            payload=payload or {},
+        )

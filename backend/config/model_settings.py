@@ -29,6 +29,7 @@ class LocalModelSettings:
     singing_voice_command: str
     voice_conversion_command: str
     local_command_timeout_seconds: int
+    max_full_song_duration_seconds: int
     allow_cpu_full_song: bool
     max_loaded_models: int
 
@@ -46,8 +47,8 @@ class LocalModelSettings:
                 "SONG_AI_LLAMA_CPP_TECHNICAL_BASE_URL",
                 os.getenv("SONG_AI_LLAMA_CPP_BASE_URL", "http://localhost:8080"),
             ),
-            gemma_gguf_path=Path(os.getenv("SONG_AI_GEMMA_GGUF_PATH", "/app/models/llm/gemma/gemma.gguf")),
-            qwen_gguf_path=Path(os.getenv("SONG_AI_QWEN_GGUF_PATH", "/app/models/llm/qwen/qwen.gguf")),
+            gemma_gguf_path=Path(os.getenv("SONG_AI_GEMMA_GGUF_PATH", str(project_root / "data" / "models" / "llm" / "gemma" / "gemma.gguf"))),
+            qwen_gguf_path=Path(os.getenv("SONG_AI_QWEN_GGUF_PATH", str(project_root / "data" / "models" / "llm" / "qwen" / "qwen.gguf"))),
             llama_cpp_timeout_seconds=int(os.getenv("SONG_AI_LLAMA_CPP_TIMEOUT_SECONDS", "240")),
             llama_cpp_n_predict=int(os.getenv("SONG_AI_LLAMA_CPP_N_PREDICT", "512")),
             llama_cpp_interpreter_n_predict=int(
@@ -68,7 +69,8 @@ class LocalModelSettings:
             soundtrack_command=os.getenv("SONG_AI_SOUNDTRACK_COMMAND", ""),
             singing_voice_command=os.getenv("SONG_AI_SINGING_VOICE_COMMAND", ""),
             voice_conversion_command=os.getenv("SONG_AI_VOICE_CONVERSION_COMMAND", ""),
-            local_command_timeout_seconds=int(os.getenv("SONG_AI_LOCAL_COMMAND_TIMEOUT_SECONDS", "3600")),
+            local_command_timeout_seconds=int(os.getenv("SONG_AI_LOCAL_COMMAND_TIMEOUT_SECONDS", "14400")),
+            max_full_song_duration_seconds=int(os.getenv("SONG_AI_MAX_FULL_SONG_DURATION_SECONDS", "360")),
             allow_cpu_full_song=os.getenv("SONG_AI_ALLOW_CPU_FULL_SONG", "false").lower() == "true",
             max_loaded_models=int(os.getenv("SONG_AI_MAX_LOADED_MODELS", "1")),
         )
@@ -100,6 +102,7 @@ class LocalModelSettings:
             "singing_voice_command_configured": bool(self.singing_voice_command.strip()),
             "voice_conversion_command_configured": bool(self.voice_conversion_command.strip()),
             "local_command_timeout_seconds": self.local_command_timeout_seconds,
+            "max_full_song_duration_seconds": self.max_full_song_duration_seconds,
             "allow_cpu_full_song": self.allow_cpu_full_song,
             "max_loaded_models": self.max_loaded_models,
         }
