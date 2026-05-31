@@ -2,7 +2,7 @@
 
 Fecha de revision: 2026-05-23/24, entorno Docker local `song-ai-app`.
 
-ACE-Step esta integrado como proceso CLI local: `ProfessionalFullSongService` ejecuta `SONG_AI_FULL_SONG_COMMAND`, que llama a `tools/acestep_generate.py`; ese wrapper importa `acestep.pipeline_ace_step.ACEStepPipeline`. No hay servicio HTTP/API de ACE-Step.
+ACE-Step esta integrado como proceso CLI local: `ProfessionalFullSongService` ejecuta `SONG_AI_FULL_SONG_COMMAND`, que llama a `tools/acestep_generate.py`; en ACE-Step 1.5 ese wrapper detecta y usa `acestep.acestep_v15_pipeline.AceStepHandler`. No hay servicio HTTP/API de ACE-Step.
 
 La ruta principal genera `final_song.wav` con instrumental y voz integrada durante `MASTERING`. No genera `vocals.wav` separado salvo que se configure un provider por stems en `SONG_AI_SINGING_VOICE_COMMAND`.
 
@@ -12,7 +12,7 @@ La ruta principal genera `final_song.wav` con instrumental y voz integrada duran
 2. `ProfessionalSongService.master_song()` usa `ProfessionalFullSongService` si `SONG_AI_FULL_SONG_COMMAND` esta configurado.
 3. Se escriben `full_song_prompt.txt` y se reutiliza `lyrics.md`.
 4. El comando local recibe `{prompt_path}`, `{lyrics_path}`, `{output_path}`, `{duration_seconds}` y `{diagnostics_path}`.
-5. `tools/acestep_generate.py` lee prompt/letra en UTF-8, carga `ACEStepPipeline` y llama `pipeline(..., task="text2music", lyrics=<lyrics>, save_path=<final_song.wav>)`.
+5. `tools/acestep_generate.py` lee prompt/letra en UTF-8, inicializa `AceStepHandler` y llama `generate_music(..., task_type="text2music", lyrics=<lyrics>)`; luego guarda el tensor de audio como WAV.
 6. Si el WAV existe, la app exporta MP3/FLAC y registra artefactos.
 
 ## Prueba controlada
@@ -92,7 +92,7 @@ ACE-Step cargo el modelo en 16-18 segundos desde cache, pero una prueba minima d
 ## Diagnostico
 
 - Integracion: correcta como libreria Python invocada por CLI.
-- Configuracion: habia un bug en el wrapper cuando se ejecutaba manualmente; no agregaba `/app/provider-cache/python` a `sys.path`. Corregido.
+- Configuracion: el wrapper ya no depende de `/app/provider-cache/python`; en Windows nativo carga ACE-Step, PyTorch XPU y dependencias desde el `.venv` activo.
 - Espanol: la entrada se preserva, pero ACE-Step tokeniza espanol corto de forma inconsistente.
 - Memoria: con LLMs cargados, ACE-Step entra con muy poca RAM libre y mucho swap usado.
 - GPU: no hay aceleracion disponible; CPU es el bloqueo principal.
@@ -100,7 +100,7 @@ ACE-Step cargo el modelo en 16-18 segundos desde cache, pero una prueba minima d
 
 ## Cambios aplicados
 
-- `tools/acestep_generate.py`: diagnostico JSON, recursos, parametros, idioma, secciones, `task="text2music"` explicito y carga autonoma del provider cache.
+- `tools/acestep_generate.py`: diagnostico JSON, recursos, parametros, idioma, secciones, `task_type="text2music"` explicito y deteccion de API ACE-Step 1.5 mediante `AceStepHandler`.
 - `backend/application/professional_full_song_service.py`: log de prompt/letra/modelo/duracion/tipo de salida y placeholder `{diagnostics_path}`.
 - `backend/audio/resource_monitor.py`: SWAP usada y VRAM.
 - `backend/adapters/sqlite/song_workflow_repository.py`: columnas `swap_used_mb` y `vram_json`.

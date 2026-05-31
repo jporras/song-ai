@@ -56,18 +56,20 @@ $checks.ffmpeg = [ordered]@{
 
 if (Test-Path $Python) {
     $env:PYTHONPATH = Join-Path $Root "backend"
-    $moduleCode = "import importlib.util,json,sys; from pathlib import Path; root=Path.cwd(); provider_python=root/'data'/'provider-cache'/'python'; sys.path.insert(0,str(provider_python)) if provider_python.exists() else None; mods=['fastapi','uvicorn','psutil','torch','torchaudio','torchcodec','acestep']; print(json.dumps({name: importlib.util.find_spec(name) is not None for name in mods}))"
+    $moduleCode = "import importlib.util,json; mods=['fastapi','uvicorn','psutil','torch','torchaudio','torchcodec','soundfile','intel_extension_for_pytorch','acestep']; print(json.dumps({name: importlib.util.find_spec(name) is not None for name in mods}))"
     $moduleJson = & $Python -c $moduleCode
     $modules = $moduleJson | ConvertFrom-Json
     foreach ($name in $modules.PSObject.Properties.Name) {
         $checks["python:$name"] = [ordered]@{
             ok = [bool]$modules.$name
-            detail = if ($modules.$name) { "importable" } else { "no importable en .venv ni data/provider-cache/python" }
+            detail = if ($modules.$name) { "importable" } else { "no importable en .venv" }
         }
     }
     $pipelineCode = "import json,sys; sys.path.insert(0,'backend'); from application.song_service import SongService; from config.settings import Settings; from core.storage import StorageManager; s=Settings.load(); service=SongService(StorageManager(s.data_dir), s); print(json.dumps(service.local_pipeline_status(), ensure_ascii=False))"
     $pipelineJson = & $Python -c $pipelineCode
     $checks.local_pipeline = $pipelineJson | ConvertFrom-Json
+    $xpuJson = & $Python tools\check_xpu_stack.py --json
+    $checks.intel_xpu = ($xpuJson | ConvertFrom-Json).accelerators
 }
 
 if ($Json) {
@@ -90,5 +92,19 @@ if ($checks.local_pipeline) {
     Write-Host ("missing: {0}" -f (($checks.local_pipeline.missing | ForEach-Object { $_ }) -join ", "))
     foreach ($requirement in $checks.local_pipeline.requirements) {
         Write-Host ("- {0}: {1} - {2}" -f $requirement.role, $requirement.configured, $requirement.detail)
+        if ($requirement.role -eq "full_song" -and $requirement.accelerator) {
+            Write-Host ("  device: {0} / xpu={1} / cuda={2} / {3}" -f $requirement.device, $requirement.accelerator.xpu_available, $requirement.accelerator.cuda_available, $requirement.accelerator.fallback_reason)
+        }
+    }
+}
+
+if ($checks.intel_xpu) {
+    Write-Host ""
+    Write-Host "Intel XPU:"
+    Write-Host ("torch: {0} ({1})" -f $checks.intel_xpu.torch_importable, $checks.intel_xpu.torch_version)
+    Write-Host ("torch.xpu: api={0}, disponible={1}, dispositivos={2}, nombre={3}" -f $checks.intel_xpu.xpu_api_available, $checks.intel_xpu.xpu_available, $checks.intel_xpu.xpu_device_count, $checks.intel_xpu.xpu_device_name)
+    Write-Host ("backend recomendado: {0}" -f $checks.intel_xpu.recommended_backend)
+    if ($checks.intel_xpu.fallback_reason) {
+        Write-Host ("fallback: {0}" -f $checks.intel_xpu.fallback_reason)
     }
 }

@@ -11,7 +11,7 @@ if (!(Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
 }
 
-New-Item -ItemType Directory -Force -Path data, data\models, data\providers, data\provider-cache | Out-Null
+New-Item -ItemType Directory -Force -Path data, data\models, data\providers | Out-Null
 
 if (!(Test-Path ".venv")) {
     py -3.11 -m venv .venv

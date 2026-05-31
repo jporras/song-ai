@@ -6,9 +6,10 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import sys
 
+from audio.ace_step_profiles import AceStepProfile, apply_ace_step_profile_env, resolve_ace_step_profile
 from audio.mock_song_renderer import MockSongRenderContext
+from audio.accelerator_detection import torch_accelerator_snapshot
 from audio.resource_monitor import ResourceMonitor
 from config.model_settings import LocalModelSettings
 
@@ -38,6 +39,8 @@ class LocalSongPipeline:
                 "detail": self._full_song_detail(full_song_configured, full_song_available),
                 "path": "preferred",
                 "runtime": self._full_song_runtime_status(full_song_configured and full_song_available),
+                "device": self._recommended_device(),
+                "accelerator": self._accelerator_summary(),
             },
             {
                 "role": "soundtrack",
@@ -75,7 +78,12 @@ class LocalSongPipeline:
         missing = self._missing(requirements, full_song_ready, stems_ready)
         return LocalPipelineStatus(ready=full_song_ready or stems_ready, missing=missing, requirements=requirements)
 
-    def generate(self, context: MockSongRenderContext, song_dir: Path) -> dict[str, object]:
+    def generate(
+        self,
+        context: MockSongRenderContext,
+        song_dir: Path,
+        generation_profile: str | None = None,
+    ) -> dict[str, object]:
         status = self.status()
         if not status.ready:
             raise ValueError(
@@ -103,6 +111,7 @@ class LocalSongPipeline:
         lyrics_path.write_text(context.lyrics_markdown.rstrip() + "\n", encoding="utf-8")
 
         if self.settings.full_song_command.strip() and self._full_song_command_available():
+            profile = resolve_ace_step_profile(generation_profile)
             self._prepare_audio_resources("full_song")
             try:
                 self._run_template(
@@ -114,6 +123,7 @@ class LocalSongPipeline:
                         "work_dir": work_dir,
                         "log_path": command_log_path,
                     },
+                    profile,
                 )
             finally:
                 self._restore_text_models()
@@ -126,6 +136,9 @@ class LocalSongPipeline:
                 "stems": {},
                 "prompt": str(prompt_path),
                 "command_log": str(command_log_path),
+                "ace_step_profile": profile.name,
+                "ace_step_model_type": profile.model_type,
+                "ace_step_model_repo": profile.model_repo,
                 "note": "Cancion final generada con un comando local completo; no usa modo pro.",
             }
 
@@ -196,8 +209,20 @@ class LocalSongPipeline:
             "note": "Cancion final generada con herramientas locales configuradas; no usa modo pro.",
         }
 
-    def _run_template(self, template: str, values: dict[str, Path]) -> None:
-        command = template.format(**{key: str(value) for key, value in values.items()})
+    def _run_template(self, template: str, values: dict[str, Path], profile: AceStepProfile | None = None) -> None:
+        format_values: dict[str, object] = {key: str(value) for key, value in values.items()}
+        if profile is not None:
+            format_values.update(profile.format_values())
+        try:
+            command = template.format(**format_values)
+        except KeyError as error:
+            missing = str(error).strip("'")
+            raise ValueError(
+                f"Falta valor para el token {{{missing}}} en el comando local de audio. "
+                f"Tokens disponibles: {', '.join(sorted(format_values))}."
+            ) from error
+        except (IndexError, ValueError) as error:
+            raise ValueError(f"El comando local de audio tiene formato invalido: {error}") from error
         log_path = values.get("log_path")
         if log_path is not None:
             Path(log_path).write_text(f"$ {command}\n", encoding="utf-8")
@@ -207,7 +232,7 @@ class LocalSongPipeline:
                 shell=True,
                 capture_output=True,
                 text=True,
-                env=self._command_env(),
+                env=self._command_env(profile),
                 timeout=self.settings.local_command_timeout_seconds,
             )
         except subprocess.TimeoutExpired as error:
@@ -248,24 +273,26 @@ class LocalSongPipeline:
         if "acestep_generate.py" in command:
             if self._full_song_available_cache is True:
                 return self._full_song_available_cache
-            search_paths = self._provider_search_paths()
-            if importlib.machinery.PathFinder.find_spec("acestep", search_paths) is None:
+            if importlib.machinery.PathFinder.find_spec("acestep") is None:
                 self._full_song_unavailable_reason = (
-                    "ACE-Step no esta importable en .venv ni en data/provider-cache/python. "
+                    "ACE-Step no esta importable en .venv. "
                     "Ejecuta scripts\\install-local-prereqs.ps1."
                 )
                 self._full_song_available_cache = False
                 return False
-            if importlib.machinery.PathFinder.find_spec("torchcodec", search_paths) is None:
-                self._full_song_unavailable_reason = "Falta torchcodec. Ejecuta scripts\\install-local-prereqs.ps1."
+            torchcodec_ready = importlib.machinery.PathFinder.find_spec("torchcodec") is not None
+            soundfile_ready = importlib.machinery.PathFinder.find_spec("soundfile") is not None
+            if not torchcodec_ready and not soundfile_ready:
+                self._full_song_unavailable_reason = (
+                    "Falta torchcodec o soundfile para audio I/O. "
+                    "En Intel XPU ACE-Step usa soundfile como fallback; ejecuta scripts\\install-intel-xpu-prereqs.ps1 "
+                    "o scripts\\install-local-prereqs.ps1."
+                )
                 self._full_song_available_cache = False
                 return False
             self._full_song_available_cache = True
             return bool(self._full_song_available_cache)
         return True
-
-    def _provider_search_paths(self) -> list[str]:
-        return [self._provider_python_path(), *sys.path]
 
     def _full_song_detail(self, configured: bool, available: bool) -> str:
         if not configured:
@@ -274,16 +301,22 @@ class LocalSongPipeline:
             if self._full_song_unavailable_reason:
                 return self._full_song_unavailable_reason
             return "ACE-Step esta configurado pero no instalado/importable. Ejecuta Preparar/reiniciar bootstrap o activa SONG_AI_INSTALL_ACE_STEP=true."
-        if self.settings.allow_cpu_full_song and not self._cuda_available():
+        if self._xpu_available():
+            return "ACE-Step esta importable y Song-AI intentara Intel XPU automaticamente para acelerar la iGPU."
+        if self._cuda_available():
+            return "ACE-Step esta importable y hay CUDA disponible."
+        if self.settings.allow_cpu_full_song:
             return (
                 "ACE-Step esta importable y puede ejecutarse por CPU, pero es extremadamente lento. "
-                "Usa GPU CUDA para calidad final o duraciones largas."
+                "Instala PyTorch XPU/driver Intel para usar la iGPU o usa GPU compatible para duraciones largas."
             )
         return "Comando local completo disponible para generar final_mix.wav."
 
     def _full_song_runtime_status(self, available: bool) -> str:
         if not available:
             return "unavailable"
+        if self._xpu_available():
+            return "xpu_ready"
         if self._cuda_available():
             return "gpu_ready"
         if self.settings.allow_cpu_full_song:
@@ -291,18 +324,37 @@ class LocalSongPipeline:
         return "gpu_required"
 
     def _cuda_available(self) -> bool:
-        return Path("/dev/nvidia0").exists() or Path("/dev/nvidiactl").exists()
+        snapshot = self._torch_accelerator_snapshot()
+        return bool(snapshot.get("cuda_available")) or Path("/dev/nvidia0").exists() or Path("/dev/nvidiactl").exists()
 
-    def _command_env(self) -> dict[str, str]:
+    def _xpu_available(self) -> bool:
+        return bool(self._torch_accelerator_snapshot().get("xpu_available"))
+
+    def _recommended_device(self) -> str:
+        snapshot = self._torch_accelerator_snapshot()
+        return str(snapshot.get("recommended_backend") or "cpu")
+
+    def _accelerator_summary(self) -> dict[str, object]:
+        snapshot = self._torch_accelerator_snapshot()
+        return {
+            "recommended_backend": snapshot.get("recommended_backend", "cpu"),
+            "xpu_available": snapshot.get("xpu_available", False),
+            "xpu_device_name": snapshot.get("xpu_device_name", ""),
+            "cuda_available": snapshot.get("cuda_available", False),
+            "cuda_device_name": snapshot.get("cuda_device_name", ""),
+            "fallback_reason": snapshot.get("fallback_reason", ""),
+            "soundfile_importable": snapshot.get("soundfile_importable", False),
+            "torchcodec_importable": snapshot.get("torchcodec_importable", False),
+        }
+
+    def _torch_accelerator_snapshot(self) -> dict[str, object]:
+        return torch_accelerator_snapshot(run_tensor_probe=False)
+
+    def _command_env(self, profile: AceStepProfile | None = None) -> dict[str, str]:
         env = os.environ.copy()
-        provider_path = self._provider_python_path()
-        existing_pythonpath = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = provider_path + (os.pathsep + existing_pythonpath if existing_pythonpath else "")
+        if profile is not None:
+            apply_ace_step_profile_env(env, profile)
         return env
-
-    def _provider_python_path(self) -> str:
-        provider_cache = os.getenv("SONG_AI_PROVIDER_CACHE", str(Path.cwd() / "data" / "provider-cache"))
-        return str(Path(provider_cache) / "python")
 
     def _assert_file(self, path: Path, message: str) -> None:
         if not path.exists() or path.stat().st_size == 0:

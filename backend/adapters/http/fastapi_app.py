@@ -3,7 +3,7 @@ import os
 from threading import Lock, Thread
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -401,8 +401,10 @@ def get_professional_mix(song_id: str) -> dict[str, Any]:
 
 
 @app.post("/api/pro/projects/{song_id}/master")
-def master_professional_song(song_id: str) -> dict[str, Any]:
-    return run_action(lambda: service.master_professional_song(song_id))
+def master_professional_song(song_id: str, payload: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+    body = payload or {}
+    profile = body.get("generation_profile") or body.get("audio_profile") or body.get("model_profile")
+    return run_action(lambda: service.master_professional_song(song_id, str(profile) if profile else None))
 
 
 @app.get("/api/pro/projects/{song_id}/master")

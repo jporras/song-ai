@@ -79,7 +79,7 @@ def main() -> int:
 
     settings = Settings.load()
     if args.fast_full_song_provider:
-        source_wav = PROJECT_ROOT / "data" / "provider-cache" / "smoke" / "fast_full_song_source.wav"
+        source_wav = PROJECT_ROOT / "data" / "diagnostics" / "smoke" / "fast_full_song_source.wav"
         write_fast_full_song_source(source_wav, args.duration)
         settings = replace(
             settings,

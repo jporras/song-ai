@@ -9,7 +9,7 @@ El objetivo actual es generar canciones locales con herramientas gratuitas. El m
 La ruta principal es **local-first con Full Song / ACE-Step**:
 
 - ACE-Step genera una cancion completa con instrumental y voz cantada integrada.
-- La fase de Mastering del pipeline profesional puede usar `SONG_AI_FULL_SONG_COMMAND`.
+- La fase de Mastering del pipeline profesional puede usar `SONG_AI_FULL_SONG_COMMAND` con tokens dinamicos para perfiles ACE-Step Turbo/Base.
 - Si Full Song esta listo, `soundtrack` y `singing_voice` separados son opcionales.
 - Si el sistema cae en `procedural_vocal_guide`, la app bloquea la descarga como final.
 
@@ -17,13 +17,15 @@ Estado esperado local cuando ACE-Step esta importable:
 
 ```text
 full_song: ready
-runtime: gpu_ready | cpu_extremely_slow
+runtime: xpu_ready | gpu_ready | cpu_extremely_slow
 soundtrack: optional
 singing_voice: optional
 mix_and_export: ready
 ```
 
 Importante: Song AI ya esta preparado para generar voz cantada real por ACE-Step, pero la calidad final depende de que ACE-Step pueda ejecutar realmente en el entorno local. Con aceleracion GPU compatible es lo recomendado; por CPU puede tardar mucho.
+
+En Windows con Intel Core Ultra, Song AI intenta `Intel XPU` automaticamente cuando `torch.xpu.is_available()` es verdadero. Si XPU no esta disponible, queda registrado el motivo de fallback en `ace_step_diagnostics.json` y la UI muestra el dispositivo activo.
 
 ## Por Que Sin Docker
 
@@ -50,6 +52,21 @@ Verificar prerequisitos:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\check-local-prereqs.ps1
+```
+
+Verificar Intel XPU:
+
+```powershell
+.\.venv\Scripts\python.exe tools\check_xpu_stack.py --probe-tensor
+```
+
+El entorno recomendado para Windows/Intel XPU queda fijado en `backend/requirements.txt` y en `backend/requirements-intel-xpu.txt` con `torch==2.9.1+xpu`, `torchvision==0.24.1+xpu`, `torchaudio==2.9.1+xpu` y `transformers==4.53.1`. Mantener esas librerias alineadas evita errores como `torchvision::nms` inexistente, `_torchaudio.pyd` incompatible o imports faltantes como `Dinov2WithRegistersConfig`.
+
+Preparar o reparar dependencias Intel XPU en `.venv`:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\install-intel-xpu-prereqs.ps1 -DryRun
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\install-intel-xpu-prereqs.ps1
 ```
 
 Instalar prerequisitos locales, incluyendo ffmpeg con `winget` y dependencias de audio:
@@ -100,9 +117,16 @@ Cuando `check-local-prereqs.ps1` diga `ready: True`, ejecutar tambien Mastering 
 
 Diagnostico ACE-Step verificado:
 
-- La integracion usa `tools/acestep_generate.py` como proceso CLI local que importa `acestep.pipeline_ace_step.ACEStepPipeline`; no usa servicio HTTP.
+- La integracion usa `tools/acestep_generate.py` como proceso CLI local que detecta ACE-Step 1.5 y usa `acestep.acestep_v15_pipeline.AceStepHandler`; no usa servicio HTTP.
 - Cada corrida guarda `ace_step_diagnostics.json` con prompt completo, letra completa, idioma detectado, secciones, parametros de inferencia, modelo/checkpoint, tipo de salida, recursos RAM/SWAP/CPU/VRAM y error si ocurre.
-- El wrapper agrega `data/provider-cache/python` al `sys.path` para que funcione desde el backend y manualmente.
+- En Windows nativo la ruta ACE-Step usa Intel XPU/PyTorch: no instala CUDA, no instala `torch==2.7.1+cu128` y no usa `nano-vllm`. `auto` prioriza XPU y evita CUDA en Windows; para validar XPU estrictamente usa `--device xpu --require-device true`.
+- El wrapper imprime checks `[OK]`/`[FAIL]` para imports, seleccion de device, backend GPU, carga de pipeline, generacion y salida WAV. Tambien acepta `--check-only` para validar entorno/device sin cargar modelo ni generar audio.
+- ACE-Step 1.5 usa `acestep.acestep_v15_pipeline.AceStepHandler`; el wrapper detecta esa API real y ya no depende de la API antigua `acestep.pipeline_ace_step.ACEStepPipeline`.
+- La ruta XPU fija variables oficiales: `PYTORCH_DEVICE=xpu`, `SYCL_CACHE_PERSISTENT=1`, `SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1`, `TORCH_COMPILE_BACKEND=eager`, `ACESTEP_CONFIG_PATH=acestep-v15-turbo`, `ACESTEP_LM_BACKEND=pt` y `ACESTEP_LM_MODEL_PATH=acestep-5Hz-lm-0.6B`.
+- El diagnostico de device imprime `sys.executable`, `torch.__version__`, ruta real de `torch`, `hasattr(torch, "xpu")`, `torch.xpu.is_available()` y `torch.xpu.device_count()` para detectar diferencias entre el entorno manual y el wrapper.
+- El wrapper carga `torch`, `torchvision`, ACE-Step y dependencias desde el `.venv` local. Ya no usa `data/provider-cache/python`, porque en Windows nativo una unica fuente de librerias evita mezclar ruedas CPU/XPU. ACE-Step se instala con `--no-deps`; las dependencias puras requeridas para inferencia (`diffusers`, `vector-quantize-pytorch`, `soundfile`, etc.) quedan en requirements sin permitir que ACE-Step reemplace Torch XPU por CUDA.
+- En Intel XPU, `soundfile` es dependencia valida para audio I/O cuando `torchcodec` no esta disponible.
+- El wrapper imprime checks de entorno para confirmar que el `.venv` activo es el que ejecuta ACE-Step.
 - En prueba controlada con `[es]`, ACE-Step conserva acentos y Unicode, pero su tokenizador puede clasificar lineas espanolas de forma mixta (`en`/`es`) y etiquetas como `zh`; revisar `docs/ACE_STEP_DIAGNOSTIC_REPORT.md` antes de ajustar prompts.
 - En Docker Desktop no hubo CUDA/iGPU/NPU visible; por eso la ruta principal se movio a local sin Docker.
 - Gemma ahora trata el set/proyecto activo y Production como el mismo proyecto del usuario: las fases definen la intencion y Production ejecuta tareas/exportables. Para preguntas de estado como "que sigue" o "estoy en un proyecto activo", responde desde SQLite y los checks de la UI, no desde una suposicion libre del LLM.
@@ -120,11 +144,13 @@ Diagnostico ACE-Step verificado:
 - Los timeouts de ACE-Step ahora terminan el grupo completo del proceso local para evitar que `acestep_generate.py` quede huérfano consumiendo CPU/RAM despues de fallar la fase.
 - El timeout local de ACE-Step subio a 14400 segundos y la duracion maxima enviada al provider queda configurable con `SONG_AI_MAX_FULL_SONG_DURATION_SECONDS` para evitar limites ocultos en codigo.
 - Production muestra antes de generar la duracion enviada a ACE-Step, el limite configurado de cancion, el timeout maximo y un estimado de tiempo de Mastering segun el runtime local. Si el estimado supera el timeout o la duracion se recorta por limite, la UI lo advierte para que el usuario pueda quitar secciones o reducir duracion.
+- Production muestra provider activo, dispositivo activo, runtime y tiempo transcurrido. Los eventos de Mastering registran si ACE-Step uso XPU/CUDA/CPU o si hizo fallback.
 - Si la app local se reinicia mientras una fase esta `running`, el arranque marca esa fase como interrumpida en SQLite. La UI toma el ultimo evento real de cada fase, asi no muestra `En curso` por eventos antiguos cuando ACE-Step ya no esta corriendo.
 - Limpieza post-Docker: se retiraron los archivos `Dockerfile`, `docker-compose*.yml`, `.dockerignore` y el helper de contenedores LLM. El monitor de recursos usa `visible_memory_limit_mb` para describir memoria visible sin terminologia Docker y migra snapshots antiguos de SQLite de forma compatible.
 - Smoke completo local: `tools/run_small_local_song_flow.py` incluye `--fast-full-song-provider` para validar todas las fases y exportables con un provider local rapido, sin instalar dependencias ni modificar `.env`.
 - Steering de runtime documentado: `docs/RUNTIME_DEPLOYMENT_STRATEGY.md` define una guia reutilizable para elegir Docker, nativo o hibrido al inicio de futuros proyectos. Aplicado a Song-AI, confirma `local_hardware` y no reintroduce Docker como ruta operativa.
 - Flujo de informacion por fases documentado e implementado: `docs/PHASE_INFORMATION_FLOW.md` define SQLite como fuente de verdad, archivos como artefactos derivados, estados separados de fase/ejecucion/artefacto, eventos importantes por fase, verificacion por checksum y regeneracion puntual cuando el builder/provider lo permite.
+- Integracion Intel XPU para ACE-Step: `docs/ACE_STEP_INTEL_XPU_REPORT.md` documenta compatibilidad, prerequisitos, validacion y fallback. `tools/check_xpu_stack.py` verifica `torch.xpu`, `scripts/install-intel-xpu-prereqs.ps1` expresa los prerequisitos instalables, y Song-AI intenta `--device auto` sin recortar duracion/calidad.
 
 ## Arquitectura
 
@@ -229,7 +255,6 @@ Directorios locales:
 data/                   SQLite, proyectos, letras, MIDI, audio y exports
 data/models             modelos locales: llm, music, voice, stems, huggingface
 data/providers          repos/adaptadores locales
-data/provider-cache     paquetes Python pesados instalados por bootstrap local
 ```
 
 Estructura relevante dentro de `data/`:
@@ -289,12 +314,12 @@ Hardware verificado en la laptop de desarrollo:
 - CPU: Intel Core Ultra 5 125U, 12 nucleos / 14 hilos logicos.
 - iGPU: Intel Graphics integrada.
 - NPU: Intel AI Boost.
-- La iGPU y la NPU existen en Windows, pero ACE-Step/PyTorch no las usa automaticamente.
-- Para aprovechar iGPU/NPU hace falta un provider local especifico, por ejemplo DirectML, OpenVINO, Intel Extension for PyTorch/XPU o un wrapper CLI compatible. La arquitectura de providers permite agregarlo sin acoplar ACE-Step al resto del pipeline.
+- La iGPU puede usarse por PyTorch XPU si el driver Intel y las ruedas `torch` XPU estan instaladas.
+- La NPU Intel AI Boost no queda cubierta por ACE-Step/PyTorch XPU; se mantiene como futura ruta OpenVINO/DirectML si aparece provider compatible.
 
 Nota de rendimiento: ACE-Step en CPU es funcional pero extremadamente lento. En una prueba real con virtualizacion, 60 segundos con 10 pasos no completo en 3600 segundos. Por eso el comando local usa `{duration_seconds}` y pocos `--oss-steps` para validar flujo en CPU; para calidad final usa un provider acelerado y mas pasos.
 
-Verificacion adicional: una prueba de 5 segundos con 4 `oss_steps` cargo el modelo en 810 segundos y siguio siendo demasiado lenta para uso interactivo por CPU. La app ahora reporta `runtime=cpu_extremely_slow` y escribe `full_song_generation.log` en vivo mientras ACE-Step corre.
+Verificacion actual: el flujo completo `tools/run_small_local_song_flow.py --duration 20 --run-master` paso por SQLite y Production con `requested_device=xpu`, `active_device=xpu`, `backend_active=xpu`, CPU offload controlado, Mastering por ACE-Step y exportacion final a `final_song.wav`, `final_song.mp3`, `final_song.flac`, `export_manifest.json` y `project_export.zip`.
 
 ## Variables Principales
 
@@ -309,15 +334,24 @@ Full Song local con ACE-Step:
 ```text
 SONG_AI_MODEL_ROOT=data/models
 SONG_AI_PROVIDER_ROOT=data/providers
-SONG_AI_PROVIDER_CACHE=data/provider-cache
-SONG_AI_FULL_SONG_COMMAND=python tools/acestep_generate.py --prompt {prompt_path} --lyrics {lyrics_path} --output {output_path} --checkpoint-path data/models/music/ace-step --duration {duration_seconds} --infer-step 4 --oss-steps 16,96,172,200 --cpu-offload true --overlapped-decode true --torch-threads 14 --torch-interop-threads 4 --diagnostics {diagnostics_path} --output-type full_song_with_vocals
+SONG_AI_ACE_DEVICE=auto
+SONG_AI_REQUIRE_ACE_DEVICE=false
+PYTORCH_DEVICE=xpu
+SYCL_CACHE_PERSISTENT=1
+SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1
+TORCH_COMPILE_BACKEND=eager
+ACESTEP_CONFIG_PATH=acestep-v15-turbo
+ACESTEP_LM_BACKEND=pt
+ACESTEP_LM_MODEL_PATH=acestep-5Hz-lm-0.6B
+ACESTEP_INIT_LLM=false
+SONG_AI_FULL_SONG_COMMAND={python_executable} tools/acestep_generate.py --prompt {prompt_path} --lyrics {lyrics_path} --output {output_path} --checkpoint-path data/models/music/acestep-1.5-{model_type} --duration {duration_seconds} --infer-step {infer_steps} --oss-steps 16,96,172,200 --device {device} --cpu-offload true --overlapped-decode true --torch-threads {threads} --torch-interop-threads 4 --diagnostics {diagnostics_path} --output-type full_song_with_vocals
 SONG_AI_INSTALL_ACE_STEP=true
 SONG_AI_ALLOW_CPU_FULL_SONG=true
 SONG_AI_LOCAL_COMMAND_TIMEOUT_SECONDS=14400
 SONG_AI_MAX_FULL_SONG_DURATION_SECONDS=360
-SONG_AI_IGPU_EXPERIMENTAL=false
-LIBVA_DRIVER_NAME=iHD
 ```
+
+Tokens dinamicos del comando full-song: `{python_executable}`, `{model_type}`, `{infer_steps}`, `{threads}` y `{device}` se resuelven por perfil ACE-Step. `turbo` usa `.venv\Scripts\python.exe` cuando existe, `2b-turbo`, 4 pasos, 4 hilos, `xpu` y `ACE-Step/ACE-Step-v1-2B-turbo`; `base` usa `3.5b-default`, 8 pasos, 14 hilos, `cpu` y `ACE-Step/ACE-Step-v1-3.5B`.
 
 Rutas alternativas por stems:
 
@@ -328,6 +362,14 @@ SONG_AI_VOICE_CONVERSION_COMMAND=
 ```
 
 Si Full Song funciona, esas tres pueden quedar vacias.
+
+Servidor ACE-Step REST XPU opcional:
+
+```powershell
+scripts\start-acestep-api-xpu.bat
+```
+
+Este launcher usa `.venv`, `acestep-v15-turbo`, backend LM `pt` y LM pequeno `acestep-5Hz-lm-0.6B`. Es una ruta de prueba para aislar ACE-Step como proceso REST antes de conectar un cliente Song-AI dedicado.
 
 ## Modelos LLM Locales
 
@@ -385,8 +427,8 @@ data/models/llm/qwen/qwen.gguf
 El bootstrap corre localmente y prepara `data/`:
 
 - crea directorios de modelos,
-- instala dependencias pesadas en `data/provider-cache/python`,
-- instala ACE-Step si esta activado,
+- instala dependencias Python en el `.venv` local,
+- instala ACE-Step si esta activado, usando `--no-deps` para no reemplazar el stack `torch==2.9.1+xpu`,
 - descarga modelos por URL si se configuran,
 - clona providers si se configuran.
 
@@ -406,7 +448,7 @@ Actualizar dependencias internas bajo demanda:
 POST /api/system/bootstrap/upgrade
 ```
 
-La politica por defecto evita reinstalar paquetes pesados si ya son importables y hay marcador compatible en `data/provider-cache`.
+La politica por defecto evita reinstalar paquetes pesados si ya son importables y hay marcador compatible en `data/.bootstrap`.
 
 ## ResourceMonitor
 
@@ -417,7 +459,7 @@ Variables:
 ```text
 SONG_AI_RESOURCE_MONITOR_ENABLED=true
 SONG_AI_RESOURCE_SAMPLE_SECONDS=2
-SONG_AI_MIN_FREE_RAM_MB_FOR_AUDIO=6000
+SONG_AI_MIN_FREE_RAM_MB_FOR_AUDIO=3500
 SONG_AI_MIN_FREE_DISK_MB_FOR_AUDIO=15000
 SONG_AI_MAX_CPU_PERCENT_BEFORE_AUDIO=85
 SONG_AI_AUDIO_START_DELAY_SECONDS=45
@@ -438,7 +480,7 @@ Antes de ejecutar `SONG_AI_FULL_SONG_COMMAND` o `SONG_AI_SINGING_VOICE_COMMAND`,
 
 En local, `SONG_AI_STOP_LLM_COMMAND` y `SONG_AI_START_LLM_COMMAND` quedan vacios por defecto. Si usas servidores llama.cpp propios, puedes poner scripts locales para detenerlos antes de ACE-Step y restaurarlos al terminar.
 
-Nota de sprint: ACE-Step local necesita `torchcodec` para guardar WAV con versiones recientes de `torchaudio`. En Windows, `torchcodec` necesita ffmpeg full/shared en PATH para cargar sus DLL; el paquete `Gyan.FFmpeg` estatico no basta, usa `Gyan.FFmpeg.Shared`. La app prioriza `data/provider-cache/python`, donde ACE-Step, Torch y TorchCodec deben quedar instalados como stack compatible.
+Nota de sprint: en la ruta Intel XPU se evita `torchcodec`; ACE-Step devuelve tensores de audio y el wrapper guarda WAV con `soundfile`. La app usa el `.venv` local como fuente unica de librerias para evitar mezclar Torch CPU/XPU.
 
 UX ResourceMonitor: Production incluye refresco manual, revision explicita de recursos, auto-actualizacion cada 10 segundos mientras la vista esta activa, timestamp de ultima lectura e historial compacto con RAM, swap y CPU.
 

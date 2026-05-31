@@ -1,5 +1,6 @@
 __pycache__/
 *.py[cod]
+.cache/
 .env
 .venv/
 venv/
@@ -7,6 +8,7 @@ docs/*
 !docs/
 !docs/PHASE_INFORMATION_FLOW.md
 !docs/RUNTIME_DEPLOYMENT_STRATEGY.md
+!docs/ACE_STEP_INTEL_XPU_REPORT.md
 data/
 frontend/node_modules/
 frontend/dist/

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 from pathlib import Path
 import importlib.util
 import os
@@ -17,11 +16,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT)
 MODEL_ROOT = Path(os.getenv("SONG_AI_MODEL_ROOT", str(PROJECT_ROOT / "data" / "models")))
 PROVIDER_ROOT = Path(os.getenv("SONG_AI_PROVIDER_ROOT", str(PROJECT_ROOT / "data" / "providers")))
-CACHE_ROOT = Path(os.getenv("SONG_AI_PROVIDER_CACHE", str(PROJECT_ROOT / "data" / "provider-cache")))
-PYTHON_TARGET = CACHE_ROOT / "python"
-PIP_CACHE = CACHE_ROOT / "pip"
-LOCAL_AUDIO_MARKER = CACHE_ROOT / ".local-audio-deps.installed"
-ACE_STEP_MARKER = CACHE_ROOT / ".ace-step.installed"
+BOOTSTRAP_STATE_ROOT = PROJECT_ROOT / "data" / ".bootstrap"
+LOCAL_AUDIO_MARKER = BOOTSTRAP_STATE_ROOT / ".local-audio-deps.installed"
+ACE_STEP_MARKER = BOOTSTRAP_STATE_ROOT / ".ace-step.installed"
 
 
 LLM_MODEL_CONFIG = {
@@ -93,9 +90,7 @@ def ensure_directories(summary: dict[str, object]) -> None:
         MODEL_ROOT / "stems",
         MODEL_ROOT / "huggingface",
         PROVIDER_ROOT,
-        CACHE_ROOT,
-        PYTHON_TARGET,
-        PIP_CACHE,
+        BOOTSTRAP_STATE_ROOT,
     ]
     for directory in directories:
         directory.mkdir(parents=True, exist_ok=True)
@@ -134,27 +129,18 @@ def install_ace_step(upgrade: bool = False) -> bool:
         write_marker(ACE_STEP_MARKER, requirement)
         return False
     needs_repair = modules_available(["acestep"]) and not ready
-    if needs_repair or upgrade:
-        clean_provider_packages(
-            [
-                "torch",
-                "torchvision",
-                "torchaudio",
-                "transformers",
-                "diffusers",
-                "accelerate",
-                "peft",
-            ]
-        )
-    command = pip_install_command(upgrade or needs_repair) + [requirement]
+    command = pip_install_command(upgrade or needs_repair) + [
+        "--no-deps",
+        "-c",
+        str(PROJECT_ROOT / "backend" / "requirements.txt"),
+        requirement,
+    ]
     subprocess.run(command, check=True)
     if modules_available(["acestep"]) and not ace_step_ready():
-        clean_provider_packages(["torchvision"])
-        if modules_available(["acestep"]) and not ace_step_ready():
-            raise RuntimeError(
-                "ACE-Step se instalo, pero no pudo importarse. Revisa compatibilidad Torch/Torchvision "
-                f"en {PYTHON_TARGET}."
-            )
+        raise RuntimeError(
+            "ACE-Step se instalo, pero no pudo importarse. Revisa compatibilidad Torch/Torchvision "
+            "en el .venv local."
+        )
     write_marker(ACE_STEP_MARKER, requirement)
     return True
 
@@ -221,7 +207,7 @@ def download_huggingface_models(summary: dict[str, object]) -> None:
     except ImportError as error:
         raise RuntimeError(
             "huggingface_hub no esta instalado. Activa SONG_AI_INSTALL_LOCAL_AUDIO_DEPS=true "
-            "o instala dependencias locales en data/provider-cache."
+            "o instala dependencias locales en el .venv."
         ) from error
 
     hf_root = MODEL_ROOT / "huggingface"
@@ -267,24 +253,10 @@ def pip_install_command(upgrade: bool = False) -> list[str]:
         "pip",
         "install",
         "--disable-pip-version-check",
-        "--cache-dir",
-        str(PIP_CACHE),
-        "--target",
-        str(PYTHON_TARGET),
     ]
     if upgrade or enabled("SONG_AI_BOOTSTRAP_UPGRADE"):
         command.extend(["--upgrade", "--upgrade-strategy", "eager"])
     return command
-
-
-def clean_provider_packages(package_names: list[str]) -> None:
-    for package_name in package_names:
-        normalized = package_name.replace("-", "_").lower()
-        for path in PYTHON_TARGET.glob(f"{normalized}*"):
-            if path.is_dir():
-                shutil.rmtree(path)
-            elif path.exists():
-                path.unlink()
 
 
 def marker_current(path: Path, content: str, upgrade: bool = False) -> bool:
@@ -309,8 +281,7 @@ def write_marker(path: Path, content: str) -> None:
 
 
 def modules_available(module_names: list[str]) -> bool:
-    with provider_python_path():
-        return all(importlib.util.find_spec(module_name) is not None for module_name in module_names)
+    return all(importlib.util.find_spec(module_name) is not None for module_name in module_names)
 
 
 def local_audio_deps_ready() -> bool:
@@ -323,32 +294,11 @@ def ace_step_ready() -> bool:
     return modules_available(["acestep"])
 
 
-@contextmanager
-def provider_python_path():
-    target = str(PYTHON_TARGET)
-    inserted = target not in sys.path
-    if inserted:
-        sys.path.insert(0, target)
-    try:
-        yield
-    finally:
-        if inserted:
-            try:
-                sys.path.remove(target)
-            except ValueError:
-                pass
-
-
 def provider_python_probe(statement: str, timeout: int = 30) -> bool:
-    env = os.environ.copy()
-    existing_pythonpath = env.get("PYTHONPATH", "")
-    provider_path = str(PYTHON_TARGET)
-    env["PYTHONPATH"] = provider_path + (os.pathsep + existing_pythonpath if existing_pythonpath else "")
     result = subprocess.run(
         [sys.executable, "-c", statement],
         capture_output=True,
         text=True,
-        env=env,
         timeout=timeout,
     )
     return result.returncode == 0

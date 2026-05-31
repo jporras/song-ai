@@ -399,7 +399,7 @@ class ProfessionalSongService:
             raise ValueError("Proyecto profesional no encontrado.")
         return self.mixing_service.get(song_id)
 
-    def master_song(self, song_id: str) -> dict[str, object]:
+    def master_song(self, song_id: str, generation_profile: str | None = None) -> dict[str, object]:
         project = self.storage.get_song_project(song_id)
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
@@ -418,7 +418,7 @@ class ProfessionalSongService:
                 payload={},
             )
             try:
-                result = self.full_song_service.generate(song_id)
+                result = self.full_song_service.generate(song_id, generation_profile=generation_profile)
             except Exception as exc:
                 self.storage.create_song_event(
                     song_id=song_id,

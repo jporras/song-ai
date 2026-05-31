@@ -15,6 +15,7 @@ except ImportError:  # pragma: no cover - mantiene importable el entorno si falt
 
 from config.resource_settings import ResourceMonitorSettings
 from core.storage import StorageManager
+from audio.accelerator_detection import torch_accelerator_snapshot
 
 
 HEAVY_PROCESS_NAMES = ("llama", "llama-server", "python", "torch", "uvicorn")
@@ -36,13 +37,12 @@ class ResourceMonitor:
         settings: ResourceMonitorSettings,
         data_path: Path | None = None,
         models_path: Path | None = None,
-        cache_path: Path | None = None,
     ) -> None:
         self.storage = storage
         self.settings = settings
         self.data_path = data_path or storage.data_dir
         self.models_path = models_path or storage.data_dir / "models"
-        self.cache_path = cache_path or storage.data_dir / "provider-cache"
+        self.cache_path = storage.data_dir
 
     def status(self, phase: str = "status") -> dict[str, object]:
         snapshot = self.capture(phase=phase, persist=True)
@@ -195,9 +195,9 @@ class ResourceMonitor:
         if float(snapshot.get("swap_total_mb", 0)) < 4096:
             recommendations.append("Se recomienda disponer de al menos 4 GB de swap para mejorar la estabilidad durante la generacion de audio")
         accelerators = dict(snapshot.get("accelerators", {}))
-        if not bool(accelerators.get("cuda_available")):
+        if not bool(accelerators.get("cuda_available")) and not bool(accelerators.get("xpu_available")):
             if bool(accelerators.get("intel_device_nodes")):
-                recommendations.append("iGPU Intel visible como dispositivo Linux; ACE-Step/PyTorch necesita backend Intel XPU/Level Zero para usarla")
+                recommendations.append("iGPU Intel visible; ACE-Step/PyTorch necesita backend Intel XPU/Level Zero para usarla")
             else:
                 recommendations.append("No hay GPU/NPU visible para el proceso local; ACE-Step esta limitado a CPU")
         if min(float(snapshot["disk_data_free_mb"]), float(snapshot["disk_models_free_mb"]), float(snapshot["disk_cache_free_mb"])) < self.settings.min_free_disk_mb_for_audio * 1.25:
@@ -212,18 +212,28 @@ class ResourceMonitor:
             "accel": sorted(str(path) for path in Path("/dev/accel").glob("*")) if Path("/dev/accel").exists() else [],
         }
         cuda_available = bool(device_nodes["nvidia"]) and shutil.which("nvidia-smi") is not None
+        torch_snapshot = torch_accelerator_snapshot(run_tensor_probe=False)
         return {
             "visible_cpu_count": os.cpu_count() or 0,
             "cpu_affinity_count": len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count() or 0,
-            "cuda_available": cuda_available,
+            "cuda_available": bool(cuda_available or torch_snapshot.get("cuda_available")),
             "nvidia_smi": bool(shutil.which("nvidia-smi")),
+            "xpu_available": bool(torch_snapshot.get("xpu_available")),
+            "xpu_device_name": torch_snapshot.get("xpu_device_name", ""),
+            "recommended_backend": torch_snapshot.get("recommended_backend", "cpu"),
+            "fallback_reason": torch_snapshot.get("fallback_reason", ""),
+            "soundfile_importable": torch_snapshot.get("soundfile_importable", False),
+            "torchcodec_importable": torch_snapshot.get("torchcodec_importable", False),
             "device_nodes": device_nodes,
-            "intel_device_nodes": bool(device_nodes["dri"] or device_nodes["dxg"]),
+            "intel_device_nodes": bool(device_nodes["dri"] or device_nodes["dxg"] or torch_snapshot.get("xpu_available")),
             "npu_visible_to_process": bool(device_nodes["accel"]),
+            "intel_gpu": self._intel_gpu_snapshot(),
             "note": (
-                "El proceso ve dispositivos de aceleracion Linux."
+                f"PyTorch XPU listo: {torch_snapshot.get('xpu_device_name')}"
+                if torch_snapshot.get("xpu_available")
+                else "El proceso ve dispositivos de aceleracion."
                 if cuda_available or device_nodes["dri"] or device_nodes["dxg"] or device_nodes["accel"]
-                else "El proceso local no ve iGPU/NPU/GPU mediante dispositivos Linux; revisa backend nativo Windows/OpenVINO/DirectML."
+                else "El proceso local no ve iGPU/NPU/GPU mediante PyTorch XPU/CUDA; revisa driver Intel, ruedas XPU u otro backend nativo."
             ),
         }
 
@@ -300,6 +310,41 @@ class ResourceMonitor:
                 }
             )
         return gpus
+
+    def _intel_gpu_snapshot(self) -> list[dict[str, object]]:
+        powershell = shutil.which("powershell") or shutil.which("pwsh")
+        if powershell is None:
+            return []
+        command = [
+            powershell,
+            "-NoProfile",
+            "-Command",
+            "Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction SilentlyContinue | "
+            "Select-Object -ExpandProperty CounterSamples | "
+            "Where-Object {$_.InstanceName -match 'intel|render|compute|copy|3d'} | "
+            "Select-Object -First 12 InstanceName,CookedValue | ConvertTo-Json -Compress",
+        ]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            return []
+        if result.returncode != 0 or not result.stdout.strip():
+            return []
+        try:
+            import json
+
+            payload = json.loads(result.stdout)
+        except Exception:
+            return []
+        rows = payload if isinstance(payload, list) else [payload]
+        return [
+            {
+                "name": str(row.get("InstanceName", ""))[:160],
+                "utilization_percent": self._float(str(row.get("CookedValue", 0))),
+            }
+            for row in rows
+            if isinstance(row, dict)
+        ]
 
     def _float(self, value: str) -> float:
         try:

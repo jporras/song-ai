@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 import importlib.machinery
 import signal
 import shutil
 import subprocess
-import sys
 import time
 
+from audio.ace_step_profiles import AceStepProfile, apply_ace_step_profile_env, resolve_ace_step_profile
 from audio.resource_monitor import ResourceMonitor
 from config.resource_settings import ResourceMonitorSettings
 from core.storage import StorageManager
@@ -31,7 +32,7 @@ class ProfessionalFullSongService:
     def configured(self) -> bool:
         return bool(self.command_template)
 
-    def generate(self, song_id: str) -> dict[str, object]:
+    def generate(self, song_id: str, generation_profile: str | None = None) -> dict[str, object]:
         if not self.configured():
             raise ValueError("No hay provider full-song configurado.")
 
@@ -51,17 +52,30 @@ class ProfessionalFullSongService:
         if not lyrics_path.exists():
             raise ValueError("La letra editable lyrics.md debe existir antes de generar la cancion completa.")
         self._assert_required_dependencies()
+        profile = resolve_ace_step_profile(generation_profile)
 
         prompt_path.write_text(self._build_prompt(project), encoding="utf-8")
-        self._run_command(project, project_dir, prompt_path, lyrics_path, final_wav_path, log_path, diagnostics_path)
+        self._run_command(project, project_dir, prompt_path, lyrics_path, final_wav_path, log_path, diagnostics_path, profile)
         after_audio = self.resource_monitor.capture(phase="after_audio", persist=True)
         self._assert_audio(final_wav_path)
         self._export_mp3(final_wav_path, final_mp3_path)
         self._export_flac(final_wav_path, final_flac_path)
+        diagnostics = self._read_diagnostics(diagnostics_path)
+        runtime = dict(diagnostics.get("runtime", {}))
 
         common_metadata = {
             "generation_mode": "local_full_song_command",
             "quality_status": "final_candidate",
+            "provider_name": "ACE-Step",
+            "ace_step_profile": profile.name,
+            "ace_step_model_type": profile.model_type,
+            "ace_step_model_repo": profile.model_repo,
+            "ace_step_infer_steps": profile.infer_steps,
+            "ace_step_threads": profile.threads,
+            "requested_device": runtime.get("requested_device", ""),
+            "active_device": runtime.get("active_device", ""),
+            "backend_active": runtime.get("backend_active", ""),
+            "fallback_reason": runtime.get("fallback_reason", ""),
             "prompt_path": str(prompt_path),
             "lyrics_path": str(lyrics_path),
             "log_path": str(log_path),
@@ -104,6 +118,15 @@ class ProfessionalFullSongService:
                 "final_mp3": str(final_mp3_path),
                 "final_flac": str(final_flac_path),
                 "generation_mode": "local_full_song_command",
+                "provider_name": "ACE-Step",
+                "ace_step_profile": profile.name,
+                "ace_step_model_type": profile.model_type,
+                "ace_step_model_repo": profile.model_repo,
+                "requested_device": runtime.get("requested_device", ""),
+                "active_device": runtime.get("active_device", ""),
+                "backend_active": runtime.get("backend_active", ""),
+                "fallback_reason": runtime.get("fallback_reason", ""),
+                "duration_seconds": diagnostics.get("duration_seconds", 0),
                 "log": str(log_path),
             },
             artifact_id=str(mp3_artifact["artifact_id"]),
@@ -116,6 +139,7 @@ class ProfessionalFullSongService:
             "final_flac": str(final_flac_path),
             "artifacts": [wav_artifact, mp3_artifact, flac_artifact],
             "generation_mode": "local_full_song_command",
+            "ace_step_profile": profile.name,
             "log": str(log_path),
         }
 
@@ -128,16 +152,9 @@ class ProfessionalFullSongService:
         output_path: Path,
         log_path: Path,
         diagnostics_path: Path,
+        profile: AceStepProfile,
     ) -> None:
-        command = self.command_template.format(
-            prompt_path=str(prompt_path),
-            lyrics_path=str(lyrics_path),
-            output_path=str(output_path),
-            work_dir=str(project_dir),
-            log_path=str(log_path),
-            diagnostics_path=str(diagnostics_path),
-            duration_seconds=self._duration_seconds(project),
-        )
+        command = self._format_command(project, project_dir, prompt_path, lyrics_path, output_path, log_path, diagnostics_path, profile)
         prep = self.resource_monitor.prepare_for_audio(
             phase=SongPhase.MASTERING.value,
             event_callback=lambda message: self.storage.create_song_event(
@@ -163,6 +180,13 @@ class ProfessionalFullSongService:
                 "diagnostics_path": str(diagnostics_path),
                 "output_path": str(output_path),
                 "duration_seconds": self._duration_seconds(project),
+                "provider_name": "ACE-Step",
+                "ace_step_profile": profile.name,
+                "ace_step_model_type": profile.model_type,
+                "ace_step_model_repo": profile.model_repo,
+                "infer_steps": profile.infer_steps,
+                "threads": profile.threads,
+                "requested_device": self._requested_device_from_command(command),
                 "readiness": prep.get("readiness", {}),
             },
         )
@@ -170,6 +194,11 @@ class ProfessionalFullSongService:
             log_file.write(f"$ {command}\n\n")
             log_file.write("ACE_STEP_INTEGRATION: mode=python_library_via_cli_process entrypoint=tools/acestep_generate.py service_api=false\n")
             log_file.write(f"ACE_STEP_DIAGNOSTICS: {diagnostics_path}\n")
+            log_file.write(
+                "ACE_STEP_PROFILE: "
+                f"name={profile.name} model_type={profile.model_type} model_repo={profile.model_repo} "
+                f"infer_steps={profile.infer_steps} threads={profile.threads}\n"
+            )
             log_file.write(f"MODEL: checkpoint_path={self._checkpoint_path_from_command(command)}\n")
             log_file.write(f"DURATION_REQUESTED_SECONDS: {self._duration_seconds(project)}\n")
             log_file.write("OUTPUT_TYPE: full_song_with_vocals\n")
@@ -193,7 +222,7 @@ class ProfessionalFullSongService:
                     stdout=log_file,
                     stderr=subprocess.STDOUT,
                     text=True,
-                    env=self._command_env(),
+                    env=self._command_env(profile),
                     start_new_session=True,
                 )
                 self.storage.create_song_event(
@@ -240,7 +269,7 @@ class ProfessionalFullSongService:
                                 f"({elapsed / 60:.1f} min). "
                                 f"RAM libre {float(snapshot['ram_available_mb']):.0f} MB, "
                                 f"swap libre {float(snapshot.get('swap_free_mb', 0)):.0f} MB, "
-                                f"CPU {float(snapshot['cpu_percent']):.0f}%."
+                            f"CPU {float(snapshot['cpu_percent']):.0f}%."
                             ),
                             active_model="ace-step",
                             payload={
@@ -249,6 +278,8 @@ class ProfessionalFullSongService:
                                 "swap_free_mb": snapshot.get("swap_free_mb", 0),
                                 "swap_total_mb": snapshot.get("swap_total_mb", 0),
                                 "cpu_percent": snapshot["cpu_percent"],
+                                "intel_gpu": snapshot.get("accelerators", {}).get("intel_gpu", []),
+                                "active_device": self._active_device_from_diagnostics(diagnostics_path),
                                 "log_path": str(log_path),
                             },
                         )
@@ -303,8 +334,75 @@ class ProfessionalFullSongService:
                 )
 
         if return_code != 0:
-            detail = log_path.read_text(encoding="utf-8")[-4000:].strip()
+            diagnostics = self._read_diagnostics(diagnostics_path)
+            if diagnostics:
+                runtime = dict(diagnostics.get("runtime", {}))
+                error = dict(diagnostics.get("error", {}))
+                self.storage.create_song_event(
+                    song_id=str(project["id"]),
+                    phase=SongPhase.MASTERING.value,
+                    status=SongPhaseStatus.FAILED.value,
+                    progress=75,
+                    message=(
+                        "ACE-Step fallo. "
+                        f"Dispositivo activo: {runtime.get('active_device', 'desconocido')}. "
+                        f"Fallback: {runtime.get('fallback_reason', '')}. "
+                        f"Error: {error.get('message', '')}"
+                    ),
+                    active_model="ace-step",
+                    payload={
+                        "runtime": runtime,
+                        "error": error,
+                        "diagnostics_path": str(diagnostics_path),
+                    },
+                )
+            detail = self._read_log_tail(log_path)
             raise ValueError(f"El provider full-song fallo: {detail}")
+
+    def _format_command(
+        self,
+        project: dict[str, object],
+        project_dir: Path,
+        prompt_path: Path,
+        lyrics_path: Path,
+        output_path: Path,
+        log_path: Path,
+        diagnostics_path: Path,
+        profile: AceStepProfile,
+    ) -> str:
+        values: dict[str, object] = {
+            "python_executable": self._python_executable(),
+            "prompt_path": str(prompt_path),
+            "lyrics_path": str(lyrics_path),
+            "output_path": str(output_path),
+            "work_dir": str(project_dir),
+            "log_path": str(log_path),
+            "diagnostics_path": str(diagnostics_path),
+            "duration_seconds": self._duration_seconds(project),
+            **profile.format_values(),
+        }
+        try:
+            return self.command_template.format(**values)
+        except KeyError as error:
+            missing = str(error).strip("'")
+            raise ValueError(
+                f"Falta valor para el token {{{missing}}} en SONG_AI_FULL_SONG_COMMAND. "
+                f"Tokens disponibles: {', '.join(sorted(values))}."
+            ) from error
+        except (IndexError, ValueError) as error:
+            raise ValueError(f"SONG_AI_FULL_SONG_COMMAND tiene formato invalido: {error}") from error
+
+    def _python_executable(self) -> str:
+        venv_python = Path(".venv") / "Scripts" / "python.exe"
+        if venv_python.exists():
+            return str(venv_python)
+        return "python"
+
+    def _read_log_tail(self, log_path: Path, size: int = 4000) -> str:
+        try:
+            return log_path.read_text(encoding="utf-8", errors="replace")[-size:].strip()
+        except OSError:
+            return ""
 
     def _terminate_process(self, process: subprocess.Popen[str]) -> None:
         try:
@@ -343,12 +441,10 @@ class ProfessionalFullSongService:
             max_duration = 360
         return max(5, min(duration, max(5, max_duration)))
 
-    def _command_env(self) -> dict[str, str]:
+    def _command_env(self, profile: AceStepProfile | None = None) -> dict[str, str]:
         env = os.environ.copy()
-        provider_cache = os.getenv("SONG_AI_PROVIDER_CACHE", str(Path.cwd() / "data" / "provider-cache"))
-        provider_path = str(Path(provider_cache) / "python")
-        existing_pythonpath = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = provider_path + (os.pathsep + existing_pythonpath if existing_pythonpath else "")
+        if profile is not None:
+            apply_ace_step_profile_env(env, profile)
         return env
 
     def _checkpoint_path_from_command(self, command: str) -> str:
@@ -361,11 +457,31 @@ class ProfessionalFullSongService:
     def _assert_required_dependencies(self) -> None:
         if "acestep_generate.py" not in self.command_template and "ace-step" not in self.command_template.lower():
             return
-        provider_cache = os.getenv("SONG_AI_PROVIDER_CACHE", str(Path.cwd() / "data" / "provider-cache"))
-        provider_path = Path(provider_cache) / "python"
-        search_paths = [str(provider_path), *sys.path]
-        if importlib.machinery.PathFinder.find_spec("torchcodec", search_paths) is None:
-            raise ValueError("Falta torchcodec. Ejecuta scripts\\install-local-prereqs.ps1 antes de generar con ACE-Step.")
+        torchcodec_ready = importlib.machinery.PathFinder.find_spec("torchcodec") is not None
+        soundfile_ready = importlib.machinery.PathFinder.find_spec("soundfile") is not None
+        if not torchcodec_ready and not soundfile_ready:
+            raise ValueError(
+                "Falta dependencia de audio I/O para ACE-Step: instala torchcodec o soundfile. "
+                "En Intel XPU, ACE-Step usa soundfile porque torchcodec no esta disponible para XPU. "
+                "Ejecuta scripts\\install-intel-xpu-prereqs.ps1 o scripts\\install-local-prereqs.ps1."
+            )
+
+    def _requested_device_from_command(self, command: str) -> str:
+        parts = command.split()
+        for index, part in enumerate(parts):
+            if part == "--device" and index + 1 < len(parts):
+                return parts[index + 1]
+        return os.getenv("SONG_AI_ACE_DEVICE", "auto")
+
+    def _read_diagnostics(self, path: Path) -> dict[str, object]:
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _active_device_from_diagnostics(self, path: Path) -> str:
+        runtime = dict(self._read_diagnostics(path).get("runtime", {}))
+        return str(runtime.get("active_device", ""))
 
     def _assert_audio(self, path: Path) -> None:
         if not path.exists() or path.stat().st_size == 0:

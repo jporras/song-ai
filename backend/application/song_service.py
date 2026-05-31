@@ -206,8 +206,8 @@ class SongService:
     def get_professional_mix(self, song_id: str) -> dict[str, object]:
         return self.professional_songs.get_mix(song_id)
 
-    def master_professional_song(self, song_id: str) -> dict[str, object]:
-        return self.professional_songs.master_song(song_id)
+    def master_professional_song(self, song_id: str, generation_profile: str | None = None) -> dict[str, object]:
+        return self.professional_songs.master_song(song_id, generation_profile=generation_profile)
 
     def get_professional_master(self, song_id: str) -> dict[str, object]:
         return self.professional_songs.get_master(song_id)
@@ -1066,7 +1066,6 @@ class SongService:
         for env_name, label in (
             ("SONG_AI_MODEL_ROOT", "Volumen de modelos"),
             ("SONG_AI_PROVIDER_ROOT", "Volumen de providers"),
-            ("SONG_AI_PROVIDER_CACHE", "Cache de providers"),
         ):
             path = Path(os.getenv(env_name, ""))
             components.append(

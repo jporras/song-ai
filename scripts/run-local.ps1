@@ -36,6 +36,5 @@ if ($NoBootstrap) {
 $env:PYTHONPATH = Join-Path $Root "backend"
 $env:SONG_AI_MODEL_ROOT = if ($env:SONG_AI_MODEL_ROOT) { $env:SONG_AI_MODEL_ROOT } else { "data/models" }
 $env:SONG_AI_PROVIDER_ROOT = if ($env:SONG_AI_PROVIDER_ROOT) { $env:SONG_AI_PROVIDER_ROOT } else { "data/providers" }
-$env:SONG_AI_PROVIDER_CACHE = if ($env:SONG_AI_PROVIDER_CACHE) { $env:SONG_AI_PROVIDER_CACHE } else { "data/provider-cache" }
 
 & ".venv\Scripts\python.exe" -m uvicorn adapters.http.fastapi_app:app --app-dir backend --host 127.0.0.1 --port $Port

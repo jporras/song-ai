@@ -320,8 +320,8 @@ createApp({
       const clampedSeconds = maxSeconds ? Math.min(requestedSeconds || maxSeconds, maxSeconds) : requestedSeconds;
       const fullSong = (this.localPipeline?.requirements || []).find((item) => item.role === "full_song") || {};
       const runtime = String(fullSong.runtime || "").trim();
-      const cpuSlow = runtime.includes("cpu") || runtime.includes("slow") || this.localPipeline?.limits?.allow_cpu_full_song;
-      const gpuReady = runtime.includes("gpu");
+      const gpuReady = runtime.includes("gpu") || runtime.includes("xpu");
+      const cpuSlow = !gpuReady && (runtime.includes("cpu") || runtime.includes("slow") || this.localPipeline?.limits?.allow_cpu_full_song);
       let minMinutes = 0;
       let maxMinutes = 0;
       if (clampedSeconds > 0) {
@@ -351,6 +351,28 @@ createApp({
         clipped: Boolean(requestedSeconds && maxSeconds && requestedSeconds > maxSeconds),
         exceedsTimeout: Boolean(timeoutSeconds && maxEstimateSeconds > timeoutSeconds),
         cpuSlow,
+      };
+    },
+    fullSongRuntimeInfo() {
+      const fullSong = (this.localPipeline?.requirements || []).find((item) => item.role === "full_song") || {};
+      const accelerator = fullSong.accelerator || {};
+      const runtime = String(fullSong.runtime || "unavailable");
+      const device = String(fullSong.device || accelerator.recommended_backend || "cpu");
+      const deviceName = accelerator.xpu_device_name || accelerator.cuda_device_name || "";
+      const xpuReady = Boolean(accelerator.xpu_available);
+      const cpuActive = runtime.includes("cpu") || device === "cpu";
+      return {
+        provider: "ACE-Step",
+        runtime,
+        device,
+        deviceName,
+        activeLabel: deviceName ? `${device.toUpperCase()} / ${deviceName}` : device.toUpperCase(),
+        fallbackReason: accelerator.fallback_reason || "",
+        warning: xpuReady
+          ? ""
+          : cpuActive
+            ? "CPU para audio pesado: puede tardar horas. Instala PyTorch XPU/driver Intel para usar la iGPU."
+            : "",
       };
     },
     productionActivityLog() {
@@ -596,6 +618,8 @@ createApp({
           startedAt: isActuallyRunning && runningEvent?.created_at ? this.formatResourceTime(runningEvent.created_at) : "",
           elapsedLabel: isActuallyRunning && runningEvent?.created_at ? this.formatElapsedSince(runningEvent.created_at) : "",
           activeModel: latestEvent.active_model || "",
+          activeDevice: latestEvent.payload?.active_device || latestEvent.payload?.backend_active || "",
+          requestedDevice: latestEvent.payload?.requested_device || "",
           buttonLabel: localRunning ? "Generando..." : state === "complete" ? "Rehacer" : step.action,
         };
       });
@@ -677,6 +701,7 @@ createApp({
       const dxgCount = (nodes.dxg || []).length;
       const nvidiaCount = (nodes.nvidia || []).length;
       const accelCount = (nodes.accel || []).length;
+      if (accelerators.xpu_available) return `Intel XPU disponible (${accelerators.xpu_device_name || "iGPU Intel"})`;
       if (accelerators.cuda_available) return `CUDA disponible (${nvidiaCount || 1} dispositivo)`;
       if (driCount || dxgCount) return `iGPU visible (${driCount + dxgCount} dispositivo Linux)`;
       if (accelCount) return `Acelerador visible (${accelCount} dispositivo)`;
@@ -685,7 +710,8 @@ createApp({
     acceleratorDetail() {
       const accelerators = this.resourceSnapshot.accelerators || {};
       const cpu = accelerators.cpu_affinity_count || accelerators.visible_cpu_count || 0;
-      return `${cpu || "--"} CPUs visibles. ${accelerators.note || "Sin diagnostico de aceleradores."}`;
+      const fallback = accelerators.fallback_reason ? ` ${accelerators.fallback_reason}` : "";
+      return `${cpu || "--"} CPUs visibles. ${accelerators.note || "Sin diagnostico de aceleradores."}${fallback}`;
     },
     resourceDecisionClass() {
       const decision = String(this.resourceStatus?.readiness?.decision || "");
@@ -739,7 +765,7 @@ createApp({
           id: "storage",
           label: "Almacenamiento local",
           status: storageReady ? "ready" : "missing",
-          detail: storageReady ? "Modelos y cache persistentes en data/." : "Revisa data/models y data/provider-cache.",
+          detail: storageReady ? "Modelos y datos persistentes en data/." : "Revisa data/models y data/providers.",
         },
         {
           id: "bootstrap",

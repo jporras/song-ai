@@ -699,6 +699,14 @@
                 <small>Duracion enviada</small>
               </article>
               <article>
+                <strong>{{ fullSongRuntimeInfo.provider }}</strong>
+                <small>Provider activo</small>
+              </article>
+              <article>
+                <strong>{{ fullSongRuntimeInfo.activeLabel }}</strong>
+                <small>Dispositivo activo</small>
+              </article>
+              <article>
                 <strong>{{ productionTimingEstimate.estimateLabel }}</strong>
                 <small>Estimado de Mastering</small>
               </article>
@@ -720,6 +728,10 @@
                 Enviado: {{ productionTimingEstimate.songLengthLabel }} /
                 Runtime: {{ productionTimingEstimate.runtime }}
               </span>
+            </div>
+            <div v-if="fullSongRuntimeInfo.warning || fullSongRuntimeInfo.fallbackReason" class="inline-warning">
+              <strong>{{ fullSongRuntimeInfo.warning || 'ACE-Step bajo a fallback.' }}</strong>
+              <span>{{ fullSongRuntimeInfo.fallbackReason || 'Revisa tools/check_xpu_stack.py --probe-tensor para confirmar Intel XPU.' }}</span>
             </div>
           </section>
 
@@ -744,6 +756,9 @@
                     </small>
                     <small v-if="step.startedAt || step.elapsedLabel" class="pipeline-runtime">
                       Inicio: {{ step.startedAt }}{{ step.elapsedLabel ? ' / Lleva ' + step.elapsedLabel : '' }}
+                    </small>
+                    <small v-if="step.activeDevice || step.requestedDevice" class="pipeline-runtime">
+                      Dispositivo: {{ step.activeDevice || 'pendiente' }}{{ step.requestedDevice ? ' / solicitado ' + step.requestedDevice : '' }}
                     </small>
                   </div>
                 </header>

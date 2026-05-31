@@ -1,5 +1,10 @@
+# Dependencias ligeras de audio local.
+# No declarar torch/torchvision/torchaudio aqui: el stack XPU queda fijado en
+# backend/requirements.txt y backend/requirements-intel-xpu.txt.
 huggingface_hub>=0.34.0,<1.0
-transformers==4.47.1
+transformers==4.53.1
+diffusers>=0.37.0
+numpy==1.26.4
 scipy==1.14.1
-torch==2.11
-torchcodec==0.13.0
+soundfile>=0.12.1
+vector-quantize-pytorch>=1.27.15

@@ -18,7 +18,10 @@ BACKEND_DIR = PROJECT_ROOT / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
 from application.song_service import SongService
+from application.professional_full_song_service import ProfessionalFullSongService
+from audio.ace_step_profiles import BASE_PROFILE, TURBO_PROFILE
 from audio.local_song_pipeline import LocalSongPipeline
+from config.resource_settings import ResourceMonitorSettings
 from config.settings import Settings
 from config.model_settings import LocalModelSettings
 from core.storage import StorageManager
@@ -649,18 +652,88 @@ class AudioExportTest(unittest.TestCase):
             self.assertEqual(final_wav["metadata"]["generation_mode"], "local_full_song_command")
             self.assertTrue(Path(str(mastered["final_mp3"])).exists())
 
-    def test_provider_bootstrap_creates_local_cache_directories_without_downloads(self) -> None:
+    def test_professional_full_song_command_formats_ace_step_profile_tokens(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            temp_path = Path(temp_dir)
+            storage = StorageManager(temp_path)
+            service = ProfessionalFullSongService(
+                storage,
+                command_template=(
+                    "python tools/acestep_generate.py --checkpoint-path data/models/music/acestep-1.5-{model_type} "
+                    "--infer-step {infer_steps} --torch-threads {threads} --device {device} --duration {duration_seconds} "
+                    "--prompt {prompt_path} --lyrics {lyrics_path} --output {output_path}"
+                ),
+            )
+            project = {
+                "id": "song-test",
+                "title": "Perfil ACE",
+                "spec": {"json_spec": {"duration_seconds": 30}},
+            }
+
+            command = service._format_command(
+                project,
+                temp_path,
+                temp_path / "prompt.txt",
+                temp_path / "lyrics.md",
+                temp_path / "out.wav",
+                temp_path / "run.log",
+                temp_path / "diag.json",
+                TURBO_PROFILE,
+            )
+
+            self.assertIn("acestep-1.5-2b-turbo", command)
+            self.assertIn("--infer-step 4", command)
+            self.assertIn("--torch-threads 4", command)
+            self.assertIn("--device xpu", command)
+            base_command = service._format_command(
+                project,
+                temp_path,
+                temp_path / "prompt.txt",
+                temp_path / "lyrics.md",
+                temp_path / "out.wav",
+                temp_path / "run.log",
+                temp_path / "diag.json",
+                BASE_PROFILE,
+            )
+            self.assertIn("acestep-1.5-3.5b-default", base_command)
+            self.assertIn("--infer-step 8", base_command)
+            self.assertIn("--torch-threads 14", base_command)
+            self.assertIn("--device cpu", base_command)
+            self.assertEqual(service._command_env(TURBO_PROFILE)["ACESTEP_MODEL_REPO"], "ACE-Step/ACE-Step-v1-2B-turbo")
+            self.assertEqual(service._command_env(BASE_PROFILE)["ACESTEP_MODEL_REPO"], "ACE-Step/ACE-Step-v1-3.5B")
+
+    def test_professional_full_song_command_reports_missing_format_token(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            temp_path = Path(temp_dir)
+            service = ProfessionalFullSongService(
+                StorageManager(temp_path),
+                command_template="python provider.py --unknown {missing_token}",
+            )
+
+            with self.assertRaisesRegex(ValueError, "missing_token"):
+                service._format_command(
+                    {"id": "song-test", "spec": {"json_spec": {"duration_seconds": 30}}},
+                    temp_path,
+                    temp_path / "prompt.txt",
+                    temp_path / "lyrics.md",
+                    temp_path / "out.wav",
+                    temp_path / "run.log",
+                    temp_path / "diag.json",
+                    BASE_PROFILE,
+                )
+
+    def test_resource_monitor_default_audio_ram_threshold_is_local_friendly(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(ResourceMonitorSettings.load().min_free_ram_mb_for_audio, 3500)
+
+    def test_provider_bootstrap_creates_local_directories_without_downloads(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
             with patch.object(provider_bootstrap, "MODEL_ROOT", temp_path / "models"), patch.object(
                 provider_bootstrap,
                 "PROVIDER_ROOT",
                 temp_path / "providers",
-            ), patch.object(provider_bootstrap, "CACHE_ROOT", temp_path / "provider-cache"), patch.object(
-                provider_bootstrap,
-                "PYTHON_TARGET",
-                temp_path / "provider-cache" / "python",
-            ), patch.object(provider_bootstrap, "PIP_CACHE", temp_path / "provider-cache" / "pip"), patch.dict(
+            ), patch.object(provider_bootstrap, "BOOTSTRAP_STATE_ROOT", temp_path / ".bootstrap"), patch.dict(
                 os.environ,
                 {"SONG_AI_BOOTSTRAP_ON_START": "false"},
                 clear=False,
@@ -671,7 +744,7 @@ class AudioExportTest(unittest.TestCase):
             self.assertTrue((temp_path / "models" / "llm").exists())
             self.assertTrue((temp_path / "models" / "huggingface").exists())
             self.assertTrue((temp_path / "providers").exists())
-            self.assertTrue((temp_path / "provider-cache" / "python").exists())
+            self.assertTrue((temp_path / ".bootstrap").exists())
 
     def test_provider_bootstrap_downloads_gguf_models_to_configured_paths(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
@@ -700,15 +773,11 @@ class AudioExportTest(unittest.TestCase):
     def test_provider_bootstrap_markers_skip_existing_installs(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
-            marker = temp_path / "provider-cache" / ".ace-step.installed"
+            marker = temp_path / ".bootstrap" / ".ace-step.installed"
             package = "git+https://github.com/ace-step/ACE-Step.git"
             marker.parent.mkdir(parents=True, exist_ok=True)
             marker.write_text(f"{package}\npython={sys.version.split()[0]}\n", encoding="utf-8")
-            with patch.object(provider_bootstrap, "CACHE_ROOT", temp_path / "provider-cache"), patch.object(
-                provider_bootstrap,
-                "ACE_STEP_MARKER",
-                marker,
-            ), patch.dict(
+            with patch.object(provider_bootstrap, "ACE_STEP_MARKER", marker), patch.dict(
                 os.environ,
                 {
                     "SONG_AI_BOOTSTRAP_UPGRADE": "false",
@@ -724,19 +793,11 @@ class AudioExportTest(unittest.TestCase):
     def test_provider_bootstrap_marker_reinstalls_when_modules_are_missing(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
-            marker = temp_path / "provider-cache" / ".ace-step.installed"
+            marker = temp_path / ".bootstrap" / ".ace-step.installed"
             package = "git+https://github.com/ace-step/ACE-Step.git"
             marker.parent.mkdir(parents=True, exist_ok=True)
             marker.write_text(f"{package}\npython={sys.version.split()[0]}\n", encoding="utf-8")
-            with patch.object(provider_bootstrap, "PIP_CACHE", temp_path / "provider-cache" / "pip"), patch.object(
-                provider_bootstrap,
-                "PYTHON_TARGET",
-                temp_path / "provider-cache" / "python",
-            ), patch.object(
-                provider_bootstrap,
-                "ACE_STEP_MARKER",
-                marker,
-            ), patch.dict(
+            with patch.object(provider_bootstrap, "ACE_STEP_MARKER", marker), patch.dict(
                 os.environ,
                 {
                     "SONG_AI_BOOTSTRAP_UPGRADE": "false",
@@ -752,11 +813,12 @@ class AudioExportTest(unittest.TestCase):
 
             self.assertTrue(installed)
             run.assert_called_once()
+            self.assertNotIn("--target", run.call_args.args[0])
 
     def test_provider_bootstrap_existing_modules_create_marker_without_reinstall(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
-            marker = temp_path / "provider-cache" / ".ace-step.installed"
+            marker = temp_path / ".bootstrap" / ".ace-step.installed"
             package = "git+https://github.com/ace-step/ACE-Step.git"
             with patch.object(provider_bootstrap, "ACE_STEP_MARKER", marker), patch.dict(
                 os.environ,
@@ -776,20 +838,12 @@ class AudioExportTest(unittest.TestCase):
     def test_provider_bootstrap_repairs_local_audio_deps_when_compatibility_probe_fails(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
-            marker = temp_path / "provider-cache" / ".local-audio-deps.installed"
+            marker = temp_path / ".bootstrap" / ".local-audio-deps.installed"
             marker.parent.mkdir(parents=True, exist_ok=True)
             requirements = temp_path / "requirements-local-audio.txt"
             requirements.write_text("huggingface_hub>=0.34.0,<1.0\n", encoding="utf-8")
             marker.write_text(f"{requirements.read_text(encoding='utf-8')}\npython={sys.version.split()[0]}\n", encoding="utf-8")
-            with patch.object(provider_bootstrap, "LOCAL_AUDIO_MARKER", marker), patch.object(
-                provider_bootstrap,
-                "PIP_CACHE",
-                temp_path / "provider-cache" / "pip",
-            ), patch.object(
-                provider_bootstrap,
-                "PYTHON_TARGET",
-                temp_path / "provider-cache" / "python",
-            ), patch("pathlib.Path.exists", return_value=True), patch(
+            with patch.object(provider_bootstrap, "LOCAL_AUDIO_MARKER", marker), patch("pathlib.Path.exists", return_value=True), patch(
                 "pathlib.Path.read_text",
                 return_value=requirements.read_text(encoding="utf-8"),
             ), patch.object(provider_bootstrap, "modules_available", return_value=True), patch.object(
@@ -803,27 +857,16 @@ class AudioExportTest(unittest.TestCase):
             self.assertIn("--upgrade", run.call_args.args[0])
             self.assertIn("huggingface_hub>=0.34.0,<1.0", run.call_args.args[0])
             self.assertNotIn("-r", run.call_args.args[0])
+            self.assertNotIn("--target", run.call_args.args[0])
 
     def test_provider_bootstrap_upgrade_ignores_existing_markers(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
-            marker = temp_path / "provider-cache" / ".ace-step.installed"
+            marker = temp_path / ".bootstrap" / ".ace-step.installed"
             package = "git+https://github.com/ace-step/ACE-Step.git"
             marker.parent.mkdir(parents=True, exist_ok=True)
             marker.write_text(package, encoding="utf-8")
-            with patch.object(provider_bootstrap, "CACHE_ROOT", temp_path / "provider-cache"), patch.object(
-                provider_bootstrap,
-                "PIP_CACHE",
-                temp_path / "provider-cache" / "pip",
-            ), patch.object(
-                provider_bootstrap,
-                "PYTHON_TARGET",
-                temp_path / "provider-cache" / "python",
-            ), patch.object(
-                provider_bootstrap,
-                "ACE_STEP_MARKER",
-                marker,
-            ), patch.dict(
+            with patch.object(provider_bootstrap, "ACE_STEP_MARKER", marker), patch.dict(
                 os.environ,
                 {"SONG_AI_ACE_STEP_PACKAGE": package},
                 clear=False,
@@ -832,6 +875,7 @@ class AudioExportTest(unittest.TestCase):
 
             self.assertTrue(installed)
             self.assertIn("--upgrade", run.call_args.args[0])
+            self.assertNotIn("--target", run.call_args.args[0])
 
     def test_local_tool_wrappers_are_available(self) -> None:
         for tool_name in (
