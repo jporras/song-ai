@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -17,7 +18,13 @@ class ResourceMonitorSettings:
     start_llm_command: str
 
     @classmethod
-    def load(cls) -> "ResourceMonitorSettings":
+    def load(cls, project_root: Path | None = None) -> "ResourceMonitorSettings":
+        start_script = project_root / "scripts" / "start-local-llms.ps1" if project_root else None
+        stop_script = project_root / "scripts" / "stop-local-llms.ps1" if project_root else None
+        default_start = f'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{start_script}"' if start_script and start_script.exists() else ""
+        default_stop = f'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{stop_script}"' if stop_script and stop_script.exists() else ""
+        stop_command = os.getenv("SONG_AI_STOP_LLM_COMMAND")
+        start_command = os.getenv("SONG_AI_START_LLM_COMMAND")
         return cls(
             enabled=os.getenv("SONG_AI_RESOURCE_MONITOR_ENABLED", "true").lower() == "true",
             sample_seconds=int(os.getenv("SONG_AI_RESOURCE_SAMPLE_SECONDS", "2")),
@@ -26,8 +33,8 @@ class ResourceMonitorSettings:
             max_cpu_percent_before_audio=int(os.getenv("SONG_AI_MAX_CPU_PERCENT_BEFORE_AUDIO", "85")),
             audio_start_delay_seconds=int(os.getenv("SONG_AI_AUDIO_START_DELAY_SECONDS", "45")),
             release_llm_before_audio=os.getenv("SONG_AI_RELEASE_LLM_BEFORE_AUDIO", "true").lower() == "true",
-            stop_llm_command=os.getenv("SONG_AI_STOP_LLM_COMMAND", "").strip(),
-            start_llm_command=os.getenv("SONG_AI_START_LLM_COMMAND", "").strip(),
+            stop_llm_command=(stop_command if stop_command and stop_command.strip() else default_stop).strip(),
+            start_llm_command=(start_command if start_command and start_command.strip() else default_start).strip(),
         )
 
     def to_dict(self) -> dict[str, object]:

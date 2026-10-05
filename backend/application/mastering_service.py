@@ -8,6 +8,7 @@ import wave
 
 from core.storage import StorageManager
 from models.song_workflow import SongPhase, SongPhaseStatus
+from application.sample_gate import SampleGate
 
 
 class MasteringService:
@@ -17,6 +18,10 @@ class MasteringService:
         self.storage = storage
 
     def master(self, song_id: str) -> dict[str, object]:
+        project = self.storage.get_song_project(song_id)
+        if project is None:
+            raise ValueError("Proyecto no encontrado para masterizar.")
+        SampleGate(self.storage).require_for_project(project)
         project_dir = self.storage.data_dir / "projects" / song_id
         mix_path = project_dir / "mix.wav"
         final_wav_path = project_dir / "final_song.wav"

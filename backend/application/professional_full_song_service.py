@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+import re
 from pathlib import Path
 import importlib.machinery
 import signal
@@ -14,6 +15,14 @@ from audio.resource_monitor import ResourceMonitor
 from config.resource_settings import ResourceMonitorSettings
 from core.storage import StorageManager
 from models.song_workflow import SongPhase, SongPhaseStatus
+from application.sample_gate import SampleGate
+from audio.ace_step_commands import normalize_ace_step_template
+from application.ace_step_plan_compiler import PreviewAceStepPlan
+from application.ace_step_plan_review import ReviewAceStepPlan
+from adapters.ace_step_source_audio import AceStepSourceAudio
+from adapters.ace_step_execution import AceStepExecutionArguments
+from adapters.sqlite.ace_step_plan_repository import AceStepPlanRepository
+from audio.execution_lock import exclusive_audio
 
 
 class ProfessionalFullSongService:
@@ -33,12 +42,17 @@ class ProfessionalFullSongService:
         return bool(self.command_template)
 
     def generate(self, song_id: str, generation_profile: str | None = None) -> dict[str, object]:
+        with exclusive_audio():
+            return self._generate(song_id, generation_profile)
+
+    def _generate(self, song_id: str, generation_profile: str | None = None) -> dict[str, object]:
         if not self.configured():
             raise ValueError("No hay provider full-song configurado.")
 
         project = self.storage.get_song_project(song_id)
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
+        SampleGate(self.storage).require_for_project(project)
 
         project_dir = self.storage.data_dir / "projects" / song_id
         final_wav_path = project_dir / "final_song.wav"
@@ -51,11 +65,20 @@ class ProfessionalFullSongService:
 
         if not lyrics_path.exists():
             raise ValueError("La letra editable lyrics.md debe existir antes de generar la cancion completa.")
+        self._assert_final_lyrics(lyrics_path)
         self._assert_required_dependencies()
         profile = resolve_ace_step_profile(generation_profile)
 
-        prompt_path.write_text(self._build_prompt(project), encoding="utf-8")
-        self._run_command(project, project_dir, prompt_path, lyrics_path, final_wav_path, log_path, diagnostics_path, profile)
+        plan_item = None
+        process_arguments = None
+        if "tools/acestep_generate.py" in self.command_template.replace("\\", "/"):
+            plan_item, process_arguments = self._approved_execution(song_id, profile, project_dir, final_wav_path)
+            prompt_path = project_dir / "ace_plan_caption.txt"
+            lyrics_path = project_dir / "ace_plan_lyrics.md"
+        else:
+            prompt_path.write_text(self._build_prompt(project), encoding="utf-8")
+        self._run_command(project, project_dir, prompt_path, lyrics_path, final_wav_path, log_path, diagnostics_path, profile,
+                          process_arguments=process_arguments)
         after_audio = self.resource_monitor.capture(phase="after_audio", persist=True)
         self._assert_audio(final_wav_path)
         self._export_mp3(final_wav_path, final_mp3_path)
@@ -64,6 +87,9 @@ class ProfessionalFullSongService:
         runtime = dict(diagnostics.get("runtime", {}))
 
         common_metadata = {
+            "ace_plan_id": plan_item["plan_id"] if plan_item else "",
+            "ace_plan_sha256": plan_item["plan"]["plan_sha256"] if plan_item else "",
+            "spec_revision_id": plan_item["plan"]["spec_revision_id"] if plan_item else "",
             "generation_mode": "local_full_song_command",
             "quality_status": "final_candidate",
             "provider_name": "ACE-Step",
@@ -153,13 +179,18 @@ class ProfessionalFullSongService:
         log_path: Path,
         diagnostics_path: Path,
         profile: AceStepProfile,
+        process_arguments: list[str] | None = None,
+        revalidate=None,
+        execution_phase: str = SongPhase.MASTERING.value,
+        cancellation_check=None,
     ) -> None:
-        command = self._format_command(project, project_dir, prompt_path, lyrics_path, output_path, log_path, diagnostics_path, profile)
+        command = subprocess.list2cmdline(process_arguments) if process_arguments is not None else self._format_command(project, project_dir, prompt_path, lyrics_path, output_path, log_path, diagnostics_path, profile)
+        exploratory = process_arguments is not None and "exploratory_candidate" in process_arguments
         prep = self.resource_monitor.prepare_for_audio(
-            phase=SongPhase.MASTERING.value,
+            phase=execution_phase,
             event_callback=lambda message: self.storage.create_song_event(
                 song_id=str(project["id"]),
-                phase=SongPhase.MASTERING.value,
+                phase=execution_phase,
                 status=SongPhaseStatus.RUNNING.value,
                 progress=20,
                 message=message,
@@ -169,7 +200,7 @@ class ProfessionalFullSongService:
         )
         self.storage.create_song_event(
             song_id=str(project["id"]),
-            phase=SongPhase.MASTERING.value,
+            phase=execution_phase,
             status=SongPhaseStatus.RUNNING.value,
             progress=30,
             message="ACE-Step: recursos preparados; iniciando proceso local de audio.",
@@ -201,7 +232,7 @@ class ProfessionalFullSongService:
             )
             log_file.write(f"MODEL: checkpoint_path={self._checkpoint_path_from_command(command)}\n")
             log_file.write(f"DURATION_REQUESTED_SECONDS: {self._duration_seconds(project)}\n")
-            log_file.write("OUTPUT_TYPE: full_song_with_vocals\n")
+            log_file.write(f"OUTPUT_TYPE: {'exploratory_candidate' if exploratory else 'full_song_with_vocals'}\n")
             log_file.write("PROMPT_BEGIN\n")
             log_file.write(prompt_path.read_text(encoding="utf-8"))
             log_file.write("\nPROMPT_END\n")
@@ -216,9 +247,15 @@ class ProfessionalFullSongService:
             started_at = time.monotonic()
             last_progress_event = started_at
             try:
+                if prep.get("readiness", {}).get("ready") is False:
+                    raise ValueError("No hay recursos suficientes para iniciar audio. " + str(prep["readiness"].get("message", "Revisa memoria disponible.")))
+                if cancellation_check is not None:
+                    cancellation_check()
+                if revalidate is not None:
+                    revalidate()
                 process = subprocess.Popen(
-                    command,
-                    shell=True,
+                    process_arguments if process_arguments is not None else command,
+                    shell=process_arguments is None,
                     stdout=log_file,
                     stderr=subprocess.STDOUT,
                     text=True,
@@ -227,14 +264,20 @@ class ProfessionalFullSongService:
                 )
                 self.storage.create_song_event(
                     song_id=str(project["id"]),
-                    phase=SongPhase.MASTERING.value,
+                    phase=execution_phase,
                     status=SongPhaseStatus.RUNNING.value,
                     progress=40,
-                    message="ACE-Step: proceso iniciado; generando audio con voz integrada.",
+                    message="ACE-Step: proceso iniciado; generando borrador exploratorio." if exploratory else "ACE-Step: proceso iniciado; generando audio con voz integrada.",
                     active_model="ace-step",
                     payload={"pid": process.pid, "log_path": str(log_path), "output_path": str(output_path)},
                 )
                 while True:
+                    if cancellation_check is not None:
+                        try:
+                            cancellation_check()
+                        except Exception:
+                            self._terminate_process(process)
+                            raise
                     return_code = process.poll()
                     if return_code is not None:
                         break
@@ -261,7 +304,7 @@ class ProfessionalFullSongService:
                         elapsed = now - started_at
                         self.storage.create_song_event(
                             song_id=str(project["id"]),
-                            phase=SongPhase.MASTERING.value,
+                            phase=execution_phase,
                             status=SongPhaseStatus.RUNNING.value,
                             progress=55,
                             message=(
@@ -288,7 +331,7 @@ class ProfessionalFullSongService:
                 self.resource_monitor.restore_text_models(
                     event_callback=lambda message: self.storage.create_song_event(
                         song_id=str(project["id"]),
-                        phase=SongPhase.MASTERING.value,
+                        phase=execution_phase,
                         status=SongPhaseStatus.RUNNING.value,
                         progress=80,
                         message=message,
@@ -314,7 +357,7 @@ class ProfessionalFullSongService:
                 )
                 self.storage.create_song_event(
                     song_id=str(project["id"]),
-                    phase=SongPhase.MASTERING.value,
+                    phase=execution_phase,
                     status=SongPhaseStatus.RUNNING.value,
                     progress=75,
                     message=(
@@ -340,7 +383,7 @@ class ProfessionalFullSongService:
                 error = dict(diagnostics.get("error", {}))
                 self.storage.create_song_event(
                     song_id=str(project["id"]),
-                    phase=SongPhase.MASTERING.value,
+                    phase=execution_phase,
                     status=SongPhaseStatus.FAILED.value,
                     progress=75,
                     message=(
@@ -358,6 +401,20 @@ class ProfessionalFullSongService:
                 )
             detail = self._read_log_tail(log_path)
             raise ValueError(f"El provider full-song fallo: {detail}")
+
+    def _approved_execution(self, song_id: str, profile: AceStepProfile, directory: Path, output: Path):
+        review = ReviewAceStepPlan(PreviewAceStepPlan(self.storage, AceStepSourceAudio(self.storage.data_dir)),
+                                  AceStepPlanRepository(self.storage.db_path))
+        item = review.latest(song_id)
+        if not item or item["effective_status"] != "approved":
+            raise ValueError("Prepara y aprueba un plan ACE-Step vigente antes de generar la cancion.")
+        if item["plan"]["payload"]["task_type"] != "text2music":
+            raise ValueError("Esta ruta final crea desde la idea; las operaciones de edicion requieren su runner de candidatos.")
+        lyrics_path = directory / "lyrics.md"
+        if not lyrics_path.is_file() or lyrics_path.read_text(encoding="utf-8") != item["plan"]["payload"]["lyrics"]:
+            raise ValueError("La letra del proyecto no coincide con el plan aprobado; sincroniza y revisa la letra.")
+        argv = AceStepExecutionArguments().build(item, profile, self._python_executable(), directory, output)
+        return item, argv
 
     def _format_command(
         self,
@@ -382,7 +439,7 @@ class ProfessionalFullSongService:
             **profile.format_values(),
         }
         try:
-            return self.command_template.format(**values)
+            return normalize_ace_step_template(self.command_template).format(**values)
         except KeyError as error:
             missing = str(error).strip("'")
             raise ValueError(
@@ -405,27 +462,50 @@ class ProfessionalFullSongService:
             return ""
 
     def _terminate_process(self, process: subprocess.Popen[str]) -> None:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15, check=False)
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=15)
+            return
         try:
             os.killpg(process.pid, signal.SIGTERM)
         except Exception:
             process.kill()
+        try:
+            process.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=15)
 
     def _build_prompt(self, project: dict[str, object]) -> str:
         spec = dict(dict(project.get("spec") or {}).get("json_spec", {}))
         music_plan_path = self.storage.data_dir / "projects" / str(project["id"]) / "music_plan.json"
         music_plan = self.storage.read_json(music_plan_path) if music_plan_path.exists() else {}
+        voice_style = str(spec.get("voice_style", "")).strip()
+        constraints = [
+            "Use exactly the provided lyrics file; do not invent, translate, replace or omit lyrics.",
+            "Keep one consistent lead singer identity for the full song.",
+        ]
+        lowered_voice = voice_style.lower()
+        if "female" in lowered_voice:
+            constraints.append("Lead vocal gender: female only; do not switch to male vocals.")
+        elif "male" in lowered_voice:
+            constraints.append("Lead vocal gender: male only; do not switch to female vocals.")
         return "\n".join(
             [
                 f"Title: {spec.get('title', project.get('title', 'Song AI'))}",
                 f"Song type: {spec.get('song_type', '')}",
                 f"Language: {spec.get('language', '')}",
                 f"Emotion: {spec.get('emotion', '')}",
-                f"Voice style: {spec.get('voice_style', '')}",
+                f"Voice style: {voice_style}",
                 f"Duration seconds: {spec.get('duration_seconds', music_plan.get('duration_seconds', ''))}",
                 f"BPM: {spec.get('bpm', music_plan.get('bpm', ''))}",
                 f"Key: {spec.get('key', music_plan.get('key', ''))}",
                 f"Instruments: {', '.join(str(item) for item in list(spec.get('instruments', [])))}",
                 "Goal: complete finished song with coherent instrumental, sung vocals, melody, lyrics and final mix.",
+                "Constraints: " + " ".join(constraints),
             ]
         )
 
@@ -464,6 +544,18 @@ class ProfessionalFullSongService:
                 "Falta dependencia de audio I/O para ACE-Step: instala torchcodec o soundfile. "
                 "En Intel XPU, ACE-Step usa soundfile porque torchcodec no esta disponible para XPU. "
                 "Ejecuta scripts\\install-intel-xpu-prereqs.ps1 o scripts\\install-local-prereqs.ps1."
+            )
+
+    def _assert_final_lyrics(self, lyrics_path: Path) -> None:
+        lyrics = lyrics_path.read_text(encoding="utf-8")
+        if "# Letra mock" in lyrics or "Pendiente de completar" in lyrics:
+            raise ValueError("La letra final todavia es mock o incompleta. Guarda la fase Lyrics antes de generar.")
+        unresolved = sorted(set(re.findall(r"\{[^{}\n]+\}", lyrics)))
+        if unresolved:
+            raise ValueError(
+                "La letra final contiene placeholders sin resolver: "
+                + ", ".join(unresolved)
+                + ". Completa esos campos antes de generar."
             )
 
     def _requested_device_from_command(self, command: str) -> str:

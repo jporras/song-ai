@@ -6,8 +6,10 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 from audio.ace_step_profiles import AceStepProfile, apply_ace_step_profile_env, resolve_ace_step_profile
+from audio.ace_step_commands import normalize_ace_step_template
 from audio.mock_song_renderer import MockSongRenderContext
 from audio.accelerator_detection import torch_accelerator_snapshot
 from audio.resource_monitor import ResourceMonitor
@@ -112,6 +114,7 @@ class LocalSongPipeline:
 
         if self.settings.full_song_command.strip() and self._full_song_command_available():
             profile = resolve_ace_step_profile(generation_profile)
+            diagnostics_path = work_dir / "ace_step_diagnostics.json"
             self._prepare_audio_resources("full_song")
             try:
                 self._run_template(
@@ -122,6 +125,9 @@ class LocalSongPipeline:
                         "output_path": final_wav_path,
                         "work_dir": work_dir,
                         "log_path": command_log_path,
+                        "diagnostics_path": diagnostics_path,
+                        "python_executable": Path(sys.executable),
+                        "duration_seconds": self._estimated_duration_seconds(context),
                     },
                     profile,
                 )
@@ -209,12 +215,21 @@ class LocalSongPipeline:
             "note": "Cancion final generada con herramientas locales configuradas; no usa modo pro.",
         }
 
-    def _run_template(self, template: str, values: dict[str, Path], profile: AceStepProfile | None = None) -> None:
+    def _estimated_duration_seconds(self, context: MockSongRenderContext) -> int:
+        lyric_lines = [
+            line.strip()
+            for line in context.lyrics_markdown.splitlines()
+            if line.strip() and not line.lstrip().startswith("#") and ":" not in line
+        ]
+        estimated = max(18, len(lyric_lines) * 4)
+        return min(self.settings.max_full_song_duration_seconds, estimated)
+
+    def _run_template(self, template: str, values: dict[str, object], profile: AceStepProfile | None = None) -> None:
         format_values: dict[str, object] = {key: str(value) for key, value in values.items()}
         if profile is not None:
             format_values.update(profile.format_values())
         try:
-            command = template.format(**format_values)
+            command = (normalize_ace_step_template(template) if profile else template).format(**format_values)
         except KeyError as error:
             missing = str(error).strip("'")
             raise ValueError(

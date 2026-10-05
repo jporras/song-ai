@@ -3,6 +3,7 @@ from uuid import uuid4
 from core.storage import StorageManager
 from providers.registry import ProviderRegistry
 from providers.llamacpp import LlamaCppError
+from audio.execution_lock import audio_execution_active
 
 
 class ModelOrchestrator:
@@ -43,18 +44,43 @@ class ModelOrchestrator:
     def status(self) -> dict[str, object]:
         tasks = self.storage.list_tasks()
         latest_task = tasks[0] if tasks else None
+        audio_task = self.active_audio_task()
         return {
-            "mode": "mock_orchestrator",
+            "mode": "local_audio_jobs" if any(task.get("task_type") == "ace_step_exploratory_candidate" for task in tasks) else "mock_orchestrator",
             "memory_policy": "one_heavy_model_at_a_time",
             "load_policy": "load_on_demand_release_after_task",
-            "assistant_state": "active" if latest_task is None else "active_after_handoff",
+            "assistant_state": "suspended_for_audio" if audio_task else ("active" if latest_task is None else "active_after_handoff"),
             "active_model": None,
+            "active_audio_task": audio_task,
             "latest_task": latest_task,
             "available_roles": list(self.ROLE_PROVIDER_KEYS),
             "active_providers": self.provider_registry.active_providers(),
         }
 
+    def active_audio_task(self):
+        return next((task for task in self.storage.list_tasks()
+                     if task.get("task_type") == "ace_step_exploratory_candidate"
+                     and task.get("status") in {"pending", "running", "cancelling"}), None)
+
+    def require_planning_available(self):
+        if self.active_audio_task() is not None or audio_execution_active():
+            raise ValueError("Hay un borrador de audio activo; espera o cancela antes de solicitar revision de modelos.")
+
+    def begin_audio_handoff(self, task_id: str, run_id: str, payload: dict):
+        self.record_project_event(project_id=payload["song_id"], project_name=payload["song_id"],
+            phase="SONG_SPEC_COLLECTION", actor="orchestrator", model_role="music", provider_name="ACE-Step",
+            status="suspended", message="Assistant pausado; el plan persistido pasa al worker de audio.",
+            task_id=task_id, run_id=run_id, metadata={"plan_id": payload["plan_id"], "model_load_verified": False})
+
+    def end_audio_handoff(self, task_id: str, run_id: str, payload: dict):
+        task = next((item for item in self.storage.list_tasks() if item["task_id"] == task_id), {})
+        self.record_project_event(project_id=payload["song_id"], project_name=payload["song_id"],
+            phase="SONG_SPEC_COLLECTION", actor="orchestrator", model_role="assistant", provider_name="assistant-ui",
+            status="resumed", message="Worker de audio cerrado; assistant disponible desde el estado persistido.",
+            task_id=task_id, run_id=run_id, metadata={"outcome": task.get("status"), "model_reload_verified": False})
+
     def run_handoff(self, payload: dict[str, object]) -> dict[str, object]:
+        self.require_planning_available()
         model_role = str(payload.get("model_role", "intent_extractor"))
         task_type = str(payload.get("task_type", "extract_intent"))
         if model_role not in self.ROLE_PROVIDER_KEYS:
@@ -125,6 +151,8 @@ class ModelOrchestrator:
             task_type,
             payload,
         )
+        result.setdefault("mode", "mock_handoff")
+        result.setdefault("provider_executed", False)
         completed_task = self.storage.update_task(
             task_id=task_id,
             status="completed",
@@ -204,18 +232,21 @@ class ModelOrchestrator:
         summary = str(response.get("summary", "")).strip()
         if not summary:
             return None
+        response_mode = str(response.get("mode", "unknown"))
+        provider_executed = response_mode not in {"local_mock", "mock", "placeholder"}
         return {
             "model_role": model_role,
             "task_type": task_type,
-            "mode": "provider_handoff",
-            "provider_executed": True,
+            "mode": "provider_handoff" if provider_executed else "mock_handoff",
+            "provider_executed": provider_executed,
             "provider_name": response.get("model", self.DEFAULT_MODELS.get(model_role, "unknown")),
             "summary": summary,
+            "engine_steering": response.get("engine_steering", {}),
             "missing_fields": [],
             "validation_results": {
                 "status": "provider_validated",
                 "source_of_truth": "sqlite_payload",
-                "provider_mode": response.get("mode", "unknown"),
+                "provider_mode": response_mode,
             },
             "song_blueprint": {
                 "goal": "complete_song_with_local_pipeline",

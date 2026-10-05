@@ -21,6 +21,7 @@ from application.song_service import SongService
 from application.professional_full_song_service import ProfessionalFullSongService
 from audio.ace_step_profiles import BASE_PROFILE, TURBO_PROFILE
 from audio.local_song_pipeline import LocalSongPipeline
+from audio.mock_song_renderer import MockSongRenderContext
 from config.resource_settings import ResourceMonitorSettings
 from config.settings import Settings
 from config.model_settings import LocalModelSettings
@@ -49,6 +50,13 @@ class AudioExportTest(unittest.TestCase):
             for frame in range(sample_rate * seconds):
                 value = int(7000 * math.sin(2 * math.pi * frequency * frame / sample_rate))
                 wav_file.writeframesraw(value.to_bytes(2, byteorder="little", signed=True))
+
+    def confirm_current_spec(self, service: SongService, song_id: str) -> dict[str, object]:
+        current = service.get_professional_specification(song_id)
+        return service.confirm_professional_specification(
+            song_id,
+            {"revision_id": current["spec"]["revision"]["revision_id"]},
+        )
 
     def test_provider_registry_is_local_only_without_pro_placeholders(self) -> None:
         registry = ProviderRegistry()
@@ -109,9 +117,47 @@ class AudioExportTest(unittest.TestCase):
             )
 
             self.assertEqual(second["qwen"]["status"], "ready_for_generation")
-            self.assertEqual(second["progress"]["current"], 2)
+            self.assertEqual(second["progress"]["current"], 1)
             self.assertEqual(second["spec"]["json_spec"]["duration_seconds"], 120)
             self.assertTrue((Path(temp_dir) / "projects" / song_id / "song_spec.json").exists())
+            self.assertTrue((Path(temp_dir) / "projects" / song_id / "song_spec.md").exists())
+            self.assertEqual(second["qwen"]["validation_basis"], "deterministic_rules")
+            self.assertFalse(second["qwen"]["model_review_executed"])
+            self.assertEqual(second["spec"]["revision"]["revision_number"], 2)
+            self.assertIn(second["spec"]["revision"]["technical_review_mode"], {"mock_handoff", "mock_handoff_after_provider_error", "provider_review"})
+            self.assertEqual(second["spec"]["revision"]["user_confirmation_status"], "pending")
+            self.assertTrue(second["qwen"]["handoff_task_id"])
+
+            specification = service.get_professional_specification(song_id)
+            self.assertEqual(len(specification["revisions"]), 2)
+            self.assertGreater(specification["catalog"]["summary"]["total"], 20)
+            self.assertEqual(
+                specification["catalog"]["summary"]["required_decided"],
+                specification["catalog"]["summary"]["required"],
+            )
+            idea_group = next(group for group in specification["catalog"]["groups"] if group["id"] == "idea")
+            recipient = next(field for field in idea_group["fields"] if field["id"] == "recipient_name")
+            self.assertEqual(recipient["value"], "Isabella")
+            self.assertEqual(recipient["coverage_status"], "decided")
+            self.assertEqual(recipient["source"], "extracted_from_user_message")
+
+            with self.assertRaisesRegex(ValueError, "confirma la ficha completa"):
+                service.generate_professional_lyrics(song_id)
+
+            confirmed = service.confirm_professional_specification(
+                song_id,
+                {"revision_id": second["spec"]["revision"]["revision_id"]},
+            )
+            self.assertEqual(confirmed["spec"]["revision"]["revision_number"], 3)
+            self.assertEqual(confirmed["spec"]["revision"]["user_confirmation_status"], "confirmed")
+            self.assertEqual(len(confirmed["revisions"]), 3)
+            self.assertEqual(confirmed["progress"]["current"], 2)
+
+            with self.assertRaisesRegex(ValueError, "revision cambio"):
+                service.confirm_professional_specification(
+                    song_id,
+                    {"revision_id": second["spec"]["revision"]["revision_id"]},
+                )
 
     def test_professional_lyrics_generation_creates_editable_artifacts(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
@@ -130,6 +176,7 @@ class AudioExportTest(unittest.TestCase):
                 },
             )
 
+            self.confirm_current_spec(service, song_id)
             generated = service.generate_professional_lyrics(song_id)
             lyrics = service.get_professional_lyrics(song_id)
 
@@ -165,6 +212,7 @@ class AudioExportTest(unittest.TestCase):
                     )
                 },
             )
+            self.confirm_current_spec(service, song_id)
             service.generate_professional_lyrics(song_id)
 
             reviewed = service.review_professional_lyrics(song_id)
@@ -189,6 +237,7 @@ class AudioExportTest(unittest.TestCase):
                     )
                 },
             )
+            self.confirm_current_spec(service, song_id)
             service.generate_professional_lyrics(song_id)
             service.update_professional_lyrics(song_id, {"content": "# Borrador\n\n## Verse 1\nUna linea sola\n"})
 
@@ -214,6 +263,7 @@ class AudioExportTest(unittest.TestCase):
                     )
                 },
             )
+            self.confirm_current_spec(service, song_id)
             service.generate_professional_lyrics(song_id)
             service.update_professional_lyrics(
                 song_id,
@@ -250,6 +300,7 @@ class AudioExportTest(unittest.TestCase):
                     )
                 },
             )
+            self.confirm_current_spec(service, song_id)
             service.generate_professional_lyrics(song_id)
             service.review_professional_lyrics(song_id)
 
@@ -280,6 +331,7 @@ class AudioExportTest(unittest.TestCase):
                     )
                 },
             )
+            self.confirm_current_spec(service, song_id)
             service.generate_professional_lyrics(song_id)
             service.review_professional_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
@@ -312,6 +364,7 @@ class AudioExportTest(unittest.TestCase):
                     )
                 },
             )
+            self.confirm_current_spec(service, song_id)
             service.generate_professional_lyrics(song_id)
             service.review_professional_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
@@ -345,6 +398,7 @@ class AudioExportTest(unittest.TestCase):
                     )
                 },
             )
+            self.confirm_current_spec(service, song_id)
             service.generate_professional_lyrics(song_id)
             service.review_professional_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
@@ -379,6 +433,7 @@ class AudioExportTest(unittest.TestCase):
                     )
                 },
             )
+            self.confirm_current_spec(service, song_id)
             service.generate_professional_lyrics(song_id)
             service.review_professional_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
@@ -416,6 +471,7 @@ class AudioExportTest(unittest.TestCase):
                     )
                 },
             )
+            self.confirm_current_spec(service, song_id)
             service.generate_professional_lyrics(song_id)
             service.review_professional_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
@@ -453,6 +509,7 @@ class AudioExportTest(unittest.TestCase):
                     )
                 },
             )
+            self.confirm_current_spec(service, song_id)
             service.generate_professional_lyrics(song_id)
             service.review_professional_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
@@ -497,6 +554,7 @@ class AudioExportTest(unittest.TestCase):
                     )
                 },
             )
+            self.confirm_current_spec(service, song_id)
             service.generate_professional_lyrics(song_id)
             service.review_professional_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
@@ -528,12 +586,18 @@ class AudioExportTest(unittest.TestCase):
             base_settings = Settings.load()
             local_settings = replace(
                 base_settings.local_models,
+                full_song_command="",
                 singing_voice_command=(
                     f'"{sys.executable}" "{PROJECT_ROOT / "tools" / "use_audio_file.py"}" '
                     f'--input "{vocals_source}" --output "{{output_path}}"'
                 ),
             )
-            settings = replace(base_settings, data_dir=temp_path, local_models=local_settings)
+            settings = replace(
+                base_settings,
+                data_dir=temp_path,
+                local_models=local_settings,
+                resource_monitor=replace(base_settings.resource_monitor, enabled=False),
+            )
             storage = StorageManager(temp_path)
             service = SongService(storage, settings)
             service.bootstrap()
@@ -548,6 +612,7 @@ class AudioExportTest(unittest.TestCase):
                     )
                 },
             )
+            self.confirm_current_spec(service, song_id)
             service.generate_professional_lyrics(song_id)
             service.review_professional_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
@@ -621,7 +686,12 @@ class AudioExportTest(unittest.TestCase):
                 ),
                 singing_voice_command="",
             )
-            settings = replace(base_settings, data_dir=temp_path, local_models=local_settings)
+            settings = replace(
+                base_settings,
+                data_dir=temp_path,
+                local_models=local_settings,
+                resource_monitor=replace(base_settings.resource_monitor, enabled=False),
+            )
             storage = StorageManager(temp_path)
             service = SongService(storage, settings)
             service.bootstrap()
@@ -636,6 +706,7 @@ class AudioExportTest(unittest.TestCase):
                     )
                 },
             )
+            self.confirm_current_spec(service, song_id)
             service.generate_professional_lyrics(song_id)
             service.review_professional_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
@@ -682,7 +753,7 @@ class AudioExportTest(unittest.TestCase):
             )
 
             self.assertIn("acestep-1.5-2b-turbo", command)
-            self.assertIn("--infer-step 4", command)
+            self.assertIn("--infer-step 8", command)
             self.assertIn("--torch-threads 4", command)
             self.assertIn("--device xpu", command)
             base_command = service._format_command(
@@ -695,12 +766,13 @@ class AudioExportTest(unittest.TestCase):
                 temp_path / "diag.json",
                 BASE_PROFILE,
             )
-            self.assertIn("acestep-1.5-3.5b-default", base_command)
-            self.assertIn("--infer-step 8", base_command)
+            self.assertIn("acestep-1.5-2b-turbo", base_command)
+            self.assertIn("--config-path acestep-v15-base", base_command)
+            self.assertIn("--infer-step 32", base_command)
             self.assertIn("--torch-threads 14", base_command)
             self.assertIn("--device cpu", base_command)
-            self.assertEqual(service._command_env(TURBO_PROFILE)["ACESTEP_MODEL_REPO"], "ACE-Step/ACE-Step-v1-2B-turbo")
-            self.assertEqual(service._command_env(BASE_PROFILE)["ACESTEP_MODEL_REPO"], "ACE-Step/ACE-Step-v1-3.5B")
+            self.assertEqual(service._command_env(TURBO_PROFILE)["ACESTEP_MODEL_REPO"], "ACE-Step/Ace-Step1.5")
+            self.assertEqual(service._command_env(BASE_PROFILE)["ACESTEP_MODEL_REPO"], "ACE-Step/acestep-v15-base")
 
     def test_professional_full_song_command_reports_missing_format_token(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
@@ -940,6 +1012,44 @@ class AudioExportTest(unittest.TestCase):
         self.assertFalse(status.ready)
         self.assertFalse(full_song["configured"])
         self.assertIn("ACE-Step", str(full_song["detail"]))
+
+    def test_local_full_song_command_receives_all_documented_tokens(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            root = Path(temp_dir)
+            local_settings = replace(
+                Settings.load().local_models,
+                full_song_command=(
+                    "{python_executable} {prompt_path} {lyrics_path} {output_path} "
+                    "{diagnostics_path} {duration_seconds} {model_type} {infer_steps} {device} {threads}"
+                ),
+            )
+            pipeline = LocalSongPipeline(local_settings)
+            context = MockSongRenderContext(
+                project_name="Tokens",
+                description="Prueba",
+                instrumental_intent={"bpm": 90, "key": "C major"},
+                melody_intent={},
+                lyrics_intent={},
+                lyrics_markdown="# Verso\nLinea uno\nLinea dos\n",
+            )
+
+            def create_output(_template, values, _profile=None):
+                Path(str(values["output_path"])).write_bytes(b"wav")
+
+            with (
+                patch.object(pipeline, "_full_song_command_available", return_value=True),
+                patch("audio.local_song_pipeline.shutil.which", return_value="ffmpeg"),
+                patch.object(pipeline, "_run_template", side_effect=create_output) as run_template,
+                patch.object(pipeline, "_export_mp3", side_effect=lambda _wav, mp3: Path(mp3).write_bytes(b"mp3")),
+            ):
+                pipeline.generate(context, root / "song")
+
+            values = run_template.call_args.args[1]
+            self.assertEqual(
+                {"python_executable", "diagnostics_path", "duration_seconds"} - set(values),
+                set(),
+            )
+            self.assertGreaterEqual(int(values["duration_seconds"]), 18)
 
     def test_legacy_set_json_is_synced_to_sqlite(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
@@ -1263,11 +1373,11 @@ class AudioExportTest(unittest.TestCase):
             phases = service.project_phase_status()
             self.assertFalse(pipeline["ready"])
             self.assertIn("full_song", pipeline["missing"])
-            self.assertIn("mix_and_export", pipeline["missing"])
+            self.assertEqual("mix_and_export" in pipeline["missing"], shutil.which("ffmpeg") is None)
             self.assertTrue(system["components"])
             self.assertTrue(phases["phases"])
 
-            result = service.create_default_lullaby_mp3()
+            result = service.create_default_lullaby_mp3(approved_mock_fixture=True)
             exports_path = Path(str(result["exports_path"]))
             wav_path = exports_path / "final_mix.wav"
             lyrics_path = exports_path / "lyrics.md"
@@ -1299,6 +1409,7 @@ class AudioExportTest(unittest.TestCase):
             base_settings = Settings.load()
             local_settings = replace(
                 base_settings.local_models,
+                full_song_command="",
                 soundtrack_command=(
                     f'"{sys.executable}" "{PROJECT_ROOT / "tools" / "use_audio_file.py"}" '
                     f'--input "{instrumental_source}" --output "{{output_path}}"'
@@ -1312,7 +1423,8 @@ class AudioExportTest(unittest.TestCase):
             storage = StorageManager(temp_path)
             service = SongService(storage, settings)
             service.bootstrap()
-            service.create_default_lullaby_mp3()
+            service.local_song_pipeline.resource_monitor = None
+            service.create_default_lullaby_mp3(approved_mock_fixture=True)
 
             result = service.generate_local_final_song()
 

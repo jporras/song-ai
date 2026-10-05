@@ -32,6 +32,9 @@ class TechnicalDirectorService:
             "questions_for_user": self.creative_agent.friendly_questions(missing_fields),
             "song_spec": normalized,
             "approved_by_qwen": status == "ready_for_generation",
+            "validation_basis": "deterministic_rules",
+            "technical_review_mode": "rule_validation",
+            "model_review_executed": False,
         }
 
     def _normalize(self, spec: dict[str, object]) -> dict[str, object]:

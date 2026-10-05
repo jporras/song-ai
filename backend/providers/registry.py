@@ -1,4 +1,6 @@
 from config.model_settings import HuggingFaceModelSettings, LocalModelSettings
+from application.model_steering import ModelSteering
+from audio.execution_lock import exclusive_planning
 from providers.base import InterpreterProvider, LyricsProvider, MusicProvider, VoiceProvider
 from providers.local import (
     LocalInterpreterProvider,
@@ -15,9 +17,13 @@ class ProviderRegistry:
         self,
         hf_settings: HuggingFaceModelSettings | None = None,
         local_settings: LocalModelSettings | None = None,
+        steering: ModelSteering | None = None,
+        inference_guard=None,
     ) -> None:
         self.hf_settings = hf_settings
         self.local_settings = local_settings
+        self.steering = steering
+        self.inference_guard = inference_guard
         self.interpreter_providers: list[InterpreterProvider] = []
         self.technical_providers: list[InterpreterProvider] = []
         self.music_providers: list[MusicProvider] = [LocalMusicProvider()]
@@ -91,11 +97,24 @@ class ProviderRegistry:
 
     def interpret_with_active_provider(self, prompt: str, target: str) -> dict[str, object]:
         provider = self.interpreter_providers[0]
-        return provider.interpret(prompt, target)
+        return self._interpret_with_steering(provider, prompt, target, "gemma")
 
     def technical_with_active_provider(self, prompt: str, target: str) -> dict[str, object]:
         provider = self.technical_providers[0]
-        return provider.interpret(prompt, target)
+        return self._interpret_with_steering(provider, prompt, target, "qwen")
+
+    def _interpret_with_steering(self, provider, prompt: str, target: str, role: str) -> dict[str, object]:
+        if self.inference_guard is not None:
+            self.inference_guard()
+        with exclusive_planning():
+            return self._execute_interpret(provider, prompt, target, role)
+
+    def _execute_interpret(self, provider, prompt: str, target: str, role: str) -> dict[str, object]:
+        if self.steering is None:
+            return provider.interpret(prompt, target)
+        snapshot = self.steering.snapshot(role)
+        result = provider.interpret(f"{snapshot['prompt_context']}\n\nSolicitud y contexto del proyecto:\n{prompt}", target)
+        return {**result, "engine_steering": {key: value for key, value in snapshot.items() if key != "prompt_context"}}
 
     def llama_cpp_status(self) -> dict[str, object]:
         if self.local_settings is None:

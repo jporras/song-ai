@@ -1,11 +1,7 @@
 import { createApp } from "vue";
+import { apiUrl, readApiPayload } from "./api_client.js";
+import { productionActions } from "./production_actions.js";
 import "./styles.css";
-
-const API_BASE = window.SONG_AI_API_BASE || "";
-
-function apiUrl(path) {
-  return `${API_BASE}${path}`;
-}
 
 const ROUTE_BY_TAB = {
   library: "/library",
@@ -61,6 +57,10 @@ function nowLabel() {
   });
 }
 
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 createApp({
   data() {
     return {
@@ -69,6 +69,19 @@ createApp({
       showUnsavedModal: false,
       dirty: false,
       dirtyPhase: "",
+      savingPhase: "",
+      saveError: "",
+      createError: "",
+      creatingSet: false,
+      createRequestId: "",
+      createRequestSignature: "",
+      preparingDraft: "",
+      selectedDrafts: { instrumental: "", melody: "", lyrics: "" },
+      defaultPhasePayloads: {},
+      projectBaselinePayloads: {},
+      dirtyOutdatedSnapshot: [],
+      historyIndex: 0,
+      pendingHistoryDelta: 0,
       outdatedPhases: [],
       tabs: [
         { id: "library", label: "Biblioteca", path: "/library", hint: "Proyectos vivos, favoritos, busqueda y carga rapida." },
@@ -138,6 +151,7 @@ createApp({
         { id: "verso-1", type: "VERSO", text: "Cierro mis manos al cielo,\npara guardar tu jardin." },
         { id: "coro-1", type: "CORO", text: "Duerme, mi amor, sin miedo,\nyo voy a estar aqui." },
       ],
+      transformingSections: {},
       lyricTemplates: [],
       musicPlan: {
         bpm: 72,
@@ -234,18 +248,43 @@ createApp({
       sets: [],
       selectedSet: null,
       activeProject: null,
+      pendingActiveProjectId: "",
       professionalProjects: [],
+      professionalSpecification: { spec: null, catalog: { groups: [], summary: {} }, revisions: [] },
+      confirmingSpecification: false,
+      aceConfigurationDraft: null,
+      aceConfigurationRevision: "",
+      savingAceConfiguration: false,
+      acePlanReview: null,
+      acePlanLyricsDraft: null,
+      acePlanLyricsConfirmed: false,
+      acePlanBusy: false,
+      acePlanProjectId: "",
+      aceCandidateJob: null,
+      aceCandidateBusy: false,
+      aceCandidateAuthorized: false,
+      aceCandidateTimer: null,
+      sampleCheckpointRunning: false,
+      sampleListeningConfirmation: "",
       productionProjectId: "",
       productionRunningPhase: "",
       exportManifest: { artifacts: [] },
       favoriteProjects: {},
       archived: [],
+      deleteDialog: {
+        open: false,
+        loading: false,
+        setId: "",
+        name: "",
+        error: "",
+      },
       librarySearch: "",
       tagSearch: "",
       gemmaAssistant: {
         question: "Que sigue para terminar esta cancion?",
         response: null,
         loading: false,
+        error: "",
       },
       providers: {},
       studioStatus: {},
@@ -279,28 +318,68 @@ createApp({
       return this.tabs.find((tab) => tab.id === this.activeTab) || this.tabs[0];
     },
     activeProjectTitle() {
-      return this.activeProject?.project?.project_name || this.selectedSet?.project_name || this.projectSet.project_name || "Sin proyecto activo";
+      return this.activeProject?.project?.project_name || this.selectedSet?.project_name || "Sin proyecto activo";
     },
     activeProjectDescription() {
-      return this.projectSet.description || this.activeProject?.project?.description || this.selectedSet?.description || "";
+      return this.activeProject?.project?.description || this.selectedSet?.description || "";
     },
     activeProjectId() {
       return this.activeProject?.set?.set_id || this.selectedSet?.set_id || "";
     },
     activeProfessionalProject() {
       const linkedUserId = this.activeProjectId ? `set:${this.activeProjectId}` : "";
-      return (
-        this.professionalProjects.find((project) => project.id === this.productionProjectId)
-        || this.professionalProjects.find((project) => project.user_id === linkedUserId)
-        || this.professionalProjects[0]
-        || null
-      );
+      const byId = this.professionalProjects.find((project) => project.id === this.productionProjectId) || null;
+      if (linkedUserId) {
+        if (byId?.user_id === linkedUserId) return byId;
+        return this.professionalProjects.find((project) => project.user_id === linkedUserId) || null;
+      }
+      return byId;
     },
     productionGlobalStatus() {
       if (this.exportManifest?.artifacts?.length) return "Export listo";
       if (this.activeProfessionalProject?.current_phase) return `${this.activeProfessionalProject.current_phase} / ${this.activeProfessionalProject.status}`;
       if (this.activeProjectId) return "Proyecto cargado, Production pendiente";
       return "Sin proyecto activo";
+    },
+    specificationCoverage() {
+      const summary = this.professionalSpecification?.catalog?.summary || {};
+      return {
+        decided: Number(summary.decided || 0),
+        total: Number(summary.total || 0),
+        requiredDecided: Number(summary.required_decided || 0),
+        required: Number(summary.required || 0),
+      };
+    },
+    specificationRevision() {
+      return this.professionalSpecification?.spec?.revision || null;
+    },
+    canConfirmSpecification() {
+      const revision = this.specificationRevision;
+      return Boolean(
+        revision?.revision_id
+        && revision?.deterministic_valid
+        && revision?.user_confirmation_status !== "confirmed"
+        && !(this.professionalSpecification?.spec?.missing_fields || []).length
+      );
+    },
+    activeSampleCheckpoint() {
+      return (this.activeProject?.samples || [])[0] || null;
+    },
+    sampleCheckpointStatus() {
+      const sample = this.activeSampleCheckpoint;
+      if (!sample) return { state: "missing", title: "Sample pendiente", detail: "Crea un fragmento del set activo antes de generar la canción completa.", ready: false };
+      if (sample.freshness_status === "stale") return { state: "stale", title: "Sample desactualizado", detail: "Cambió la canción desde la última revisión. Regenera el sample.", ready: false };
+      if (sample.approval_status !== "approved") return { state: "pending", title: "Sample listo para revisar", detail: sample.audio_evidence ? "Escucha el audio y confirma que revisaste esta versión." : "Este checkpoint es mock y no contiene audio. Su aprobación solo valida el recorrido de prueba.", ready: false };
+      return { state: "approved", title: sample.audio_evidence ? "Audio revisado" : "Checkpoint mock aprobado", detail: "La producción real requiere un sample representativo verificado. Esta aprobación todavía no habilita mastering ni exportación final.", ready: false };
+    },
+    sampleReviewKey() {
+      const sample = this.activeSampleCheckpoint;
+      return sample?.audio_evidence ? `${this.activeProjectId}:${sample.sample_id}:${sample.audio_evidence.sha256}` : "";
+    },
+    sampleAudioUrl() {
+      const sample = this.activeSampleCheckpoint;
+      if (!sample?.audio_evidence) return "";
+      return apiUrl(`/api/sets/${encodeURIComponent(this.activeProjectId)}/samples/${encodeURIComponent(sample.sample_id)}/audio?audio_sha256=${encodeURIComponent(sample.audio_evidence.sha256)}`);
     },
     productionTimingEstimate() {
       const spec = this.activeProfessionalProject?.spec?.json_spec || {};
@@ -321,7 +400,7 @@ createApp({
       const fullSong = (this.localPipeline?.requirements || []).find((item) => item.role === "full_song") || {};
       const runtime = String(fullSong.runtime || "").trim();
       const gpuReady = runtime.includes("gpu") || runtime.includes("xpu");
-      const cpuSlow = !gpuReady && (runtime.includes("cpu") || runtime.includes("slow") || this.localPipeline?.limits?.allow_cpu_full_song);
+      const cpuSlow = !gpuReady && (runtime.includes("cpu") || runtime.includes("slow"));
       let minMinutes = 0;
       let maxMinutes = 0;
       if (clampedSeconds > 0) {
@@ -342,7 +421,7 @@ createApp({
         clampedSeconds,
         maxSeconds,
         timeoutSeconds,
-        runtime: runtime || "local",
+        runtime: runtime || "unavailable",
         estimateLabel: minMinutes ? `${this.formatMinutes(minMinutes)} - ${this.formatMinutes(maxMinutes)}` : "Sin estimacion",
         songLengthLabel: clampedSeconds ? this.formatDuration(clampedSeconds) : "Sin duracion",
         requestedLabel: requestedSeconds ? this.formatDuration(requestedSeconds) : "Sin duracion",
@@ -446,6 +525,13 @@ createApp({
         .sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)))
         .slice(0, 5);
     },
+    productionProjectsBySet() {
+      return this.professionalProjects.reduce((index, project) => {
+        const userId = String(project.user_id || "");
+        if (userId.startsWith("set:")) index[userId.slice(4)] = project;
+        return index;
+      }, {});
+    },
     draftReadiness() {
       const counts = this.drafts.reduce(
         (summary, draft) => {
@@ -461,7 +547,8 @@ createApp({
       ];
     },
     canCreateSet() {
-      return this.draftReadiness.every((item) => item.count > 0);
+      return !this.creatingSet && this.draftReadiness.every((item) => item.count > 0)
+        && ["instrumental", "melody", "lyrics"].every((type) => this.drafts.some((draft) => draft.asset_type === type && draft.asset_id === this.selectedDrafts[type]));
     },
     lyricsDrafts() {
       return this.drafts.filter((draft) => draft.asset_type === "lyrics");
@@ -606,14 +693,22 @@ createApp({
         }
         const copy = statusCopy[state] || statusCopy.pending;
         const stateLabel = state === "current" && !isActuallyRunning ? "Listo para ejecutar" : copy.label;
-        const canRun = Boolean(step.requires) && ["current", "complete", "error"].includes(state) && !this.productionRunningPhase && !isActuallyRunning;
+        const specConfirmed = this.specificationRevision?.user_confirmation_status === "confirmed";
+        const requiresConfirmedSpec = step.phase !== "SONG_SPEC_COLLECTION";
+        const blockedBySpec = requiresConfirmedSpec && !specConfirmed;
+        const blockedBySample = ["MASTERING", "EXPORT"].includes(step.phase) && !this.sampleCheckpointStatus.ready;
+        const canRun = Boolean(step.requires) && ["current", "complete", "error"].includes(state) && !this.productionRunningPhase && !isActuallyRunning && !blockedBySpec && !blockedBySample;
         return {
           ...step,
           state,
           canRun,
           stateIcon: copy.icon,
           stateLabel,
-          statusDetail: latestEvent.message || step.summary,
+          statusDetail: blockedBySpec
+            ? "Confirma primero la ficha completa de la cancion."
+            : blockedBySample
+              ? "Crea, revisa y aprueba un sample vigente del proyecto."
+              : latestEvent.message || step.summary,
           statusTime: latestEvent.created_at ? this.formatResourceTime(latestEvent.created_at) : "",
           startedAt: isActuallyRunning && runningEvent?.created_at ? this.formatResourceTime(runningEvent.created_at) : "",
           elapsedLabel: isActuallyRunning && runningEvent?.created_at ? this.formatElapsedSince(runningEvent.created_at) : "",
@@ -781,12 +876,21 @@ createApp({
     },
   },
   async mounted() {
+    this.defaultPhasePayloads = Object.fromEntries(this.phaseDefinitions.map(({ id }) => [id, cloneJson(this.phasePayload(id))]));
+    window.history.replaceState({ songAiIndex: 0 }, "", window.location.pathname);
+    this.popstateHandler = (event) => this.handlePopstate(event);
+    this.beforeUnloadHandler = (event) => {
+      if (!this.dirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("popstate", this.popstateHandler);
     this.restoreLocalUiState();
     this.activateFromPath(window.location.pathname);
-    window.addEventListener("popstate", () => this.activateFromPath(window.location.pathname, false));
     await this.loadOptions();
     await this.refreshDrafts();
     await this.loadSets();
+    await this.restoreActiveProject();
     await this.loadProfessionalProjects();
     await this.loadProviders();
     await this.loadResources();
@@ -797,10 +901,19 @@ createApp({
     this.startUiClock();
   },
   beforeUnmount() {
+    window.removeEventListener("popstate", this.popstateHandler);
+    window.removeEventListener("beforeunload", this.beforeUnloadHandler);
     this.stopResourceAutoRefresh();
     this.stopUiClock();
   },
+  watch: {
+    dirty(value) {
+      if (value) window.addEventListener("beforeunload", this.beforeUnloadHandler);
+      else window.removeEventListener("beforeunload", this.beforeUnloadHandler);
+    },
+  },
   methods: {
+    ...productionActions,
     addMessage(text) {
       this.messages.unshift({
         id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -815,46 +928,90 @@ createApp({
         : storedFavorites;
       this.archived = JSON.parse(localStorage.getItem("song-ai:archived") || "[]");
       this.lyricTemplates = JSON.parse(localStorage.getItem("song-ai:lyric-templates") || "[]");
+      this.pendingActiveProjectId = localStorage.getItem("song-ai:active-project-id") || "";
     },
     persistLocalUiState() {
       localStorage.setItem("song-ai:favorites", JSON.stringify(this.favoriteProjects));
       localStorage.setItem("song-ai:archived", JSON.stringify(this.archived));
       localStorage.setItem("song-ai:lyric-templates", JSON.stringify(this.lyricTemplates));
     },
+    async restoreActiveProject() {
+      const setId = String(this.pendingActiveProjectId || "").trim();
+      if (!setId || !this.sets.some((songSet) => songSet.set_id === setId)) return;
+      await this.loadProject(setId, { preserveRoute: true, quiet: true });
+    },
     activateFromPath(path, push = false) {
       const tab = TAB_BY_ROUTE[path] || "library";
       this.activeTab = tab;
-      if (push) window.history.pushState({}, "", ROUTE_BY_TAB[tab]);
-      if (tab === "production") this.loadResources({ silent: true });
+      if (push) window.history.pushState({ songAiIndex: ++this.historyIndex }, "", ROUTE_BY_TAB[tab]);
+      if (tab === "production") {
+        this.loadResources({ silent: true });
+        const projectId = this.activeProfessionalProject?.id || this.productionProjectId;
+        if (projectId) this.loadProfessionalExport(projectId);
+      }
       this.persistActivePhase(tab);
     },
     requestNavigation(tab) {
       if (tab === this.activeTab) return;
-      if (this.dirty) {
+      if (this.dirty && this.activeProjectId) {
         this.pendingTab = tab;
+        this.pendingHistoryDelta = 0;
+        this.saveError = "";
         this.showUnsavedModal = true;
         return;
       }
       this.activateFromPath(ROUTE_BY_TAB[tab], true);
     },
     discardAndContinue() {
+      this.restorePhase(this.dirtyPhase);
+      this.outdatedPhases = [...this.dirtyOutdatedSnapshot];
       this.dirty = false;
       this.dirtyPhase = "";
       this.showUnsavedModal = false;
-      this.activateFromPath(ROUTE_BY_TAB[this.pendingTab || "library"], true);
+      this.completePendingNavigation();
       this.pendingTab = "";
+      this.saveError = "";
     },
     cancelNavigation() {
       this.pendingTab = "";
+      this.pendingHistoryDelta = 0;
+      this.saveError = "";
       this.showUnsavedModal = false;
     },
     async saveAndContinue() {
-      await this.saveCurrentPhase();
+      if (this.savingPhase) return;
+      this.saveError = "";
+      const saved = await this.saveCurrentPhase();
+      if (!saved) return;
       this.showUnsavedModal = false;
-      this.activateFromPath(ROUTE_BY_TAB[this.pendingTab || this.activeTab], true);
+      this.completePendingNavigation();
       this.pendingTab = "";
     },
+    completePendingNavigation() {
+      if (this.pendingHistoryDelta) {
+        const delta = this.pendingHistoryDelta;
+        this.pendingHistoryDelta = 0;
+        window.history.go(delta);
+      } else if (this.pendingTab) {
+        this.activateFromPath(ROUTE_BY_TAB[this.pendingTab], true);
+      }
+    },
+    handlePopstate(event) {
+      const nextIndex = Number(event.state?.songAiIndex);
+      const delta = Number.isFinite(nextIndex) ? nextIndex - this.historyIndex : -1;
+      if (this.dirty && this.activeProjectId && delta) {
+        this.pendingTab = TAB_BY_ROUTE[window.location.pathname] || "library";
+        this.pendingHistoryDelta = delta;
+        this.saveError = "";
+        this.showUnsavedModal = true;
+        window.history.go(-delta);
+        return;
+      }
+      this.historyIndex = Number.isFinite(nextIndex) ? nextIndex : this.historyIndex;
+      this.activateFromPath(window.location.pathname);
+    },
     markDirty(phase = this.activeTab) {
+      if (!this.dirty) this.dirtyOutdatedSnapshot = [...this.outdatedPhases];
       this.dirty = true;
       this.dirtyPhase = phase;
       this.outdatedPhases = [...new Set([...(this.outdatedPhases || []), ...(DEPENDENCIES[phase] || [])])];
@@ -862,29 +1019,46 @@ createApp({
     phaseStatus(phaseId) {
       if (this.dirty && this.dirtyPhase === phaseId) return "DIRTY";
       if (this.outdatedPhases.includes(phaseId)) return "OUTDATED";
-      const persistedStatus = this.normalizePhaseStatus(this.savedPhaseData?.[phaseId]?.status || "");
-      if (persistedStatus) return persistedStatus;
-      if (this.activeProjectId && phaseId !== "production") return "EMPTY";
-      if (phaseId === "intent") return this.activeProjectId || this.intent.description ? "READY" : "EMPTY";
-      if (phaseId === "lyrics") return this.lyricSections.length > 0 || this.lyricsEditor.selectedAssetId ? "READY" : "EMPTY";
-      if (phaseId === "music-plan") return this.musicPlan.sections.length > 0 && this.musicPlan.progression ? "READY" : "EMPTY";
-      if (phaseId === "midi") return this.midiPlan.tracks.length > 0 && this.midiPlan.notes.length > 0 ? "READY" : "EMPTY";
-      if (phaseId === "instrumental") return this.instrumental.stems.length > 0 || this.draftReadiness.find((item) => item.type === "instrumental")?.count > 0 ? "READY" : "EMPTY";
-      if (phaseId === "voice") return this.voice.layers.length > 0 && this.voice.sectionDirection.length > 0 ? "READY" : "EMPTY";
-      if (phaseId === "production" && this.exportManifest?.artifacts?.length) return "READY";
+      if (this.activeProjectId) {
+        if (phaseId === "production") return this.productionSidebarStatus();
+        return this.persistedEditorPhaseStatus(phaseId);
+      }
+      return "EMPTY";
+    },
+    persistedEditorPhaseStatus(phaseId) {
+      const phase = this.savedPhaseData?.[phaseId] || {};
+      const rawStatus = String(phase.phase_status || phase.status || "").toUpperCase();
+      if (!rawStatus || rawStatus === "NOT_CREATED") return "EMPTY";
+      if (rawStatus === "INITIALIZED") return "EMPTY";
+      if (rawStatus === "DRAFT") return "DIRTY";
+      return this.normalizePhaseStatus(rawStatus);
+    },
+    productionSidebarStatus() {
+      if (!this.activeProfessionalProject) return "EMPTY";
+      if (this.productionRunningPhase) return "PROCESSING";
+      const projectStatus = String(this.activeProfessionalProject.status || "").toLowerCase();
+      if (projectStatus.includes("failed") || projectStatus.includes("interrupted")) return "ERROR";
+      if (projectStatus.includes("running") || projectStatus.includes("loading")) return "PROCESSING";
+      const processSteps = this.productionProcessSteps || [];
+      if (processSteps.some((step) => step.state === "error")) return "ERROR";
+      if (processSteps.some((step) => step.state === "current")) return "PROCESSING";
+      if (this.exportManifest?.artifacts?.length || processSteps.some((step) => step.phase === "EXPORT" && step.state === "complete")) return "READY";
       return "EMPTY";
     },
     phaseUi(phaseId) {
       const status = this.phaseStatus(phaseId);
       const copy = PHASE_STATUS[status] || PHASE_STATUS.EMPTY;
-      const persistedLabel = this.phaseStatusLabel(this.savedPhaseData?.[phaseId]?.status || "");
-      return { ...copy, label: persistedLabel || copy.label };
+      const phase = this.savedPhaseData?.[phaseId] || {};
+      const persistedLabel = this.phaseStatusLabel(phase.phase_status || phase.status || "");
+      return { ...copy, label: status === "READY" ? (persistedLabel || copy.label) : copy.label };
     },
     normalizePhaseStatus(status) {
       const value = String(status || "").toLowerCase();
       if (!value) return "";
       if (value.includes("error") || value.includes("failed")) return "ERROR";
       if (value.includes("running") || value.includes("progress") || value.includes("processing")) return "PROCESSING";
+      if (value.includes("draft")) return "DIRTY";
+      if (value.includes("initialized") || value.includes("not_created")) return "EMPTY";
       if (value.includes("pending") || value.includes("pend")) return "EMPTY";
       if (value.includes("saved") || value.includes("complete") || value.includes("ready") || value.includes("approved") || value.includes("aprob")) return "READY";
       return "READY";
@@ -894,6 +1068,9 @@ createApp({
       if (!value) return "";
       if (value.includes("error") || value.includes("failed")) return "Con errores";
       if (value.includes("running") || value.includes("progress") || value.includes("processing")) return "En progreso";
+      if (value.includes("draft")) return "Borrador";
+      if (value.includes("initialized")) return "Inicializada";
+      if (value.includes("not_created")) return "Pendiente";
       if (value.includes("approved") || value.includes("aprob")) return "Aprobada por el usuario";
       if (value.includes("pending") || value.includes("pend")) return "Pendiente";
       if (value.includes("saved") || value.includes("complete") || value.includes("ready")) return "Completada";
@@ -901,9 +1078,9 @@ createApp({
     },
     async saveCurrentPhase() {
       if (this.activeTab === "production") {
-        await this.saveProductionMetadata();
+        return this.saveProductionMetadata();
       } else {
-        await this.savePhaseData(this.activeTab);
+        return this.savePhaseData(this.activeTab);
       }
     },
     async loadOptions() {
@@ -938,6 +1115,8 @@ createApp({
         this.resourceStatus = (await this.readApiPayload(statusResponse, this.resourceStatus)).data;
         this.resourceHistory = (await this.readApiPayload(historyResponse, { snapshots: [] })).data;
         this.resourceLastUpdated = nowLabel();
+      } catch (error) {
+        this.addMessage(`No se pudo transformar la seccion: ${error?.message || "error de red"}`);
       } finally {
         this.resourceRefreshing = false;
       }
@@ -987,12 +1166,6 @@ createApp({
       clearInterval(this.uiClockTimer);
       this.uiClockTimer = null;
     },
-    async loadLocalFinalJob() {
-      const response = await fetch(apiUrl("/api/local-final-song/status"));
-      const payload = await this.readApiPayload(response, this.localFinalJob);
-      this.localFinalJob = payload.data;
-      if (this.localFinalJob.status === "running") this.scheduleLocalFinalPoll();
-    },
     async loadOrchestration() {
       const [statusResponse, tasksResponse, runsResponse, eventsResponse] = await Promise.all([
         fetch(apiUrl("/api/orchestration/status")),
@@ -1009,25 +1182,16 @@ createApp({
       const response = await fetch(apiUrl("/api/drafts"));
       const payload = await response.json();
       this.drafts = payload.data;
+      for (const type of ["instrumental", "melody", "lyrics"]) {
+        if (!this.drafts.some((draft) => draft.asset_type === type && draft.asset_id === this.selectedDrafts[type])) {
+          this.selectedDrafts[type] = "";
+        }
+      }
     },
     async loadSets() {
       const response = await fetch(apiUrl("/api/sets"));
       const payload = await response.json();
       this.sets = payload.data;
-    },
-    async loadProfessionalProjects() {
-      const response = await fetch(apiUrl("/api/pro/projects"));
-      const payload = await this.readApiPayload(response, { projects: [] });
-      this.professionalProjects = payload.data.projects || [];
-      if (this.productionProjectId && !this.professionalProjects.some((project) => project.id === this.productionProjectId)) {
-        this.productionProjectId = "";
-      }
-      if (!this.productionProjectId && this.professionalProjects.length > 0) {
-        const linkedUserId = this.activeProjectId ? `set:${this.activeProjectId}` : "";
-        const linkedProject = this.professionalProjects.find((project) => project.user_id === linkedUserId);
-        this.productionProjectId = (linkedProject || this.professionalProjects[0]).id;
-        await this.loadProfessionalExport(this.productionProjectId);
-      }
     },
     async loadJsonConfigs() {
       const response = await fetch(apiUrl("/api/json-configs"));
@@ -1035,27 +1199,20 @@ createApp({
       this.jsonConfigs = payload.data;
     },
     async readApiPayload(response, fallbackData = {}) {
-      const raw = await response.text().catch(() => "");
-      let payload = { ok: false, data: fallbackData, detail: raw || "API no disponible" };
-      if (raw) {
-        try {
-          payload = JSON.parse(raw);
-        } catch (_) {
-          payload.detail = raw;
-        }
-      }
-      if (!response.ok || payload.ok === false) return { ok: false, data: fallbackData, detail: payload.detail || "API no disponible" };
-      return payload;
+      return readApiPayload(response, fallbackData);
     },
-    async loadProject(setId) {
+    async loadProject(setId, options = {}) {
       const response = await fetch(apiUrl(`/api/projects/${setId}`));
       const payload = await this.readApiPayload(response, {});
       if (!payload.ok) {
         this.addMessage(payload.detail || "No se pudo cargar el proyecto.");
         return;
       }
+      this.productionProjectId = "";
+      this.exportManifest = { artifacts: [] };
       this.activeProject = payload.data;
       this.selectedSet = payload.data.set;
+      localStorage.setItem("song-ai:active-project-id", payload.data.set.set_id);
       this.projectSet.project_name = payload.data.project.project_name;
       this.projectSet.description = payload.data.project.description;
       this.intent.description = payload.data.project.description;
@@ -1067,13 +1224,41 @@ createApp({
       };
       this.parseLyricsToSections();
       this.applySavedPhaseData(payload.data.phase_data || {});
+      this.projectSet = { ...this.projectSet,
+        project_name: payload.data.project.project_name,
+        description: payload.data.project.description };
+      if (!payload.data.phase_data?.lyrics) {
+        this.lyricsEditor = { selectedAssetId: lyricsAsset.asset_id, content: lyricsAsset.content || "", path: lyricsAsset.content_path || "" };
+        this.parseLyricsToSections();
+      }
+      if (!payload.data.phase_data?.intent) {
+        const instrumentalIntent = payload.data.assets.instrumental.intent || {};
+        this.intent = { ...this.intent, description: payload.data.project.description,
+          bpm: instrumentalIntent.bpm ?? this.intent.bpm,
+          key: instrumentalIntent.key || this.intent.key,
+          instruments: [...(instrumentalIntent.instruments || this.intent.instruments)] };
+      }
+      if (!payload.data.phase_data?.lyrics) {
+        const lyricIntent = payload.data.assets.lyrics.intent || {};
+        this.lyrics = { ...this.lyrics,
+          language: payload.data.assets.lyrics.metadata?.metadata?.language || this.lyrics.language,
+          tone: lyricIntent.mood || this.lyrics.tone,
+          placeholders: { ...(lyricIntent.placeholders || this.lyrics.placeholders) } };
+      }
+      if (!payload.data.phase_data?.voice) {
+        const melodyIntent = payload.data.assets.melody.intent || {};
+        this.voice = { ...this.voice, mainVoice: melodyIntent.vocal_style || this.voice.mainVoice };
+      }
+      this.projectBaselinePayloads = Object.fromEntries(this.phaseDefinitions.map(({ id }) => [id, cloneJson(this.phasePayload(id))]));
       this.projectEvents = payload.data.events;
-      this.addMessage(`Proyecto cargado con datos guardados: ${payload.data.project.project_name}`);
+      if (!options.quiet) this.addMessage(`Proyecto cargado con datos guardados: ${payload.data.project.project_name}`);
       await this.loadProviders();
       const productionId = await this.ensureProductionProjectForActiveSet();
       if (productionId) await this.loadProfessionalExport(productionId);
       const targetPhase = this.phaseToOpenAfterLoad(payload.data);
-      this.activateFromPath(ROUTE_BY_TAB[targetPhase] || ROUTE_BY_TAB.intent, true);
+      if (!options.preserveRoute) {
+        this.activateFromPath(ROUTE_BY_TAB[targetPhase] || ROUTE_BY_TAB.intent, true);
+      }
     },
     phaseToOpenAfterLoad(projectData) {
       const savedLast = String(projectData?.ui_state?.last_active_phase || "").trim();
@@ -1090,62 +1275,41 @@ createApp({
         body: JSON.stringify({ phase }),
       }).catch(() => {});
     },
-    async ensureProductionProjectForActiveSet() {
-      if (!this.activeProjectId) return "";
-      await this.loadProfessionalProjects();
-      const linkedUserId = `set:${this.activeProjectId}`;
-      const existing = this.professionalProjects.find((project) => project.user_id === linkedUserId);
-      if (existing) {
-        this.productionProjectId = existing.id;
-        return existing.id;
-      }
-      return this.createProfessionalProjectFromActiveSet({ quiet: true });
-    },
-    async createProfessionalProjectFromActiveSet(options = {}) {
-      if (!this.activeProjectId) {
-        this.addMessage("Carga un set desde Biblioteca antes de crear el proyecto profesional.");
-        return;
-      }
-      const response = await fetch(apiUrl("/api/pro/projects"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: this.activeProjectTitle,
-          project_name: this.activeProjectTitle,
-          user_id: `set:${this.activeProjectId}`,
-          source_set_id: this.activeProjectId,
-          description: this.activeProjectDescription,
-        }),
-      });
-      const payload = await this.readApiPayload(response, {});
-      if (!payload.ok) {
-        this.addMessage(payload.detail || "No se pudo crear el proyecto profesional.");
-        return;
-      }
-      this.productionProjectId = payload.data.project?.id || "";
-      await this.loadProfessionalProjects();
-      if (!options.quiet) {
-        this.addMessage("Production preparado para el proyecto activo. Ejecuta 'Enviar intent' para aprobar la especificacion y continuar el cierre completo.");
-      }
-      return this.productionProjectId;
-    },
     async createSet() {
-      const response = await fetch(apiUrl("/api/sets"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(this.projectSet),
-      });
-      const payload = await this.readApiPayload(response, {});
-      if (!payload.ok) {
-        this.addMessage(payload.detail || "No se pudo crear el proyecto/set.");
-        return;
+      if (!this.canCreateSet || this.creatingSet) return;
+      this.creatingSet = true;
+      this.createError = "";
+      const selection = { ...this.projectSet,
+        instrumental_id: this.selectedDrafts.instrumental,
+        melody_id: this.selectedDrafts.melody,
+        lyrics_id: this.selectedDrafts.lyrics };
+      const signature = JSON.stringify(selection);
+      if (signature !== this.createRequestSignature) {
+        this.createRequestId = crypto.randomUUID();
+        this.createRequestSignature = signature;
       }
-      await this.loadSets();
-      await this.loadProject(payload.data.id);
-      await this.loadJsonConfigs();
+      try {
+        const response = await fetch(apiUrl("/api/sets"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...selection, request_id: this.createRequestId }),
+        });
+        const payload = await this.readApiPayload(response, {});
+        if (!payload.ok) throw new Error(payload.detail || "No se pudo crear el proyecto/set.");
+        await this.loadSets();
+        await this.loadProject(payload.data.id);
+        await this.loadJsonConfigs();
+        this.createRequestId = "";
+        this.createRequestSignature = "";
+      } catch (error) {
+        this.createError = error?.message || "No se pudo crear el proyecto/set.";
+        this.addMessage(this.createError);
+      } finally {
+        this.creatingSet = false;
+      }
     },
     async createInstrumental() {
-      await this.postAction(
+      const created = await this.createDraft(
         "/api/instrumentals",
         {
           genre: this.intent.songType,
@@ -1158,9 +1322,11 @@ createApp({
         "Instrumental guardado",
       );
       await this.refreshDrafts();
+      if (created?.id) this.selectedDrafts.instrumental = created.id;
+      return Boolean(created);
     },
     async createMelody() {
-      await this.postAction(
+      const created = await this.createDraft(
         "/api/melodies",
         {
           vocal_style: this.voice.mainVoice || this.melody.vocal_style,
@@ -1168,16 +1334,59 @@ createApp({
           structure: this.lyrics.structure || this.melody.structure,
           mood: this.voice.emotion || this.melody.mood,
           energy: this.intent.energy > 55 ? "medium" : "low",
+          bpm: this.intent.bpm,
+          key: this.intent.key,
         },
         "Melodia guia guardada",
       );
       await this.refreshDrafts();
+      if (created?.id) this.selectedDrafts.melody = created.id;
+      return Boolean(created);
     },
     async createLyrics() {
-      await this.postAction("/api/lyrics", this.lyrics, "Letra guardada");
+      const hasEditedSections = JSON.stringify(this.lyricSections) !== JSON.stringify(this.defaultPhasePayloads.lyrics?.lyricSections || []);
+      const created = await this.createDraft("/api/lyrics", {
+        ...this.lyrics, ...(hasEditedSections ? { content: this.sectionsToMarkdown() } : {}),
+      }, "Letra guardada");
       await this.refreshDrafts();
-      const latestLyrics = this.lyricsDrafts[this.lyricsDrafts.length - 1];
-      if (latestLyrics) await this.loadLyricsDraft(latestLyrics.asset_id);
+      if (created?.id) {
+        this.selectedDrafts.lyrics = created.id;
+        await this.loadLyricsDraft(created.id);
+      }
+      return Boolean(created);
+    },
+    async prepareDraft(type) {
+      if (this.preparingDraft) return;
+      this.preparingDraft = type;
+      this.createError = "";
+      try {
+        const action = { instrumental: this.createInstrumental, melody: this.createMelody, lyrics: this.createLyrics }[type];
+        if (!action || !await action.call(this)) this.createError = `No se pudo preparar ${type}. Revisa la actividad e intentalo de nuevo.`;
+      } catch (error) {
+        this.createError = error?.message || `No se pudo preparar ${type}.`;
+        this.addMessage(this.createError);
+      } finally {
+        this.preparingDraft = "";
+      }
+    },
+    async createDraft(url, body, successLabel) {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 20000);
+      try {
+        const response = await fetch(apiUrl(url), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body), signal: controller.signal,
+        });
+        const payload = await this.readApiPayload(response, {});
+        if (!payload.ok) throw new Error(payload.detail || "No se pudo preparar el draft.");
+        this.addMessage(`${successLabel}: ${payload.data.id}`);
+        return payload.data;
+      } catch (error) {
+        this.addMessage(error?.name === "AbortError" ? "La preparacion del draft agoto el tiempo de espera." : error?.message || "Error de red.");
+        return null;
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
     },
     async loadLyricsDraft(assetId = this.lyricsEditor.selectedAssetId) {
       if (!assetId) {
@@ -1196,27 +1405,12 @@ createApp({
       this.dirtyPhase = "";
     },
     async saveLyricsDraft() {
-      if (!this.lyricsEditor.selectedAssetId) {
-        await this.savePhaseData("lyrics");
-        return;
-      }
       this.lyricsEditor.content = this.sectionsToMarkdown();
-      const response = await fetch(apiUrl(`/api/lyrics/${this.lyricsEditor.selectedAssetId}`), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: this.lyricsEditor.content }),
-      });
-      const payload = await response.json();
-      if (!payload.ok) {
-        this.addMessage(payload.detail || "No se pudo guardar la letra.");
-        return;
-      }
-      this.lyricsEditor.content = payload.data.content;
-      this.lyricsEditor.path = payload.data.path;
-      await this.savePhaseData("lyrics", { quiet: true });
+      const saved = await this.savePhaseData("lyrics", { quiet: true });
+      if (!saved) return;
       this.dirty = false;
       this.dirtyPhase = "";
-      this.addMessage(`Lyrics guardado: ${payload.data.asset_id}`);
+      this.addMessage("Letra guardada en el proyecto activo.");
     },
     parseLyricsToSections() {
       const lines = String(this.lyricsEditor.content || "").split(/\r?\n/);
@@ -1260,17 +1454,44 @@ createApp({
       this.lyricSections.splice(index, 1);
       this.markDirty("lyrics");
     },
-    transformSection(index, mode) {
+    async transformSection(index, mode) {
       const section = this.lyricSections[index];
-      const suffix = {
-        mejorar: "Mas claro, mas cantable, conservando la esencia.",
-        recrear: "Nueva mirada con la misma emocion central.",
-        expandir: "Agrega una imagen sensorial y una linea de respuesta.",
-        acortar: "Version mas directa para entrar mejor en compas.",
-        variantes: "Variante A / Variante B para elegir interpretacion.",
-      }[mode];
-      section.text = `${section.text.trim()}\n${suffix}`;
-      this.markDirty("lyrics");
+      if (!section || this.transformingSections[section.id]) return;
+      this.transformingSections = { ...this.transformingSections, [section.id]: mode };
+      try {
+        const response = await fetch(apiUrl("/api/lyrics/section-transform"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode,
+            section_type: section.type,
+            text: section.text,
+            set_id: this.activeProjectId,
+            project_name: this.activeProjectTitle,
+            description: this.activeProjectDescription,
+            lyrics: { ...this.lyrics },
+            intent: { ...this.intent },
+          }),
+        });
+        const payload = await this.readApiPayload(response, {});
+        if (!payload.ok) {
+          this.addMessage(payload.detail || "No se pudo transformar la seccion con Gemma.");
+          return;
+        }
+        const transformed = String(payload.data?.text || "").trim();
+        if (!transformed) {
+          this.addMessage("Gemma no devolvio texto para esta seccion.");
+          return;
+        }
+        section.text = transformed;
+        this.markDirty("lyrics");
+        const modeLabel = payload.data?.mode === "llama_cpp" ? "Gemma" : "guia local";
+        this.addMessage(`Lyrics ${mode}: seccion actualizada con ${modeLabel}.`);
+      } finally {
+        const next = { ...this.transformingSections };
+        delete next[section.id];
+        this.transformingSections = next;
+      }
     },
     sectionStarter(type) {
       return {
@@ -1464,6 +1685,108 @@ createApp({
     isArchived(setId) {
       return this.archived.includes(setId);
     },
+    linkedProductionProject(songSet) {
+      return this.productionProjectsBySet[String(songSet?.set_id || "")] || null;
+    },
+    projectLibraryState(songSet) {
+      const setId = String(songSet?.set_id || "");
+      if (this.isArchived(setId)) return { icon: "A", label: "Archivado", tone: "archived" };
+      const project = this.linkedProductionProject(songSet);
+      if (!project) return { icon: "♪", label: "Set listo", tone: "set" };
+      const status = String(project.status || "").toLowerCase();
+      const phase = String(project.current_phase || "");
+      if (status.includes("running") || status.includes("loading")) return { icon: "↻", label: `Production en curso: ${phase}`, tone: "running" };
+      if (status.includes("failed") || status.includes("interrupted")) return { icon: "!", label: `Production requiere revision: ${phase}`, tone: "error" };
+      if (status === "completed" || phase === "EXPORT") return { icon: "✓", label: "Exportables generados", tone: "done" };
+      return { icon: "P", label: `Production: ${phase || "preparado"}`, tone: "production" };
+    },
+    requestDeleteProject(setId) {
+      const songSet = this.sets.find((item) => item.set_id === setId) || this.selectedSet || {};
+      const project = this.linkedProductionProject(songSet);
+      const status = String(project?.status || "").toLowerCase();
+      if (status.includes("running") || status.includes("loading")) {
+        this.addMessage("No se puede borrar un proyecto mientras Production esta ejecutando una fase.");
+        return;
+      }
+      const name = songSet.project_name || setId;
+      this.deleteDialog = {
+        open: true,
+        loading: false,
+        setId,
+        name,
+        error: "",
+      };
+    },
+    cancelDeleteProject() {
+      if (this.deleteDialog.loading) return;
+      this.deleteDialog = {
+        open: false,
+        loading: false,
+        setId: "",
+        name: "",
+        error: "",
+      };
+    },
+    async confirmDeleteProject() {
+      const setId = this.deleteDialog.setId;
+      const name = this.deleteDialog.name || setId;
+      if (!setId || this.deleteDialog.loading) return;
+      this.deleteDialog = { ...this.deleteDialog, loading: true, error: "" };
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 20000);
+      try {
+        const response = await fetch(apiUrl(`/api/projects/${setId}`), { method: "DELETE", signal: controller.signal });
+        const payload = await this.readApiPayload(response, {});
+        if (!payload.ok) {
+          this.deleteDialog = {
+            ...this.deleteDialog,
+            loading: false,
+            error: payload.detail || "No se pudo borrar el proyecto. Si acabas de actualizar el codigo, reinicia scripts\\run-local.ps1.",
+          };
+          this.addMessage(payload.detail || "No se pudo borrar el proyecto.");
+          return;
+        }
+
+        const nextFavorites = { ...this.favoriteProjects };
+        delete nextFavorites[setId];
+        this.favoriteProjects = nextFavorites;
+        this.archived = this.archived.filter((id) => id !== setId);
+        if (this.selectedSet?.set_id === setId) this.selectedSet = null;
+        if (this.activeProjectId === setId) {
+          this.activeProject = null;
+          this.productionProjectId = "";
+          this.pendingActiveProjectId = "";
+          localStorage.removeItem("song-ai:active-project-id");
+        }
+        this.persistLocalUiState();
+        this.deleteDialog = {
+          open: false,
+          loading: false,
+          setId: "",
+          name: "",
+          error: "",
+        };
+        this.addMessage(`Proyecto borrado: ${name}`);
+
+        await Promise.allSettled([
+          this.loadSets(),
+          this.loadProfessionalProjects(),
+          this.loadProjectPhases(),
+        ]);
+      } catch (error) {
+        const message = error?.name === "AbortError"
+          ? "El borrado no respondio en 20 segundos. Reinicia scripts\\run-local.ps1 y revisa si el proyecto ya desaparecio."
+          : `No se pudo borrar el proyecto: ${error?.message || "error de red"}`;
+        this.deleteDialog = {
+          ...this.deleteDialog,
+          loading: false,
+          error: message,
+        };
+        this.addMessage(message);
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    },
     tagsForSet(songSet) {
       const stopWords = new Set(["para", "con", "una", "este", "esta", "cancion", "proyecto", "completa", "desde"]);
       return `${songSet.project_name || ""} ${songSet.description || ""}`
@@ -1516,7 +1839,6 @@ createApp({
           production: {
             projectSet: { ...this.projectSet },
             productionProjectId: this.productionProjectId,
-            exportManifest: this.exportManifest,
             productionGlobalStatus: this.productionGlobalStatus,
           },
         },
@@ -1525,26 +1847,50 @@ createApp({
     },
     async savePhaseData(phase = this.activeTab, options = {}) {
       if (!this.activeProjectId) {
-        this.addMessage("Carga un proyecto desde Biblioteca antes de guardar esta fase.");
-        return;
+        this.saveError = "Carga un proyecto desde Biblioteca antes de guardar esta fase.";
+        this.addMessage(this.saveError);
+        return false;
       }
-      const response = await fetch(apiUrl(`/api/projects/${this.activeProjectId}/phases/${phase}`), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: this.phasePayload(phase) }),
-      });
-      const payload = await this.readApiPayload(response, {});
-      if (!payload.ok) {
-        this.addMessage(payload.detail || "No se pudo guardar la fase.");
-        return;
+      if (this.savingPhase) return false;
+      this.saveError = "";
+      this.savingPhase = phase;
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 20000);
+      try {
+        const response = await fetch(apiUrl(`/api/projects/${this.activeProjectId}/phases/${phase}`), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: this.phasePayload(phase) }),
+          signal: controller.signal,
+        });
+        const payload = await this.readApiPayload(response, {});
+        if (!payload.ok) {
+          const message = payload.detail || "No se pudo guardar la fase.";
+          this.saveError = message;
+          this.addMessage(message);
+          return false;
+        }
+        this.activeProject = payload.data.project;
+        this.selectedSet = payload.data.project.set;
+        this.savedPhaseData = payload.data.project.phase_data || {};
+        this.outdatedPhases = this.outdatedPhases.filter((item) => item !== phase);
+        this.dirty = false;
+        this.dirtyPhase = "";
+        this.dirtyOutdatedSnapshot = [...this.outdatedPhases];
+        this.projectBaselinePayloads[phase] = cloneJson(this.phasePayload(phase));
+        if (!options.quiet) this.addMessage(`${this.phaseLabel(phase)} guardado`);
+        return true;
+      } catch (error) {
+        const message = error?.name === "AbortError"
+          ? `No se pudo guardar ${this.phaseLabel(phase)}: el servidor no respondio en 20 segundos.`
+          : `No se pudo guardar ${this.phaseLabel(phase)}: ${error?.message || "error de red"}`;
+        this.addMessage(message);
+        this.saveError = message;
+        return false;
+      } finally {
+        window.clearTimeout(timeoutId);
+        this.savingPhase = "";
       }
-      this.activeProject = payload.data.project;
-      this.selectedSet = payload.data.project.set;
-      this.savedPhaseData = payload.data.project.phase_data || {};
-      this.outdatedPhases = this.outdatedPhases.filter((item) => item !== phase);
-      this.dirty = false;
-      this.dirtyPhase = "";
-      if (!options.quiet) this.addMessage(`${this.phaseLabel(phase)} guardado`);
     },
     phaseLabel(phase) {
       return {
@@ -1558,8 +1904,9 @@ createApp({
       }[phase] || phase;
     },
     applySavedPhaseData(phaseData) {
-      this.savedPhaseData = phaseData;
-      const read = (phase) => phaseData?.[phase]?.data || {};
+      for (const phase of Object.keys(this.defaultPhasePayloads)) this.restorePhase(phase, false);
+      this.savedPhaseData = cloneJson(phaseData);
+      const read = (phase) => cloneJson(phaseData?.[phase]?.data || {});
       const intentData = read("intent").intent;
       if (intentData) this.intent = { ...this.intent, ...intentData, inspirationInput: "" };
       const lyricsData = read("lyrics");
@@ -1577,77 +1924,27 @@ createApp({
       const productionData = read("production").production;
       if (productionData?.projectSet) this.projectSet = { ...this.projectSet, ...productionData.projectSet };
       if (productionData?.productionProjectId) this.productionProjectId = productionData.productionProjectId;
-      if (productionData?.exportManifest) this.exportManifest = productionData.exportManifest;
       this.dirty = false;
       this.dirtyPhase = "";
+      this.outdatedPhases = [];
+      this.dirtyOutdatedSnapshot = [];
     },
-    async saveProductionMetadata() {
-      if (!this.activeProjectId) {
-        this.addMessage("Selecciona un proyecto desde Biblioteca antes de guardar la descripcion.");
-        return;
+    restorePhase(phase, useSaved = true) {
+      const baseline = useSaved ? this.projectBaselinePayloads?.[phase] : null;
+      const defaults = cloneJson(baseline || this.defaultPhasePayloads?.[phase] || {});
+      const saved = useSaved && !baseline ? cloneJson(this.savedPhaseData?.[phase]?.data || {}) : {};
+      const data = Object.keys(saved).length ? saved : defaults;
+      const target = {
+        intent: ["intent", "intent"], lyrics: ["lyrics", "lyrics"],
+        "music-plan": ["musicPlan", "musicPlan"], midi: ["midiPlan", "midiPlan"],
+        instrumental: ["instrumental", "instrumental"], voice: ["voice", "voice"],
+      }[phase];
+      if (target) this[target[0]] = cloneJson(data[target[1]] || defaults[target[1]] || {});
+      if (phase === "lyrics") {
+        this.lyricSections = cloneJson(data.lyricSections || defaults.lyricSections || []);
+        this.lyricsEditor = cloneJson(data.lyricsEditor || defaults.lyricsEditor || { selectedAssetId: "", content: "", path: "" });
       }
-      const response = await fetch(apiUrl(`/api/projects/${this.activeProjectId}/description`), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: this.projectSet.description }),
-      });
-      const payload = await this.readApiPayload(response, {});
-      if (!payload.ok) {
-        this.addMessage(payload.detail || "No se pudo guardar la descripcion.");
-        return;
-      }
-      this.activeProject = payload.data;
-      this.selectedSet = payload.data.set;
-      await this.savePhaseData("production", { quiet: true });
-      await this.loadSets();
-      this.dirty = false;
-      this.dirtyPhase = "";
-      this.addMessage("Descripcion del proyecto activo guardada.");
-    },
-    async runProductionStep(step) {
-      if (this.productionRunningPhase) {
-        this.addMessage("Production ya esta ejecutando una accion. Espera a que termine antes de lanzar otra.");
-        return;
-      }
-      if (step.canRun === false) {
-        this.addMessage("Ejecuta primero la fase actual de Production; las fases posteriores se habilitan cuando existan sus artefactos.");
-        return;
-      }
-      if (!step.requires) {
-        const preparedId = await this.ensureProductionProjectForActiveSet();
-        if (preparedId) {
-          this.addMessage("Production preparado. Pulsa de nuevo la accion para ejecutarla.");
-        } else {
-          this.addMessage("Selecciona un proyecto desde Biblioteca primero.");
-        }
-        return;
-      }
-      this.productionRunningPhase = step.phase;
-      this.addMessage(`${step.label}: ejecutando...`);
-      try {
-        const response = await fetch(apiUrl(step.url), {
-          method: step.method,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(step.phase === "SONG_SPEC_COLLECTION" ? { message: this.productionSpecMessage } : {}),
-        });
-        const payload = await this.readApiPayload(response, {});
-        if (!payload.ok) {
-          this.addMessage(payload.detail || `No se pudo ejecutar ${step.label}.`);
-          await this.loadProfessionalProjects();
-          await this.loadResources();
-          return;
-        }
-        await this.loadProfessionalProjects();
-        await this.loadResources();
-        if (step.requires) await this.loadProfessionalExport(step.requires);
-        this.addMessage(`${step.label}: ${payload.data?.project?.current_phase || "completado"}`);
-      } catch (error) {
-        this.addMessage(`${step.label}: la accion no respondio. Revisa la actividad y vuelve a intentar.`);
-        await this.loadProfessionalProjects();
-        await this.loadResources();
-      } finally {
-        this.productionRunningPhase = "";
-      }
+      if (phase === "production" && data.production?.projectSet) this.projectSet = cloneJson(data.production.projectSet);
     },
     async refreshSystemStatus() {
       await this.loadProviders();
@@ -1671,109 +1968,19 @@ createApp({
       await this.loadProviders();
       this.addMessage(payload.data?.message || payload.detail || `Recreacion de ${role} iniciada.`);
     },
-    async generateLocalFinalSong() {
-      if (!this.canGenerateLocalFinalSong) {
-        this.addMessage(this.localFinalStatusMessage);
-        await this.loadProviders();
-        await this.loadResources();
-        return;
-      }
-      const response = await fetch(apiUrl("/api/local-final-song"), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      const payload = await this.readApiPayload(response, {});
-      if (!payload.ok) {
-        this.addMessage(payload.detail || "No se pudo iniciar la generacion final local.");
-        return;
-      }
-      this.localFinalJob = payload.data;
-      this.addMessage(this.localFinalJob.message || "Generacion final local iniciada.");
-      this.scheduleLocalFinalPoll();
-      await this.loadProviders();
-      await this.loadResources();
-    },
-    scheduleLocalFinalPoll() {
-      if (this.localFinalPollTimer) clearTimeout(this.localFinalPollTimer);
-      this.localFinalPollTimer = setTimeout(() => this.pollLocalFinalJob(), 5000);
-    },
-    async pollLocalFinalJob() {
-      const previousStatus = this.localFinalJob?.status || "idle";
-      await this.loadLocalFinalJob();
-      if (this.localFinalJob.status === "running") return;
-      if (this.localFinalPollTimer) {
-        clearTimeout(this.localFinalPollTimer);
-        this.localFinalPollTimer = null;
-      }
-      await this.loadProviders();
-      await this.loadResources();
-      if (previousStatus === "running") {
-        this.addMessage(this.localFinalJob.message || "Generacion final local actualizada.");
-      }
-    },
-    async loadProfessionalExport(songId) {
-      if (!songId) return;
-      const response = await fetch(apiUrl(`/api/pro/projects/${songId}/export`));
-      const payload = await this.readApiPayload(response, { artifacts: [] });
-      this.exportManifest = payload.data;
-    },
-    async saveLatestMp3() {
-      this.downloadStatus = "Preparando descarga...";
-      const mp3Artifact = this.exportables.find((item) => item.type === "final_song_mp3" && item.url);
-      if (mp3Artifact) {
-        await this.downloadArtifact(mp3Artifact);
-        return;
-      }
-      const response = await fetch(apiUrl("/api/audio-exports/latest/download?format=mp3"));
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        const message = payload.detail || "No se pudo descargar el MP3 final.";
-        this.downloadStatus = message;
-        this.addMessage(message);
-        return;
-      }
-      await this.saveBlob(response, "song-ai-final-mix.mp3", "MP3");
-    },
-    async downloadArtifact(exportable) {
-      if (!exportable.url) {
-        this.addMessage(`${exportable.name} aun no esta disponible.`);
-        return;
-      }
-      const response = await fetch(apiUrl(exportable.url));
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        this.addMessage(payload.detail || `No se pudo descargar ${exportable.name}.`);
-        return;
-      }
-      await this.saveBlob(response, `${exportable.name}.bin`, exportable.name);
-    },
-    async saveBlob(response, fallbackName, label) {
-      const blob = await response.blob();
-      const filename = this.filenameFromDisposition(response.headers.get("content-disposition")) || fallbackName;
-      if ("showSaveFilePicker" in window) {
-        const handle = await window.showSaveFilePicker({ suggestedName: filename });
-        const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-      } else {
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
-      }
-      this.downloadStatus = `${label} descargado: ${filename}`;
-      this.addMessage(this.downloadStatus);
-    },
-    filenameFromDisposition(disposition) {
-      const match = disposition?.match(/filename="?([^"]+)"?/i);
-      return match ? match[1] : "";
-    },
     async askGemmaAssistant() {
+      if (this.gemmaAssistant.loading) return;
       this.gemmaAssistant.loading = true;
+      this.gemmaAssistant.error = "";
+      const projectId = this.activeProjectId;
+      const phase = this.activeTab;
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 30000);
+      try {
       const response = await fetch(apiUrl("/api/assistant/gemma"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           set_id: this.activeProjectId,
           song_id: this.activeProfessionalProject?.id || "",
@@ -1784,10 +1991,10 @@ createApp({
           editor_phase_statuses: Object.fromEntries(this.phaseDefinitions.map((phase) => [phase.id, this.phaseStatus(phase.id)])),
         }),
       });
-      const payload = await response.json();
-      this.gemmaAssistant.loading = false;
-      if (!payload.ok) {
-        this.addMessage(payload.detail || "Gemma no pudo revisar el proyecto.");
+      const payload = await this.readApiPayload(response, {});
+      if (!payload.ok) throw new Error(payload.detail || "Gemma no pudo revisar el proyecto.");
+      if (projectId !== this.activeProjectId || phase !== this.activeTab) {
+        this.addMessage("La respuesta del asistente pertenece a otro proyecto o fase; no se aplicaron cambios.");
         return;
       }
       this.gemmaAssistant.response = {
@@ -1795,13 +2002,53 @@ createApp({
         message: this.hideTechnicalDirectorName(String(payload.data.message || "")),
         technical_handoff_note: "Gemma coordino internamente la revision tecnica.",
       };
+      this.applyAssistantPhasePatch(payload.data.phase_patch);
       await this.loadOrchestration();
       this.addMessage(`Gemma: ${this.gemmaAssistant.response.status}`);
+      } catch (error) {
+        this.gemmaAssistant.error = error?.name === "AbortError"
+          ? "Gemma no respondio en 30 segundos. Puedes reintentar."
+          : `No se pudo consultar a Gemma: ${error?.message || "error de red"}`;
+        this.addMessage(this.gemmaAssistant.error);
+      } finally {
+        window.clearTimeout(timeoutId);
+        this.gemmaAssistant.loading = false;
+      }
+    },
+    applyAssistantPhasePatch(phasePatch) {
+      if (!phasePatch?.available || !phasePatch?.phase || !phasePatch?.changes) return;
+      const phase = String(phasePatch.phase);
+      if (phase !== this.activeTab) {
+        this.addMessage(`Gemma preparo cambios para ${phase}, pero no los aplique porque estas en ${this.activeTab}.`);
+        return;
+      }
+      const changes = { ...phasePatch.changes };
+      const phaseTargets = {
+        intent: this.intent,
+        lyrics: this.lyrics,
+        "music-plan": this.musicPlan,
+        midi: this.midiPlan,
+        instrumental: this.instrumental,
+        voice: this.voice,
+      };
+      const target = phaseTargets[phase];
+      if (!target) return;
+      Object.entries(changes).forEach(([key, value]) => {
+        if (!(key in target)) return;
+        if (key === "placeholders" && typeof value === "object" && value !== null && !Array.isArray(value)) {
+          target.placeholders = { ...target.placeholders, ...value };
+          return;
+        }
+        target[key] = value;
+      });
+      this.markDirty(phase);
+      this.addMessage(`Gemma ajusto ${Object.keys(changes).length} campo(s) en ${phase}. Revisa y guarda si te gusta.`);
     },
     hideTechnicalDirectorName(text) {
       return text.replaceAll("Qwen", "el director tecnico").replaceAll("qwen", "el director tecnico");
     },
     async postAction(url, body = {}, successLabel = "Accion completada") {
+      try {
       const response = await fetch(apiUrl(url), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1810,7 +2057,7 @@ createApp({
       const payload = await this.readApiPayload(response, {});
       if (!payload.ok) {
         this.addMessage(payload.detail || payload.error || "Error");
-        return;
+        return null;
       }
       const detail = payload.data?.summary || payload.data?.id || payload.data?.path || "";
       this.addMessage(`${successLabel}: ${detail}`);
@@ -1818,6 +2065,11 @@ createApp({
       await this.loadSets();
       await this.loadOrchestration();
       await this.loadProviders();
+      return payload.data;
+      } catch (error) {
+        this.addMessage(error?.message || "Error de red al preparar el draft.");
+        return null;
+      }
     },
     help(label) {
       return this.options.help_texts?.[label] || "";

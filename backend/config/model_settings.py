@@ -17,6 +17,9 @@ class LocalModelSettings:
     llama_cpp_interpreter_n_predict: int
     llama_cpp_technical_n_predict: int
     llama_cpp_temperature: float
+    llama_server_command: str
+    llama_cpp_ctx_size: int
+    llama_cpp_gpu_args: str
     interpreter_model: str
     lyrics_model: str
     technical_model: str
@@ -58,6 +61,9 @@ class LocalModelSettings:
                 os.getenv("SONG_AI_LLAMA_CPP_TECHNICAL_N_PREDICT", os.getenv("SONG_AI_LLAMA_CPP_N_PREDICT", "96"))
             ),
             llama_cpp_temperature=float(os.getenv("SONG_AI_LLAMA_CPP_TEMPERATURE", "0.35")),
+            llama_server_command=os.getenv("SONG_AI_LLAMA_SERVER_COMMAND", "llama-server"),
+            llama_cpp_ctx_size=int(os.getenv("SONG_AI_LLAMA_CPP_CTX_SIZE", "4096")),
+            llama_cpp_gpu_args=os.getenv("SONG_AI_LLAMA_CPP_GPU_ARGS", "--n-gpu-layers 999"),
             interpreter_model=os.getenv("SONG_AI_INTERPRETER_MODEL", "Gemma 2 2B IT GGUF"),
             lyrics_model=os.getenv("SONG_AI_LYRICS_MODEL", "Gemma 2 2B IT GGUF"),
             technical_model=os.getenv("SONG_AI_TECHNICAL_MODEL", "Qwen3 4B GGUF"),
@@ -90,6 +96,9 @@ class LocalModelSettings:
             "llama_cpp_interpreter_n_predict": self.llama_cpp_interpreter_n_predict,
             "llama_cpp_technical_n_predict": self.llama_cpp_technical_n_predict,
             "llama_cpp_temperature": self.llama_cpp_temperature,
+            "llama_server_command": self.llama_server_command,
+            "llama_cpp_ctx_size": self.llama_cpp_ctx_size,
+            "llama_cpp_gpu_args": self.llama_cpp_gpu_args,
             "interpreter_model": self.interpreter_model,
             "lyrics_model": self.lyrics_model,
             "technical_model": self.technical_model,

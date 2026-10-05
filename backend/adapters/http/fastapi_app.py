@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import subprocess
 from threading import Lock, Thread
 from typing import Any
 
@@ -60,6 +61,10 @@ class BootstrapRunner:
     def _run(self, upgrade: bool = False, model_role: str | None = None) -> None:
         try:
             result = refresh_llm_model(model_role) if model_role else run_bootstrap(force=True, upgrade=upgrade)
+            if model_role:
+                command = os.getenv("SONG_AI_START_LLM_COMMAND", settings.resource_monitor.start_llm_command).strip()
+                if command:
+                    subprocess.run(command, shell=True, timeout=120, check=False)
             message = f"Modelo {model_role} recreado." if model_role else "Bootstrap actualizado." if upgrade else "Bootstrap finalizado."
             state = {
                 "status": "ready",
@@ -96,22 +101,23 @@ class LocalFinalRunner:
         with self.lock:
             return dict(self.state)
 
-    def start(self) -> dict[str, Any]:
+    def start(self, set_id: str = "") -> dict[str, Any]:
         with self.lock:
             if self.state["status"] == "running":
                 return dict(self.state)
             self.state = {
                 "status": "running",
                 "message": "Generando cancion final local en segundo plano.",
+                "set_id": set_id,
                 "result": {},
             }
-        thread = Thread(target=self._run, daemon=True)
+        thread = Thread(target=self._run, kwargs={"set_id": set_id}, daemon=True)
         thread.start()
         return self.status()
 
-    def _run(self) -> None:
+    def _run(self, set_id: str = "") -> None:
         try:
-            result = service.generate_local_final_song()
+            result = service.generate_local_final_song(set_id or None)
             state = {
                 "status": "ready",
                 "message": str(result.get("summary", "Cancion final local generada.")),
@@ -142,6 +148,19 @@ app.add_middleware(
 def start_bootstrap_on_startup() -> None:
     if os.getenv("SONG_AI_BOOTSTRAP_ON_START", "false").strip().lower() in {"1", "true", "yes", "on"}:
         bootstrap_runner.start()
+    if os.getenv("SONG_AI_LLM_AUTOSTART", "true").strip().lower() in {"1", "true", "yes", "on"}:
+        command = os.getenv("SONG_AI_START_LLM_COMMAND", settings.resource_monitor.start_llm_command).strip()
+        if command:
+            subprocess.run(command, shell=True, timeout=120, check=False)
+
+
+@app.on_event("shutdown")
+def stop_llm_on_shutdown() -> None:
+    if os.getenv("SONG_AI_STOP_LLM_ON_EXIT", "true").strip().lower() not in {"1", "true", "yes", "on"}:
+        return
+    command = os.getenv("SONG_AI_STOP_LLM_COMMAND", settings.resource_monitor.stop_llm_command).strip()
+    if command:
+        subprocess.run(command, shell=True, timeout=60, check=False)
 
 
 def ok(data: Any) -> dict[str, Any]:
@@ -173,6 +192,11 @@ def get_sets() -> dict[str, Any]:
 @app.get("/api/sets/{set_id}")
 def get_set(set_id: str) -> dict[str, Any]:
     return run_action(lambda: service.get_set(set_id))
+
+
+@app.delete("/api/projects/{set_id}")
+def delete_project(set_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.delete_project(set_id))
 
 
 @app.patch("/api/projects/{set_id}/description")
@@ -318,6 +342,70 @@ def get_professional_artifacts(song_id: str) -> dict[str, Any]:
 @app.post("/api/pro/projects/{song_id}/spec/messages")
 def collect_professional_spec(song_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     return run_action(lambda: service.collect_professional_spec(song_id, payload))
+
+
+@app.get("/api/pro/projects/{song_id}/spec")
+def get_professional_specification(song_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.get_professional_specification(song_id))
+
+
+@app.post("/api/pro/projects/{song_id}/ace-plan/preview")
+def preview_ace_step_plan(song_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.preview_ace_step_plan(song_id, payload))
+
+
+@app.put("/api/pro/projects/{song_id}/ace-configuration")
+def edit_ace_step_configuration(song_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.edit_ace_step_configuration(song_id, payload))
+
+
+@app.post("/api/pro/projects/{song_id}/ace-plan")
+def prepare_ace_step_plan(song_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.prepare_ace_step_plan(song_id, payload))
+
+
+@app.get("/api/pro/projects/{song_id}/ace-plan")
+def latest_ace_step_plan(song_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.latest_ace_step_plan(song_id))
+
+
+@app.post("/api/pro/projects/{song_id}/ace-candidates")
+def generate_ace_step_candidate(song_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.ace_candidate_jobs.start(song_id, payload))
+
+
+@app.get("/api/pro/projects/{song_id}/ace-candidates")
+def latest_ace_step_candidate(song_id: str) -> dict[str, Any]:
+    return run_action(lambda: {"job": service.ace_candidate_jobs.latest(song_id)})
+
+
+@app.get("/api/pro/projects/{song_id}/ace-candidates/{task_id}")
+def ace_step_candidate_status(song_id: str, task_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.ace_candidate_jobs.get(song_id, task_id))
+
+
+@app.post("/api/pro/projects/{song_id}/ace-candidates/{task_id}/cancel")
+def cancel_ace_step_candidate(song_id: str, task_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.ace_candidate_jobs.cancel(song_id, task_id))
+
+
+@app.get("/api/pro/projects/{song_id}/ace-candidates/{task_id}/audio")
+def ace_step_candidate_audio(song_id: str, task_id: str, audio_sha256: str):
+    try:
+        path = service.ace_candidate_audio_file(song_id, task_id, audio_sha256)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return FileResponse(path, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/pro/projects/{song_id}/ace-plan/{plan_id}/approve")
+def approve_ace_step_plan(song_id: str, plan_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.approve_ace_step_plan(song_id, plan_id, payload))
+
+
+@app.post("/api/pro/projects/{song_id}/spec/confirm")
+def confirm_professional_specification(song_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.confirm_professional_specification(song_id, payload))
 
 
 @app.post("/api/pro/projects/{song_id}/lyrics")
@@ -503,7 +591,10 @@ def favorite_asset(payload: dict[str, Any]) -> dict[str, Any]:
 
 @app.post("/api/sets")
 def create_set(payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    return run_action(lambda: service.create_set(payload or {}))
+    payload = payload or {}
+    if not all(payload.get(field) for field in ("instrumental_id", "melody_id", "lyrics_id")):
+        raise HTTPException(status_code=400, detail="Selecciona instrumental, melodia y letra para crear el proyecto.")
+    return run_action(lambda: service.create_set(payload))
 
 
 @app.post("/api/presets/lullaby/mp3")
@@ -526,19 +617,38 @@ def run_qwen_technical_assistant(payload: dict[str, Any] | None = None) -> dict[
     return run_action(lambda: service.qwen_technical_assistant(payload or {}))
 
 
+@app.post("/api/lyrics/section-transform")
+def transform_lyrics_section(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    return run_action(lambda: service.transform_lyrics_section(payload or {}))
+
+
 @app.post("/api/orchestration/handoff")
 def run_model_handoff(payload: dict[str, Any]) -> dict[str, Any]:
     return run_action(lambda: service.run_model_handoff(payload))
 
 
 @app.post("/api/samples")
-def create_sample() -> dict[str, Any]:
-    return run_action(service.create_sample)
+def create_sample(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    return run_action(lambda: service.create_sample(payload or {}))
+
+
+@app.post("/api/sets/{set_id}/samples/{sample_id}/approve")
+def approve_sample(set_id: str, sample_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    return run_action(lambda: service.approve_sample(set_id, sample_id, payload))
+
+
+@app.get("/api/sets/{set_id}/samples/{sample_id}/audio")
+def sample_audio(set_id: str, sample_id: str, audio_sha256: str) -> FileResponse:
+    try:
+        path = service.sample_audio_file(set_id, sample_id, audio_sha256)
+        return FileResponse(path, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @app.post("/api/songs")
-def create_song() -> dict[str, Any]:
-    return run_action(service.create_song)
+def create_song(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    return run_action(lambda: service.create_song(payload or {}))
 
 
 @app.post("/api/mix")
@@ -557,8 +667,8 @@ def generate_audio_exports() -> dict[str, Any]:
 
 
 @app.post("/api/local-final-song")
-def generate_local_final_song() -> dict[str, Any]:
-    return ok(local_final_runner.start())
+def generate_local_final_song(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    return ok(local_final_runner.start(str((payload or {}).get("set_id", "")).strip()))
 
 
 @app.get("/api/local-final-song/status")
@@ -570,6 +680,16 @@ def get_local_final_song_status() -> dict[str, Any]:
 def download_latest_audio_export(format: str = "mp3") -> FileResponse:
     try:
         path, filename = service.latest_audio_export_file(format)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    media_type = "audio/mpeg" if format.lower().strip().lstrip(".") == "mp3" else "audio/wav"
+    return FileResponse(path, media_type=media_type, filename=filename)
+
+
+@app.get("/api/projects/{set_id}/audio-exports/download")
+def download_project_audio_export(set_id: str, format: str = "mp3") -> FileResponse:
+    try:
+        path, filename = service.project_audio_export_file(set_id, format)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     media_type = "audio/mpeg" if format.lower().strip().lstrip(".") == "mp3" else "audio/wav"

@@ -55,6 +55,24 @@ Actividad, logs, recursos y diagnosticos solo viven en Production. En fases crea
 
 ## Reglas UX
 
+### Controles de configuración asistida
+
+Aplicar el contrato de [interfaz del recorrido amateur](AMATEUR_USER_FLOW_REVIEW.md) y catálogo/sincronización SP-07 a SP-09 de [Gemma/Qwen](SONG_SPEC_GEMMA_QWEN_CONTRACT.md).
+
+- Mantener mapa de hitos y siguiente acción; ofrecer ficha completa y ajustes avanzados por familias.
+- Cada campo muestra etiqueta humana, ayuda breve, valor actual, propuesta IA diferenciada y validación accesible. Selección, edición y confirmación se realizan mediante controles visibles.
+- Comparar propuesta con borrador actual y ofrecer aceptar/editar/descartar. Distinguir Guardar de Generar y proteger ediciones ante navegación/respuestas tardías.
+- Usar reproductores/comparación para audio existente; explicar límites en campos no configurables. No presentar controles ficticios ni ejemplos como configuración guardada.
+
+### Reglas del recorrido
+
+El recorrido para principiantes se rige por [AMATEUR_USER_FLOW_REVIEW.md](AMATEUR_USER_FLOW_REVIEW.md) y el contrato de [audio y voz](AMATEUR_AUDIO_VOICE_STEERING.md). La evolución guiada debe conservar coherencia visual y permitir crear sin abrir controles técnicos.
+
+- Distinguir «Voz generada», «Voz personalizada» y «Grabación propia»; ofrecer solo las opciones soportadas. La voz personalizada es una entrega futura.
+- Mostrar reproductor y revisión de sample/final con acciones comprensibles y el motivo de cada bloqueo. No presentar métricas técnicas de calidad como controles obligatorios del recorrido.
+- Mostrar calidad pendiente, muestra aprobada y final aprobado según estado persistido; disponibilidad del provider y ejecución terminada son estados diferentes.
+- Explicar el alcance de un ajuste antes de regenerar; conservar acceso a versiones previas y señalar cuando la muestra requiere nueva aprobación.
+
 - Accion secundaria a la izquierda, accion principal a la derecha.
 - Guardar configuracion no debe generar audio ni cargar modelos pesados.
 - Cambiar fases no debe regenerar dependencias automaticamente.

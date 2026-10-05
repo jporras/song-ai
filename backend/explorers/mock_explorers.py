@@ -45,7 +45,7 @@ class MockInstrumentalExplorer:
             instruments=instruments,
             energy=energy,
             vocal_style="soft lead",
-            lyrics_context=f"{genre} soundtrack for a complete personalized lullaby or emotional children song",
+            lyrics_context=f"{genre} soundtrack for the selected project",
         )
         manifest = Manifest(asset_id=asset_id, asset_type=AssetType.INSTRUMENTAL.value, provider="mock-local")
         draft = AssetDraft(
@@ -93,16 +93,18 @@ class MockMelodyExplorer:
         structure: str,
         energy: str,
         mode: str,
+        bpm: int = 96,
+        key: str = "C major",
     ) -> Path:
         asset_id = generate_id("melody")
         intent = MusicalIntent(
-            bpm=96,
-            key="C major",
+            bpm=bpm,
+            key=key,
             mood=mood,
             instruments=["voice guide"],
             energy=energy,
             vocal_style=vocal_style,
-            lyrics_context=f"singable {structure} melody with {range_hint} vocal range for a complete lullaby",
+            lyrics_context=f"singable {structure} melody with {range_hint} vocal range",
         )
         manifest = Manifest(asset_id=asset_id, asset_type=AssetType.MELODY.value, provider="mock-local")
         draft = AssetDraft(
@@ -157,7 +159,7 @@ class MockLyricsExplorer:
             mood=tone,
             instruments=["lyrical phrasing"],
             energy="low",
-            vocal_style="soft lullaby singing",
+            vocal_style="sung vocal guide",
             lyrics_context=f"{language} complete emotional lyrics: {theme}",
             placeholders=placeholders,
         )

@@ -24,5 +24,5 @@ class Settings:
             data_dir=project_root / "data",
             hf_models=HuggingFaceModelSettings.load(project_root),
             local_models=LocalModelSettings.load(project_root),
-            resource_monitor=ResourceMonitorSettings.load(),
+            resource_monitor=ResourceMonitorSettings.load(project_root),
         )

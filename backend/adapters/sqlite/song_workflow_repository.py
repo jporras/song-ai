@@ -50,6 +50,25 @@ class SongWorkflowRepository:
             )
             connection.execute(
                 """
+                CREATE TABLE IF NOT EXISTS song_spec_revisions (
+                    revision_id TEXT PRIMARY KEY,
+                    song_id TEXT NOT NULL,
+                    revision_number INTEGER NOT NULL,
+                    schema_version TEXT NOT NULL,
+                    json_spec TEXT NOT NULL,
+                    compilation_status TEXT NOT NULL,
+                    deterministic_valid INTEGER NOT NULL,
+                    technical_review_mode TEXT NOT NULL,
+                    user_confirmation_status TEXT NOT NULL,
+                    missing_fields_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(song_id, revision_number),
+                    FOREIGN KEY(song_id) REFERENCES song_projects(id)
+                )
+                """
+            )
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS song_artifacts (
                     artifact_id TEXT PRIMARY KEY,
                     song_id TEXT NOT NULL,
@@ -229,6 +248,36 @@ class SongWorkflowRepository:
         project["events"] = self.list_events(song_id)
         return project
 
+    def list_projects_by_user_id(self, user_id: str) -> list[dict[str, object]]:
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """
+                SELECT id, title, user_id, status, current_phase, created_at, updated_at
+                FROM song_projects
+                WHERE user_id = ?
+                ORDER BY updated_at DESC
+                """,
+                (user_id,),
+            ).fetchall()
+        return [self.project_row_to_dict(row) for row in rows]
+
+    def delete_project(self, song_id: str) -> bool:
+        with self._connect() as connection:
+            existing = connection.execute("SELECT id FROM song_projects WHERE id = ?", (song_id,)).fetchone()
+            if existing is None:
+                return False
+            connection.execute("DELETE FROM model_executions WHERE song_id = ?", (song_id,))
+            connection.execute("DELETE FROM song_events WHERE song_id = ?", (song_id,))
+            connection.execute("DELETE FROM project_artifacts WHERE project_id = ?", (song_id,))
+            connection.execute("DELETE FROM song_artifacts WHERE song_id = ?", (song_id,))
+            connection.execute("DELETE FROM song_specs WHERE song_id = ?", (song_id,))
+            connection.execute("DELETE FROM song_spec_revisions WHERE song_id = ?", (song_id,))
+            if connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ace_step_plans'").fetchone():
+                connection.execute("DELETE FROM ace_step_plans WHERE song_id = ?", (song_id,))
+            connection.execute("DELETE FROM song_projects WHERE id = ?", (song_id,))
+        return True
+
     def update_project_phase(self, song_id: str, phase: str, status: str) -> dict[str, object]:
         with self._connect() as connection:
             connection.execute(
@@ -366,9 +415,22 @@ class SongWorkflowRepository:
         json_spec: dict[str, object],
         approved_by_qwen: bool,
         missing_fields: list[str],
+        schema_version: str = "1.0",
+        technical_review_mode: str = "rule_validation",
+        user_confirmation_status: str = "not_requested",
+        expected_revision_id: str | None = None,
     ) -> dict[str, object]:
         now = utc_now()
+        compilation_status = "needs_information" if missing_fields else "complete_for_stage"
         with self._connect() as connection:
+            if expected_revision_id is not None:
+                connection.execute("BEGIN IMMEDIATE")
+                active = connection.execute(
+                    "SELECT revision_id FROM song_spec_revisions WHERE song_id = ? ORDER BY revision_number DESC LIMIT 1",
+                    (song_id,),
+                ).fetchone()
+                if not active or active[0] != expected_revision_id:
+                    raise ValueError("La revision cambio. Recarga la ficha antes de guardar.")
             connection.execute(
                 """
                 INSERT INTO song_specs (song_id, json_spec, approved_by_qwen, missing_fields_json, created_at, updated_at)
@@ -388,6 +450,43 @@ class SongWorkflowRepository:
                     now,
                 ),
             )
+            latest = connection.execute(
+                """
+                SELECT revision_number, json_spec, compilation_status, technical_review_mode,
+                       user_confirmation_status, missing_fields_json
+                FROM song_spec_revisions
+                WHERE song_id = ?
+                ORDER BY revision_number DESC
+                LIMIT 1
+                """,
+                (song_id,),
+            ).fetchone()
+            json_payload = json.dumps(json_spec, ensure_ascii=False, sort_keys=True)
+            missing_payload = json.dumps(missing_fields, ensure_ascii=False)
+            unchanged = bool(
+                latest
+                and str(latest[1]) == json_payload
+                and str(latest[2]) == compilation_status
+                and str(latest[3]) == technical_review_mode
+                and str(latest[4]) == user_confirmation_status
+                and str(latest[5]) == missing_payload
+            )
+            if not unchanged:
+                revision_number = int(latest[0]) + 1 if latest else 1
+                connection.execute(
+                    """
+                    INSERT INTO song_spec_revisions (
+                        revision_id, song_id, revision_number, schema_version, json_spec,
+                        compilation_status, deterministic_valid, technical_review_mode,
+                        user_confirmation_status, missing_fields_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        f"spec_rev_{uuid4().hex[:12]}", song_id, revision_number, schema_version,
+                        json_payload, compilation_status, 1 if approved_by_qwen else 0,
+                        technical_review_mode, user_confirmation_status, missing_payload, now,
+                    ),
+                )
         return self.get_spec(song_id) or {}
 
     def get_spec(self, song_id: str) -> dict[str, object] | None:
@@ -403,7 +502,7 @@ class SongWorkflowRepository:
             ).fetchone()
         if row is None:
             return None
-        return {
+        result = {
             "song_id": str(row["song_id"]),
             "json_spec": json.loads(str(row["json_spec"])),
             "approved_by_qwen": bool(row["approved_by_qwen"]),
@@ -411,6 +510,58 @@ class SongWorkflowRepository:
             "created_at": str(row["created_at"]),
             "updated_at": str(row["updated_at"]),
         }
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            revision = connection.execute(
+                """
+                SELECT revision_id, revision_number, schema_version, compilation_status,
+                       deterministic_valid, technical_review_mode, user_confirmation_status, created_at
+                FROM song_spec_revisions WHERE song_id = ?
+                ORDER BY revision_number DESC LIMIT 1
+                """,
+                (song_id,),
+            ).fetchone()
+        if revision is not None:
+            result["revision"] = {
+                "revision_id": str(revision["revision_id"]),
+                "revision_number": int(revision["revision_number"]),
+                "schema_version": str(revision["schema_version"]),
+                "compilation_status": str(revision["compilation_status"]),
+                "deterministic_valid": bool(revision["deterministic_valid"]),
+                "technical_review_mode": str(revision["technical_review_mode"]),
+                "user_confirmation_status": str(revision["user_confirmation_status"]),
+                "created_at": str(revision["created_at"]),
+            }
+        return result
+
+    def list_spec_revisions(self, song_id: str) -> list[dict[str, object]]:
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """
+                SELECT revision_id, revision_number, schema_version, json_spec,
+                       compilation_status, deterministic_valid, technical_review_mode,
+                       user_confirmation_status, missing_fields_json, created_at
+                FROM song_spec_revisions WHERE song_id = ?
+                ORDER BY revision_number DESC
+                """,
+                (song_id,),
+            ).fetchall()
+        return [
+            {
+                "revision_id": str(row["revision_id"]),
+                "revision_number": int(row["revision_number"]),
+                "schema_version": str(row["schema_version"]),
+                "json_spec": json.loads(str(row["json_spec"])),
+                "compilation_status": str(row["compilation_status"]),
+                "deterministic_valid": bool(row["deterministic_valid"]),
+                "technical_review_mode": str(row["technical_review_mode"]),
+                "user_confirmation_status": str(row["user_confirmation_status"]),
+                "missing_fields": json.loads(str(row["missing_fields_json"])),
+                "created_at": str(row["created_at"]),
+            }
+            for row in rows
+        ]
 
     def create_event(
         self,

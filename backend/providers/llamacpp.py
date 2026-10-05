@@ -106,11 +106,7 @@ class LlamaCppInterpreterProvider(InterpreterProvider):
         ]
 
     def interpret(self, text: str, target: str) -> dict[str, object]:
-        system_prompt = (
-            "Eres Gemma dentro de Song AI. Ayudas al usuario a completar una cancion completa "
-            "desde proyecto activo hasta MP3 final, preservando intencion instrumental, vocal y lirica."
-        )
-        content = self.client.complete(text, system_prompt=system_prompt, n_predict=self.settings.llama_cpp_interpreter_n_predict)
+        content = self.client.complete(text, n_predict=self.settings.llama_cpp_interpreter_n_predict)
         return {
             "target": target,
             "input": text,
@@ -149,19 +145,15 @@ class LlamaCppTechnicalProvider(InterpreterProvider):
 
     def capabilities(self) -> list[str]:
         return [
-            "code_and_debugging_support",
-            "architecture_adjustments",
-            "worker_pipeline_guidance",
-            "ffmpeg_audio_export_support",
-            "non_creative_technical_role",
+            "song_spec_compilation_and_review",
+            "music_and_singing_feasibility",
+            "engine_capability_alignment",
+            "production_and_fidelity_review",
+            "user_creative_decisions_preserved",
         ]
 
     def interpret(self, text: str, target: str) -> dict[str, object]:
-        system_prompt = (
-            "Eres Qwen3 dentro de Song AI. Tu rol es tecnico: codigo, debugging, arquitectura, "
-            "workers, ffmpeg, SQLite y pipeline. No reemplazas a Gemma en creatividad musical."
-        )
-        content = self.client.complete(text, system_prompt=system_prompt, n_predict=self.settings.llama_cpp_technical_n_predict)
+        content = self.client.complete(text, n_predict=self.settings.llama_cpp_technical_n_predict)
         return {
             "target": target,
             "input": text,

@@ -45,9 +45,10 @@ class SetBuilder:
         project_name: str,
         description: str,
         rule: str = "selected_assets",
+        set_id: str | None = None,
     ) -> Path:
         song_set = SongSet(
-            set_id=generate_id("set"),
+            set_id=set_id or generate_id("set"),
             project_name=project_name,
             description=description,
             created_at=datetime.now(timezone.utc).isoformat(),

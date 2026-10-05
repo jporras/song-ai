@@ -12,6 +12,8 @@ class AceStepProfile:
     threads: int
     device: str
     model_repo: str
+    config_path: str
+    checkpoint_root: str = "data/models/music/acestep-1.5-2b-turbo"
 
     def format_values(self) -> dict[str, object]:
         return {
@@ -19,24 +21,28 @@ class AceStepProfile:
             "infer_steps": self.infer_steps,
             "threads": self.threads,
             "device": self.device,
+            "config_path": self.config_path,
+            "checkpoint_root": self.checkpoint_root,
         }
 
 
 TURBO_PROFILE = AceStepProfile(
     name="turbo",
     model_type="2b-turbo",
-    infer_steps=4,
+    infer_steps=8,
     threads=4,
     device="xpu",
-    model_repo="ACE-Step/ACE-Step-v1-2B-turbo",
+    model_repo="ACE-Step/Ace-Step1.5",
+    config_path="acestep-v15-turbo",
 )
 BASE_PROFILE = AceStepProfile(
     name="base",
-    model_type="3.5b-default",
-    infer_steps=8,
+    model_type="2b-base",
+    infer_steps=32,
     threads=14,
     device="cpu",
-    model_repo="ACE-Step/ACE-Step-v1-3.5B",
+    model_repo="ACE-Step/acestep-v15-base",
+    config_path="acestep-v15-base",
 )
 
 
@@ -60,4 +66,6 @@ def resolve_ace_step_profile(requested: str | None = None) -> AceStepProfile:
 
 def apply_ace_step_profile_env(env: dict[str, str], profile: AceStepProfile) -> dict[str, str]:
     env["ACESTEP_MODEL_REPO"] = profile.model_repo
+    env["ACESTEP_CONFIG_PATH"] = profile.config_path
+    env["ACESTEP_CHECKPOINTS_DIR"] = profile.checkpoint_root
     return env

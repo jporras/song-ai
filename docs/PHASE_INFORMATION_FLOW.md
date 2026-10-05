@@ -175,6 +175,14 @@ Campos:
 
 Song-AI conserva `song_artifacts` para compatibilidad de endpoints existentes y sincroniza metadata esencial hacia `project_artifacts`.
 
+### legacy_samples y legacy_songs
+
+Persisten el flujo compatible `set -> sample -> song` cuando se usan los builders legados. Guardan la relacion con el set, estado, provider, fecha, ruta del snapshot y el payload activo. `sample.json` y `song.json` son exportaciones regenerables desde estas tablas.
+
+Al iniciar, Song-AI migra snapshots legados con relaciones validas mediante inserciones idempotentes. Un JSON antiguo no sobrescribe una fila ya existente en SQLite. Al borrar el set, se eliminan sus registros y carpetas dependientes de sample/cancion.
+
+Las descargas del proyecto abierto deben incluir `song_id` para Production o `set_id` para el flujo local. No se debe resolver una descarga contextual recorriendo exports de otros proyectos.
+
 ## Flujo De Guardado De Formulario
 
 1. Usuario abre fase.
@@ -197,6 +205,8 @@ Guardar solo persiste configuracion. Guardar no ejecuta ACE-Step, MIDI, audio ni
 
 ## Flujo De Sugerencia IA
 
+Para compilar una canción completa, aplicar [SONG_SPEC_GEMMA_QWEN_CONTRACT.md](SONG_SPEC_GEMMA_QWEN_CONTRACT.md). Un `phase_patch` aislado no sustituye la especificación integral. Evolucionar `song_specs` con revisiones, procedencia, validaciones y decisiones por etapa; exportar `song_spec.json` y `song_spec.md` desde esa revisión. Los handoffs usan tasks y referencias al contexto persistido; separar reglas locales de una revisión real del modelo. La generación final requiere además sample aprobado y evaluación de resultado según su etapa.
+
 1. Usuario solicita ayuda a Gemma.
 2. Gemma interpreta la intencion creativa.
 3. Qwen puede revisar tecnicamente la fase.
@@ -205,6 +215,32 @@ Guardar solo persiste configuracion. Guardar no ejecuta ACE-Step, MIDI, audio ni
 6. `change_source = AI` o `MIXED`.
 7. Se registra `AI_SUGGESTED` en `project_phase_events`.
 8. El usuario debe confirmar con Guardar para pasar a `COMPLETED`.
+
+## Flujo De Edicion Conversacional De Fase
+
+Ampliación pendiente SP-07 a SP-09: catálogo, avance de guía, delegaciones y controles de configuración comparten campo/revisión con la especificación activa. Diferenciar valor guardado y borrador visible en el contexto del assistant. Una propuesta se compara contra su revisión de origen; si hubo edición local posterior, no aplicar automáticamente el parche: devolver un conflicto revisable. Aceptar propuesta modifica borrador; Guardar valida/persiste; Generar crea una task independiente.
+
+Estado inicial 2026-10-04: `song_specs` conserva la vista activa compatible y `song_spec_revisions` registra revisiones inmutables con versión de esquema, completitud, validación determinista, modo de revisión técnica y confirmación de usuario. La consulta de especificación devuelve historial y catálogo/cobertura; `song_spec.json` y `song_spec.md` se generan juntos. La confirmación sigue en `not_requested` y el modo actual es `rule_validation` hasta implementar el handoff real.
+
+Ampliación del mismo día: cada compilación registra handoff técnico como task/model run/evento y guarda si hubo provider real, mock o fallback. Revisiones completas quedan `pending` en `SONG_SPEC_COLLECTION` hasta que el usuario confirma su ID activo; la confirmación genera una nueva revisión `confirmed`, rechaza IDs anteriores y avanza a `LYRICS_GENERATION`. Backend y UI exigen esa confirmación para las fases profesionales siguientes. El sample guarda la huella del set, assets y fases; requiere aprobación explícita y pierde vigencia al cambiar esos inputs. La canción completa y los cierres vinculados al set verifican esa aprobación. Aún falta invalidar granularmente artefactos profesionales dependientes y recibir propuestas estructuradas del modelo.
+
+Cuando el usuario le pide a Gemma ajustar la fase visible, Gemma no modifica formularios directamente. El flujo canonico es:
+
+1. Usuario pide un cambio en lenguaje natural desde el footer de Gemma.
+2. Frontend envia `active_phase`, proyecto activo, pregunta y estado visual de fases.
+3. Gemma interpreta la intencion creativa y mantiene la conversacion.
+4. Backend envia un handoff interno al rol tecnico Qwen/director tecnico.
+5. Qwen/director tecnico traduce la intencion a un `phase_patch` estructurado:
+   - `phase`: debe coincidir con la fase activa.
+   - `changes`: solo campos permitidos para esa fase.
+   - `reason`: resumen del ajuste.
+   - `requires_user_save`: siempre `true`.
+6. Backend valida que el parche no toque campos desconocidos ni otra fase.
+7. Frontend aplica el parche al formulario visible.
+8. Frontend marca la fase como `dirty`.
+9. Usuario revisa los valores y presiona Guardar si los acepta.
+
+El parche conversacional es estado local revisable. No sustituye a SQLite como fuente de verdad hasta que el usuario guarda la fase. Si Qwen no esta disponible, el backend puede generar un parche conservador con reglas locales y dejar persistido el handoff/fallback para auditoria.
 
 ## Flujo De Carga De Proyecto
 
@@ -358,6 +394,8 @@ Si se mantienen endpoints especificos por fase, deben internamente usar el mismo
 9. Si hay artefactos faltantes, mostrar opcion de verificar/regenerar.
 
 ## Reglas De Consistencia
+
+Ampliación pendiente: [AMATEUR_AUDIO_VOICE_STEERING.md](AMATEUR_AUDIO_VOICE_STEERING.md) define preparación anterior al set, referencias/perfiles vocales, huella de inputs, evaluación y aprobación por versión. Estas entidades aún requieren migraciones y contratos HTTP; no asumir que el esquema descrito aquí ya las implementa. Mantener estado de evaluación y aprobación separado del estado de ejecución y del estado de artefacto.
 
 1. SQLite es fuente de verdad.
 2. Archivos son derivados.

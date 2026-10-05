@@ -51,8 +51,8 @@
             <h1>{{ currentTab.label }}</h1>
             <p>{{ currentTab.hint }}</p>
           </div>
-          <button v-if="dirty" class="primary" @click="saveCurrentPhase">Guardar</button>
         </header>
+        <p v-if="saveError && !showUnsavedModal && activeTab !== 'library'" role="alert" class="inline-warning">{{ saveError }}</p>
 
         <section v-if="activeTab === 'library'" class="view library-view">
           <section class="hero-strip">
@@ -78,11 +78,16 @@
           <section class="project-block">
             <h3>Favoritos</h3>
             <article v-for="songSet in favoriteSets" :key="songSet.set_id" class="project-row">
-              <button class="star active" title="Favorito activo" @click="toggleFavorite(songSet.set_id)">★</button>
-              <strong>{{ songSet.project_name }}</strong>
+              <div class="project-icon-cluster">
+                <button class="star active" title="Favorito activo" @click="toggleFavorite(songSet.set_id)">★</button>
+                <span :class="['project-state-icon', projectLibraryState(songSet).tone]" :title="projectLibraryState(songSet).label">{{ projectLibraryState(songSet).icon }}</span>
+              </div>
+              <strong>{{ songSet.project_name }}<small>{{ projectLibraryState(songSet).label }}</small></strong>
               <span>{{ songSet.set_id }}<small>{{ favoriteDate(songSet.set_id) }}</small></span>
-              <button title="Metadata del proyecto" @click="selectedSet = songSet">ℹ</button>
-              <button class="primary" @click="loadProject(songSet.set_id)">Cargar</button>
+              <button class="action-button" title="Metadata del proyecto" @click="selectedSet = songSet"><span aria-hidden="true">i</span><small>Info</small></button>
+              <button class="action-button" title="Archivar proyecto" @click="archiveSet(songSet.set_id)"><span aria-hidden="true">&#128230;</span><small>Archivar</small></button>
+              <button class="action-button danger" title="Borrar proyecto" @click="requestDeleteProject(songSet.set_id)"><span aria-hidden="true">&#128465;</span><small>Borrar</small></button>
+              <button class="action-button primary" title="Cargar proyecto" @click="loadProject(songSet.set_id)"><span aria-hidden="true">&#9654;</span><small>Cargar</small></button>
             </article>
             <p v-if="favoriteSets.length === 0" class="empty-note">Sin favoritos todavia.</p>
           </section>
@@ -90,12 +95,16 @@
           <section class="project-block">
             <h3>Recientes</h3>
             <article v-for="songSet in recentSets" :key="songSet.set_id" class="project-row">
-              <button class="star" title="Marcar favorito" @click="toggleFavorite(songSet.set_id)">☆</button>
-              <strong>{{ songSet.project_name }}</strong>
+              <div class="project-icon-cluster">
+                <button class="star" title="Marcar favorito" @click="toggleFavorite(songSet.set_id)">☆</button>
+                <span :class="['project-state-icon', projectLibraryState(songSet).tone]" :title="projectLibraryState(songSet).label">{{ projectLibraryState(songSet).icon }}</span>
+              </div>
+              <strong>{{ songSet.project_name }}<small>{{ projectLibraryState(songSet).label }}</small></strong>
               <span>{{ songSet.set_id }}<small>{{ songSet.updated_at || songSet.created_at }}</small></span>
-              <button title="Metadata del proyecto" @click="selectedSet = songSet">ℹ</button>
-              <button @click="archiveSet(songSet.set_id)">Archivar</button>
-              <button class="primary" @click="loadProject(songSet.set_id)">Cargar</button>
+              <button class="action-button" title="Metadata del proyecto" @click="selectedSet = songSet"><span aria-hidden="true">i</span><small>Info</small></button>
+              <button class="action-button" title="Archivar proyecto" @click="archiveSet(songSet.set_id)"><span aria-hidden="true">&#128230;</span><small>Archivar</small></button>
+              <button class="action-button danger" title="Borrar proyecto" @click="requestDeleteProject(songSet.set_id)"><span aria-hidden="true">&#128465;</span><small>Borrar</small></button>
+              <button class="action-button primary" title="Cargar proyecto" @click="loadProject(songSet.set_id)"><span aria-hidden="true">&#9654;</span><small>Cargar</small></button>
             </article>
             <p v-if="recentSets.length === 0" class="empty-note">No hay proyectos recientes visibles.</p>
           </section>
@@ -103,18 +112,22 @@
           <section v-if="librarySearch.trim()" class="project-block">
             <h3>Resultados</h3>
             <article v-for="songSet in searchResultSets" :key="songSet.set_id" class="project-row">
-              <button class="star" :title="isFavorite(songSet.set_id) ? 'Quitar favorito' : 'Marcar favorito'" @click="toggleFavorite(songSet.set_id)">
-                {{ isFavorite(songSet.set_id) ? '★' : '☆' }}
-              </button>
-              <strong>{{ songSet.project_name }}</strong>
+              <div class="project-icon-cluster">
+                <button class="star" :title="isFavorite(songSet.set_id) ? 'Quitar favorito' : 'Marcar favorito'" @click="toggleFavorite(songSet.set_id)">
+                  {{ isFavorite(songSet.set_id) ? '★' : '☆' }}
+                </button>
+                <span :class="['project-state-icon', projectLibraryState(songSet).tone]" :title="projectLibraryState(songSet).label">{{ projectLibraryState(songSet).icon }}</span>
+              </div>
+              <strong>{{ songSet.project_name }}<small>{{ projectLibraryState(songSet).label }}</small></strong>
               <span>
                 {{ songSet.set_id }}
                 <small>{{ isArchived(songSet.set_id) ? 'Archivado' : (songSet.updated_at || songSet.created_at) }}</small>
               </span>
-              <button title="Metadata del proyecto" @click="selectedSet = songSet">ℹ</button>
-              <button v-if="isArchived(songSet.set_id)" @click="unarchiveSet(songSet.set_id)">Restaurar</button>
-              <button v-else @click="archiveSet(songSet.set_id)">Archivar</button>
-              <button class="primary" @click="loadProject(songSet.set_id)">Cargar</button>
+              <button class="action-button" title="Metadata del proyecto" @click="selectedSet = songSet"><span aria-hidden="true">i</span><small>Info</small></button>
+              <button v-if="isArchived(songSet.set_id)" class="action-button" title="Restaurar proyecto" @click="unarchiveSet(songSet.set_id)"><span aria-hidden="true">&#8634;</span><small>Restaurar</small></button>
+              <button v-else class="action-button" title="Archivar proyecto" @click="archiveSet(songSet.set_id)"><span aria-hidden="true">&#128230;</span><small>Archivar</small></button>
+              <button class="action-button danger" title="Borrar proyecto" @click="requestDeleteProject(songSet.set_id)"><span aria-hidden="true">&#128465;</span><small>Borrar</small></button>
+              <button class="action-button primary" title="Cargar proyecto" @click="loadProject(songSet.set_id)"><span aria-hidden="true">&#9654;</span><small>Cargar</small></button>
             </article>
             <p v-if="searchResultSets.length === 0" class="empty-note">No hay coincidencias.</p>
           </section>
@@ -137,6 +150,7 @@
               <button @click="toggleFavorite(selectedSet.set_id)">{{ isFavorite(selectedSet.set_id) ? 'Quitar favorito' : 'Marcar favorito' }}</button>
               <button v-if="isArchived(selectedSet.set_id)" @click="unarchiveSet(selectedSet.set_id)">Restaurar</button>
               <button v-else @click="archiveSet(selectedSet.set_id)">Archivar</button>
+              <button class="danger" @click="requestDeleteProject(selectedSet.set_id)">Borrar proyecto</button>
               <button class="primary" @click="loadProject(selectedSet.set_id)">Cargar proyecto</button>
             </div>
           </section>
@@ -159,7 +173,18 @@
                 {{ item.label }}: {{ item.count > 0 ? 'listo' : 'pendiente' }}
               </span>
             </div>
-            <button class="primary align-right" :disabled="!canCreateSet" @click="createSet">Crear proyecto</button>
+            <p>Prepara los tres drafts desde el brief actual. Puedes elegir cada asset antes de crear el proyecto.</p>
+            <div class="grid three">
+              <label v-for="item in draftReadiness" :key="item.type">{{ item.label }}
+                <select v-model="selectedDrafts[item.type]">
+                  <option value="">Seleccionar draft</option>
+                  <option v-for="draft in drafts.filter((entry) => entry.asset_type === item.type)" :key="draft.asset_id" :value="draft.asset_id">{{ draft.asset_id }} · {{ draft.summary }} · {{ draft.created_at.slice(0, 16) }}</option>
+                </select>
+                <button :disabled="Boolean(preparingDraft) || creatingSet" @click="prepareDraft(item.type)">{{ preparingDraft === item.type ? 'Preparando...' : `Preparar ${item.label}` }}</button>
+              </label>
+            </div>
+            <p v-if="createError" role="alert">{{ createError }}</p>
+            <button class="primary align-right" :disabled="!canCreateSet" @click="createSet">{{ creatingSet ? 'Creando...' : 'Crear proyecto' }}</button>
           </section>
         </section>
 
@@ -170,7 +195,7 @@
               <h2>{{ intentPreview }}</h2>
               <p>Esta pagina define identidad emocional y musical. La complejidad vocal vive en Voice y los detalles de audio en Instrumental.</p>
             </div>
-            <button class="primary" @click="savePhaseData('intent')">Guardar</button>
+            <button class="primary" :disabled="Boolean(savingPhase)" @click="savePhaseData('intent')">{{ savingPhase === 'intent' ? 'Guardando...' : 'Guardar' }}</button>
           </section>
 
           <section class="panel">
@@ -191,7 +216,7 @@
                 </select>
               </label>
               <label>BPM
-                <input type="number" v-model.number="intent.bpm" @input="markDirty('intent')" />
+                <input type="number" min="48" max="240" step="1" v-model.number="intent.bpm" @input="markDirty('intent')" />
               </label>
               <label>Tonalidad
                 <select v-model="intent.key" @change="markDirty('intent')">
@@ -270,7 +295,10 @@
             <article><strong>{{ lyricStats.sections }}</strong><span>Secciones</span></article>
             <article><strong>{{ lyricStats.words }}</strong><span>Palabras</span></article>
             <article><strong>{{ lyricStats.variables }}</strong><span>Variables</span></article>
-            <article><strong>{{ dirty && dirtyPhase === 'lyrics' ? '●' : '✔' }}</strong><span>{{ dirty && dirtyPhase === 'lyrics' ? 'Sin guardar' : 'Guardado' }}</span></article>
+            <article>
+              <strong>{{ savingPhase === 'lyrics' ? '...' : phaseStatus('lyrics') === 'READY' ? '✔' : '○' }}</strong>
+              <span>{{ savingPhase === 'lyrics' ? 'Guardando...' : !activeProjectId ? 'Ejemplo sin guardar' : dirty && dirtyPhase === 'lyrics' ? 'Sin guardar' : phaseStatus('lyrics') === 'READY' ? 'Guardado' : 'Sin guardar' }}</span>
+            </article>
           </section>
 
           <section class="panel editor-shell">
@@ -297,7 +325,9 @@
                   <option>SOLO</option>
                   <option>OUTRO</option>
                 </select>
-                <button class="primary" :disabled="!dirty" @click="saveLyricsDraft">Guardar</button>
+                <button class="primary" :disabled="Boolean(savingPhase) || !activeProjectId" @click="saveLyricsDraft">
+                  {{ savingPhase === 'lyrics' ? 'Guardando...' : 'Guardar letra' }}
+                </button>
               </div>
             </div>
             <article v-for="(section, index) in lyricSections" :key="section.id" class="lyric-card">
@@ -318,11 +348,11 @@
                   </select>
                 </div>
                 <div class="mini-actions">
-                  <button title="Mejorar" @click="transformSection(index, 'mejorar')">Mejorar</button>
-                  <button title="Recrear" @click="transformSection(index, 'recrear')">Recrear</button>
-                  <button title="Expandir" @click="transformSection(index, 'expandir')">Expandir</button>
-                  <button title="Acortar" @click="transformSection(index, 'acortar')">Acortar</button>
-                  <button title="Variantes" @click="transformSection(index, 'variantes')">Variantes</button>
+                  <button title="Mejorar con Gemma" :disabled="transformingSections[section.id]" @click="transformSection(index, 'mejorar')">{{ transformingSections[section.id] === 'mejorar' ? 'Mejorando...' : 'Mejorar' }}</button>
+                  <button title="Recrear con Gemma" :disabled="transformingSections[section.id]" @click="transformSection(index, 'recrear')">{{ transformingSections[section.id] === 'recrear' ? 'Recreando...' : 'Recrear' }}</button>
+                  <button title="Expandir con Gemma" :disabled="transformingSections[section.id]" @click="transformSection(index, 'expandir')">{{ transformingSections[section.id] === 'expandir' ? 'Expandiendo...' : 'Expandir' }}</button>
+                  <button title="Acortar con Gemma" :disabled="transformingSections[section.id]" @click="transformSection(index, 'acortar')">{{ transformingSections[section.id] === 'acortar' ? 'Acortando...' : 'Acortar' }}</button>
+                  <button title="Crear variantes con Gemma" :disabled="transformingSections[section.id]" @click="transformSection(index, 'variantes')">{{ transformingSections[section.id] === 'variantes' ? 'Creando...' : 'Variantes' }}</button>
                   <button title="Duplicar" @click="duplicateSection(index)">Duplicar</button>
                   <button title="Mover arriba" @click="moveSection(index, -1)">↑</button>
                   <button title="Mover abajo" @click="moveSection(index, 1)">↓</button>
@@ -340,7 +370,7 @@
               </label>
             </div>
             <div class="actions split">
-              <button @click="saveLyricTemplate">Guardar plantilla</button>
+              <button title="Guarda esta estructura como plantilla reutilizable, no cambia el proyecto activo" @click="saveLyricTemplate">Guardar plantilla</button>
               <input v-model="lyrics.templateSearch" placeholder="Buscar plantilla" />
               <select @change="loadLyricTemplate($event.target.value); $event.target.value = ''">
                 <option value="">Cargar plantilla</option>
@@ -364,13 +394,13 @@
               <h2>{{ musicPlanSummary }}</h2>
               <p>Este plan define la arquitectura musical que despues alimenta MIDI, Instrumental y Voice.</p>
             </div>
-            <button class="primary" @click="savePhaseData('music-plan')">Guardar</button>
+            <button class="primary" :disabled="Boolean(savingPhase)" @click="savePhaseData('music-plan')">{{ savingPhase === 'music-plan' ? 'Guardando...' : 'Guardar' }}</button>
           </section>
 
           <section class="panel">
             <h2>Direccion musical profesional</h2>
             <div class="grid two">
-              <label>BPM <input type="number" v-model.number="musicPlan.bpm" @input="markDirty('music-plan')" /></label>
+              <label>BPM <input type="number" min="48" max="240" step="1" v-model.number="musicPlan.bpm" @input="markDirty('music-plan')" /></label>
               <label>Tonalidad <input v-model="musicPlan.key" @input="markDirty('music-plan')" /></label>
               <label>Compas <input v-model="musicPlan.timeSignature" @input="markDirty('music-plan')" /></label>
               <label>Progresion <input v-model="musicPlan.progression" @input="markDirty('music-plan')" /></label>
@@ -442,7 +472,7 @@
               <h2>{{ midiSummary }}</h2>
               <p>Base editable para melodia vocal, acordes, timing, velocity y humanizacion.</p>
             </div>
-            <button class="primary" @click="savePhaseData('midi')">Guardar</button>
+            <button class="primary" :disabled="Boolean(savingPhase)" @click="savePhaseData('midi')">{{ savingPhase === 'midi' ? 'Guardando...' : 'Guardar' }}</button>
           </section>
 
           <section class="panel midi-board">
@@ -496,7 +526,7 @@
               <h2>{{ instrumentalSummary }}</h2>
               <p>Convierte MIDI y plan musical en audio real: capas, ambiente, stems y previews.</p>
             </div>
-            <button class="primary" @click="savePhaseData('instrumental')">Guardar</button>
+            <button class="primary" :disabled="Boolean(savingPhase)" @click="savePhaseData('instrumental')">{{ savingPhase === 'instrumental' ? 'Guardando...' : 'Guardar' }}</button>
           </section>
 
           <section class="panel">
@@ -553,7 +583,7 @@
               <h2>Direccion de interpretacion vocal</h2>
               <p>{{ voiceSummary }}</p>
             </div>
-            <button class="primary" @click="savePhaseData('voice')">Guardar</button>
+            <button class="primary" :disabled="Boolean(savingPhase)" @click="savePhaseData('voice')">{{ savingPhase === 'voice' ? 'Guardando...' : 'Guardar' }}</button>
           </section>
 
           <section class="panel">
@@ -652,7 +682,7 @@
         </section>
 
         <section v-if="activeTab === 'production'" class="view production-view">
-          <section class="panel production-project-panel">
+          <section v-if="false" class="panel production-project-panel">
             <div class="section-head">
               <div>
                 <span class="eyebrow">1. Proyecto activo</span>
@@ -676,7 +706,7 @@
           <section class="panel production-flow-panel">
             <div class="section-head">
               <div>
-                <span class="eyebrow">2. Orden lógico</span>
+                <span class="eyebrow">1. Orden lógico</span>
                 <h2>{{ productionGlobalStatus }}</h2>
                 <p>Production no es otro editor: aquí se ejecuta el cierre del pipeline y se preparan descargas.</p>
               </div>
@@ -722,16 +752,185 @@
             <div v-if="productionTimingEstimate.clipped || productionTimingEstimate.exceedsTimeout || productionTimingEstimate.cpuSlow" class="inline-warning">
               <strong v-if="productionTimingEstimate.clipped">La duracion solicitada supera el limite configurado.</strong>
               <strong v-else-if="productionTimingEstimate.exceedsTimeout">El estimado puede superar el timeout configurado.</strong>
-              <strong v-else>ACE-Step esta corriendo en modo CPU lento.</strong>
+              <strong v-else>Estimado en CPU: la generacion puede ser lenta.</strong>
               <span>
                 Solicitado: {{ productionTimingEstimate.requestedLabel }} /
-                Enviado: {{ productionTimingEstimate.songLengthLabel }} /
+                {{ productionRunningPhase ? 'Enviado' : 'Previsto' }}: {{ productionTimingEstimate.songLengthLabel }} /
                 Runtime: {{ productionTimingEstimate.runtime }}
               </span>
             </div>
             <div v-if="fullSongRuntimeInfo.warning || fullSongRuntimeInfo.fallbackReason" class="inline-warning">
               <strong>{{ fullSongRuntimeInfo.warning || 'ACE-Step bajo a fallback.' }}</strong>
               <span>{{ fullSongRuntimeInfo.fallbackReason || 'Revisa tools/check_xpu_stack.py --probe-tensor para confirmar Intel XPU.' }}</span>
+            </div>
+          </section>
+
+          <section class="panel specification-panel">
+            <div class="section-head">
+              <div>
+                <span class="eyebrow">2. Configuración guiada</span>
+                <h2>Ficha completa de la canción</h2>
+                <p>Gemma explica las decisiones y Qwen prepara la especificación. Puedes revisar todas las opciones aunque aún estén por decidir.</p>
+              </div>
+              <div class="spec-coverage">
+                <strong>{{ specificationCoverage.decided }} / {{ specificationCoverage.total }}</strong>
+                <small>parámetros definidos</small>
+                <span v-if="specificationRevision">Revisión {{ specificationRevision.revision_number }} · {{ specificationRevision.technical_review_mode === 'rule_validation' ? 'validación por reglas' : specificationRevision.technical_review_mode }}</span>
+                <span v-if="specificationRevision">Confirmación: {{ specificationRevision.user_confirmation_status }}</span>
+                <button v-if="canConfirmSpecification" class="primary" :disabled="confirmingSpecification || Boolean(aceConfigurationDraft)" @click="confirmProfessionalSpecification">
+                  {{ confirmingSpecification ? 'Confirmando...' : 'Confirmar esta configuración' }}
+                </button>
+              </div>
+            </div>
+            <div v-if="!productionProjectId" class="inline-warning">
+              <strong>Prepara Production para crear la ficha.</strong>
+              <span>La configuración se vincula al proyecto activo y no se comparte con otra canción.</span>
+            </div>
+            <div v-else class="specification-groups">
+              <button v-if="specificationRevision && !aceConfigurationDraft" @click="openAceConfiguration">Configurar accion sobre el audio</button>
+              <form v-if="aceConfigurationDraft" @submit.prevent="saveAceConfiguration">
+                <p>Estos valores son una propuesta inicial. Guardar crea una revision pendiente de confirmar; no genera audio.</p>
+                <label>Que quieres hacer
+                  <select v-model="aceConfigurationDraft.task_type">
+                    <option value="text2music">Crear desde mi idea</option>
+                    <option value="cover">Crear otra version de un audio</option>
+                    <option value="repaint">Corregir una parte</option>
+                    <option value="lego">Añadir una parte instrumental o vocal</option>
+                    <option value="extract">Separar una parte de la mezcla</option>
+                    <option value="complete">Completar el arreglo</option>
+                  </select>
+                </label>
+                <label>Modelo (ajuste avanzado)
+                  <select v-model="aceConfigurationDraft.ace_step_config"><option value="acestep-v15-base">Base: seis acciones</option><option value="acestep-v15-turbo">Turbo: crear, versionar y corregir</option></select>
+                </label>
+                <label v-if="aceConfigurationDraft.task_type !== 'text2music'">Audio del proyecto
+                  <select v-model="aceConfigurationDraft.source_artifact_id" required>
+                    <option value="" disabled>Selecciona un audio registrado</option>
+                    <option v-for="artifact in (professionalSpecification.source_artifacts || [])" :key="artifact.artifact_id" :value="artifact.artifact_id">{{ artifact.type }} · {{ (artifact.file_path || '').split(/[\\/]/).pop() }}</option>
+                  </select>
+                  <small v-if="!(professionalSpecification.source_artifacts || []).length">No hay audios WAV registrados. La importacion de fuentes esta pendiente; puedes crear desde tu idea sin audio fuente.</small>
+                </label>
+                <template v-if="['lego', 'extract', 'complete'].includes(aceConfigurationDraft.task_type)">
+                  <label>Pistas objetivo (una para añadir o separar)
+                    <select v-model="aceConfigurationDraft.target_tracks" multiple required>
+                      <option value="vocals">Voz principal</option><option value="backing_vocals">Coros</option><option value="drums">Bateria</option><option value="bass">Bajo</option><option value="guitar">Guitarra</option><option value="keyboard">Teclado</option><option value="percussion">Percusion</option><option value="strings">Cuerdas</option><option value="synth">Sintetizador</option><option value="fx">Efectos</option><option value="brass">Metales</option><option value="woodwinds">Vientos de madera</option>
+                    </select>
+                  </label>
+                  <details><summary>Instruccion del motor (ajuste avanzado)</summary>
+                    <p>La instruccion debe identificar estas pistas: {{ aceConfigurationDraft.target_tracks.join(', ') }}. Puedes preparar ese valor y revisarlo antes de guardar.</p>
+                    <button type="button" @click="aceConfigurationDraft.instruction = aceConfigurationDraft.target_tracks.join(', ')">Preparar instruccion con las pistas seleccionadas</button>
+                    <label>Instruccion<input v-model="aceConfigurationDraft.instruction"></label>
+                  </details>
+                </template>
+                <template v-if="['repaint', 'lego'].includes(aceConfigurationDraft.task_type)">
+                  <label>Inicio (segundos)<input v-model.number="aceConfigurationDraft.repainting_start" type="number" min="0" step="0.1" required></label>
+                  <label>Final (segundos; -1 hasta el final)<input v-model.number="aceConfigurationDraft.repainting_end" type="number" min="-1" step="0.1" required></label>
+                </template>
+                <label v-if="aceConfigurationDraft.task_type === 'cover'">Conservacion del audio (0 a 1)<input v-model.number="aceConfigurationDraft.audio_cover_strength" type="number" min="0" max="1" step="0.05" required></label>
+                <details><summary>Criterio de revision: duracion</summary>
+                  <p>Cuantos segundos de diferencia aceptas respecto a la duracion elegida. Dejalo vacio si aun no quieres definirlo. Se usa para evaluar una cancion creada desde tu idea; las operaciones de edicion tienen criterios pendientes.</p>
+                  <label>Margen aceptable (segundos)<input v-model.number="aceConfigurationDraft.duration_tolerance_seconds" type="number" min="0" max="600" step="0.1" placeholder="Sin definir"></label>
+                  <p>Este margen evalua el resultado; no obliga al motor a producir una duracion exacta.</p>
+                </details>
+                <button type="submit" :disabled="savingAceConfiguration">{{ savingAceConfiguration ? 'Guardando...' : 'Guardar para revisar' }}</button>
+                <button type="button" :disabled="savingAceConfiguration" @click="aceConfigurationDraft = null">Descartar cambios</button>
+              </form>
+              <section v-if="specificationRevision?.user_confirmation_status === 'confirmed' && !aceConfigurationDraft">
+                <h3>Plan de creacion para revisar</h3>
+                <p>Revisa el texto que se cantara y las entradas del motor. Aprobar este plan no genera audio ni aprueba un sample.</p>
+                <button v-if="acePlanLyricsDraft === null" :disabled="acePlanBusy" @click="startAcePlanReview">Preparar un nuevo plan</button>
+                <form v-else @submit.prevent="prepareAcePlan">
+                  <label>Letra para este plan<textarea v-model="acePlanLyricsDraft" rows="8" maxlength="4096"></textarea></label>
+                  <p>Revisa la letra del proyecto o escribe la version que quieres aprobar. Separar una pista puede usar letra vacia.</p>
+                  <button type="submit" :disabled="acePlanBusy">Preparar para revisar</button>
+                  <button type="button" :disabled="acePlanBusy" @click="acePlanLyricsDraft = null">Descartar</button>
+                </form>
+                <div v-if="acePlanReview">
+                  <p v-if="acePlanReview.effective_status === 'stale'">Este plan ya no corresponde a los datos vigentes. {{ acePlanReview.invalid_reason }}</p>
+                  <p v-else-if="acePlanReview.effective_status === 'approved'">Plan aprobado. Ejecucion de audio pendiente.</p>
+                  <p v-else>Plan pendiente de tu revision.</p>
+                  <p>Descripcion enviada: {{ acePlanReview.plan.payload.captions }}</p>
+                  <p>Velocidad: {{ acePlanReview.plan.payload.bpm }} · Tonalidad: {{ acePlanReview.plan.payload.key_scale }} · Duracion: {{ acePlanReview.plan.payload.audio_duration }} segundos</p>
+                  <details><summary>Letra exacta del plan</summary><pre>{{ acePlanReview.plan.payload.lyrics || 'Sin letra para esta operacion' }}</pre></details>
+                  <details><summary>Entradas tecnicas y requisitos conservados</summary><pre>{{ JSON.stringify(acePlanReview.plan, null, 2) }}</pre></details>
+                  <template v-if="acePlanReview.effective_status === 'candidate' && acePlanReview.inputs_current">
+                    <label><input v-model="acePlanLyricsConfirmed" type="checkbox"> Revise el plan y confirmo esta letra para la operacion elegida.</label>
+                    <button :disabled="!acePlanLyricsConfirmed || acePlanBusy" @click="approveAcePlan">Aprobar este plan y letra</button>
+                  </template>
+                  <div v-if="acePlanReview.effective_status === 'approved' && acePlanReview.inputs_current">
+                    <p>Este borrador ejecuta ACE-Step local y puede tardar. No reemplaza el original ni aprueba el sample o la cancion final. La calidad de este modo aun necesita escucha y evaluacion.</p>
+                    <label><input v-model="aceCandidateAuthorized" type="checkbox"> Autorizo generar un borrador exploratorio con este plan.</label>
+                    <button :disabled="!aceCandidateAuthorized || aceCandidateBusy || ['pending', 'running', 'cancelling'].includes(aceCandidateJob?.status)" @click="startAceCandidateJob">Generar borrador de audio</button>
+                  </div>
+                  <div v-if="aceCandidateJob" role="status" aria-live="polite">
+                    <p>{{ aceCandidateJob.message }}</p>
+                    <button v-if="['pending', 'running'].includes(aceCandidateJob.status)" :disabled="aceCandidateBusy" @click="cancelAceCandidateJob">Cancelar borrador</button>
+                    <p v-if="aceCandidateJob.status === 'cancelled'">Borrador cancelado. Puedes revisar el plan y volver a intentarlo.</p>
+                    <p v-if="aceCandidateJob.status === 'completed'">Archivo candidato creado; la escucha y evaluacion siguen pendientes.</p>
+                    <audio v-if="aceCandidateAudioUrl()" :key="aceCandidateJob.task_id" :src="aceCandidateAudioUrl()" controls preload="none"></audio>
+                    <details v-if="aceCandidateJob.result?.fidelity_report"><summary>Comparar el audio con tu plan</summary>
+                      <p>La integridad del archivo no demuestra fidelidad musical. Las comprobaciones de letra, voz e instrumentos requieren analisis o escucha.</p>
+                      <article v-for="check in aceCandidateJob.result.fidelity_report.checks" :key="check.id">
+                        <strong>{{ check.label }}</strong>
+                        <p v-if="check.id === 'duration'">Objetivo: {{ check.expected }} segundos · Medido: {{ check.observed ?? 'Sin medicion' }} segundos.</p>
+                        <p v-if="check.status === 'within_tolerance'">Dentro de la tolerancia aprobada.</p>
+                        <p v-else-if="check.status === 'outside_tolerance'">Fuera de la tolerancia aprobada; revisa o genera otro candidato.</p>
+                        <p v-else-if="check.status === 'tolerance_pending'">Duracion medida; falta una tolerancia aprobada para evaluar cumplimiento.</p>
+                        <p v-else>Comprobacion pendiente de analisis o escucha.</p>
+                      </article>
+                    </details>
+                    <p v-if="aceCandidateJob.status === 'failed'">{{ aceCandidateJob.result?.error || 'Revisa el plan y vuelve a intentarlo.' }}</p>
+                  </div>
+                </div>
+              </section>
+              <details v-for="group in professionalSpecification.catalog.groups" :key="group.id" class="specification-group">
+                <summary>
+                  <span><strong>{{ group.label }}</strong><small>{{ group.description }}</small></span>
+                  <span>{{ group.decided }} / {{ group.total }}</span>
+                </summary>
+                <div class="specification-fields">
+                  <article v-for="field in group.fields" :key="field.id" :class="['specification-field', `is-${field.coverage_status}`]">
+                    <div>
+                      <strong>{{ field.label }}</strong>
+                      <small>{{ field.help }}</small>
+                      <small v-if="field.applicable === false">No se usa en la accion seleccionada.</small>
+                      <small v-else-if="field.execution_status === 'candidate_plan_only'">Entrada para preparar el plan; ejecucion pendiente de integrar.</small>
+                    </div>
+                    <span v-if="Array.isArray(field.value)">{{ field.value.length ? field.value.join(', ') : 'Por decidir' }}</span>
+                    <span v-else>{{ field.value === 0 ? 0 : (field.value || 'Por decidir') }}</span>
+                    <em>{{ field.required_for_spec ? 'Necesario para esta etapa' : 'Opcional o avanzado' }} · {{ field.source }}</em>
+                  </article>
+                </div>
+              </details>
+            </div>
+          </section>
+
+          <section class="panel sample-checkpoint-panel">
+            <div v-if="sampleAudioUrl">
+              <audio :key="sampleReviewKey" :src="sampleAudioUrl" controls preload="none"></audio>
+              <label><input type="checkbox" :checked="sampleListeningConfirmation === sampleReviewKey" @change="sampleListeningConfirmation = $event.target.checked ? sampleReviewKey : ''"> Escuché este audio y quiero aprobar esta versión.</label>
+            </div>
+            <div class="section-head">
+              <div>
+                <span class="eyebrow">3. Revisión corta obligatoria</span>
+                <h2>{{ sampleCheckpointStatus.title }}</h2>
+                <p>{{ sampleCheckpointStatus.detail }}</p>
+              </div>
+              <span class="pipeline-badge">{{ activeSampleCheckpoint?.provider || 'Sin provider' }}</span>
+            </div>
+            <div v-if="!activeProjectId" class="inline-warning">
+              <strong>Carga un proyecto desde Biblioteca.</strong>
+              <span>El sample siempre pertenece a un set concreto.</span>
+            </div>
+            <div v-else class="actions">
+              <button v-if="!activeSampleCheckpoint || activeSampleCheckpoint.freshness_status === 'stale'" class="primary" :disabled="sampleCheckpointRunning" @click="createActiveSetSample">
+                {{ sampleCheckpointRunning ? 'Preparando...' : 'Crear sample del proyecto' }}
+              </button>
+              <button v-else-if="activeSampleCheckpoint.approval_status !== 'approved'" class="primary" :disabled="sampleCheckpointRunning || (sampleAudioUrl && sampleListeningConfirmation !== sampleReviewKey)" @click="approveActiveSetSample">
+                {{ sampleCheckpointRunning ? 'Guardando...' : (sampleAudioUrl ? 'Aprobar este audio' : 'Confirmar checkpoint mock') }}
+              </button>
+              <span v-else class="status-ok">✓ Sample vigente aprobado</span>
+              <small v-if="activeSampleCheckpoint">{{ activeSampleCheckpoint.sample_id }} · {{ activeSampleCheckpoint.status }}</small>
             </div>
           </section>
 
@@ -771,7 +970,7 @@
           <section class="panel">
             <div class="section-head">
               <div>
-                <span class="eyebrow">3. Exportables</span>
+                <span class="eyebrow">4. Exportables</span>
                 <h2>Descargas finales</h2>
                 <p>Usa estos archivos cuando la canción ya fue generada por ACE-Step o exportada.</p>
               </div>
@@ -781,8 +980,10 @@
                 <button class="primary" @click="saveLatestMp3">Guardar MP3</button>
               </div>
             </div>
-            <small>{{ localFinalStatusMessage }}</small>
-            <small v-if="exportManifest.quality?.message">{{ exportManifest.quality.message }}</small>
+            <div class="export-status-lines">
+              <small v-if="activeProjectId">{{ localFinalStatusMessage }}</small>
+              <small v-if="activeProjectId && exportManifest.quality?.message">{{ exportManifest.quality.message }}</small>
+            </div>
             <article v-for="item in exportables" :key="item.type" class="export-row">
               <strong>{{ item.name }}<small v-if="item.note">{{ item.note }}</small></strong>
               <span>{{ item.size }}</span>
@@ -792,6 +993,13 @@
           </section>
 
           <section class="production-diagnostics">
+            <details class="panel">
+              <summary>Actividad</summary>
+              <div class="activity-log compact-activity">
+                <p v-for="item in productionActivityLog" :key="item.id"><time>{{ item.time }}</time><span>{{ item.text }}</span></p>
+              </div>
+            </details>
+
             <details class="panel resource-panel">
               <summary>Diagnóstico de recursos</summary>
               <div class="section-head">
@@ -868,7 +1076,7 @@
           </section>
         </section>
 
-          <section v-if="activeTab === 'production'" class="activity-log">
+          <section v-if="false" class="activity-log">
             <strong>Actividad</strong>
             <p v-for="item in productionActivityLog" :key="item.id"><time>{{ item.time }}</time><span>{{ item.text }}</span></p>
           </section>
@@ -878,6 +1086,7 @@
         <div class="gemma-response">
           <p v-if="gemmaAssistant.response">{{ gemmaAssistant.response.message }}</p>
           <p v-else>Listo para ayudarte con el siguiente paso de esta cancion.</p>
+          <p v-if="gemmaAssistant.error" role="alert">{{ gemmaAssistant.error }}</p>
         </div>
         <div class="gemma-composer">
           <textarea v-model="gemmaAssistant.question" placeholder="Pregunta por el siguiente paso, la letra, la voz o la produccion."></textarea>
@@ -889,10 +1098,30 @@
         <section class="modal">
           <h2>Tienes cambios sin guardar.</h2>
           <p>Guardar mantiene la fase actual y marca las dependencias como desactualizadas hasta que decidas regenerarlas.</p>
+          <p v-if="saveError" role="alert">{{ saveError }}</p>
           <div class="actions split">
-            <button @click="discardAndContinue">Perder cambios</button>
-            <button @click="cancelNavigation">Cancelar</button>
-            <button class="primary" @click="saveAndContinue">Guardar y continuar</button>
+            <button :disabled="Boolean(savingPhase)" @click="discardAndContinue">Perder cambios</button>
+            <button :disabled="Boolean(savingPhase)" @click="cancelNavigation">Cancelar</button>
+            <button class="primary" :disabled="Boolean(savingPhase)" @click="saveAndContinue">{{ savingPhase ? 'Guardando...' : 'Guardar y continuar' }}</button>
+          </div>
+        </section>
+      </div>
+
+      <div v-if="deleteDialog.open" class="modal-backdrop">
+        <section class="modal delete-modal">
+          <span class="eyebrow">Borrar proyecto</span>
+          <h2>{{ deleteDialog.name }}</h2>
+          <p>Esta accion elimina el set, fases guardadas, estado visual, eventos relacionados, Production enlazado y artefactos locales del proyecto.</p>
+          <div class="delete-impact">
+            <strong>Se conserva</strong>
+            <span>Los drafts separados de instrumental, melodia y letra quedan disponibles para otros proyectos.</span>
+          </div>
+          <p v-if="deleteDialog.error" class="modal-error">{{ deleteDialog.error }}</p>
+          <div class="actions split">
+            <button :disabled="deleteDialog.loading" @click="cancelDeleteProject">Cancelar</button>
+            <button class="danger" :disabled="deleteDialog.loading" @click="confirmDeleteProject">
+              {{ deleteDialog.loading ? 'Borrando...' : 'Borrar definitivamente' }}
+            </button>
           </div>
         </section>
       </div>

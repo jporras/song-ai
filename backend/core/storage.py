@@ -2,13 +2,18 @@
 from datetime import datetime, timezone
 import hashlib
 import json
+import shutil
 
 from adapters.sqlite.json_config_repository import JsonConfigRepository
+from adapters.sqlite.legacy_song_repository import LegacySongRepository
 from adapters.sqlite.orchestration_repository import OrchestrationRepository
 from adapters.sqlite.set_repository import SetRepository
 from adapters.sqlite.song_workflow_repository import SongWorkflowRepository
 from models.assets import AssetDraft, AssetType
 from models.song_set import SongSet
+from models.music_validation import validate_bpm
+from models.generation_inputs import musical_phase_inputs
+from adapters.sample_audio_evidence import inspect_sample_wav
 
 
 class StorageManager:
@@ -28,6 +33,7 @@ class StorageManager:
         self.db_path = self.data_dir / "song_ai.sqlite"
         self.json_config_repository = JsonConfigRepository(self.db_path)
         self.set_repository = SetRepository(self.db_path)
+        self.legacy_song_repository = LegacySongRepository(self.db_path)
         self.orchestration_repository = OrchestrationRepository(self.db_path)
         self.song_workflow_repository = SongWorkflowRepository(self.db_path)
 
@@ -40,6 +46,7 @@ class StorageManager:
             if not existed:
                 created_or_existing.append(folder)
         self.sync_legacy_sets_to_sqlite()
+        self.sync_legacy_workflow_to_sqlite()
         return created_or_existing
 
     def list_data_folders(self) -> list[Path]:
@@ -73,11 +80,17 @@ class StorageManager:
                 if not metadata_path.exists():
                     continue
                 metadata = self.read_json(metadata_path)
+                manifest_path = draft_dir / "manifest.json"
+                intent_path = draft_dir / "intent.json"
+                manifest = self.read_json(manifest_path) if manifest_path.is_file() else {}
+                intent = self.read_json(intent_path) if intent_path.is_file() else {}
                 drafts.append(
                     {
                         "asset_id": str(metadata.get("asset_id", draft_dir.name)),
                         "asset_type": str(metadata.get("asset_type", asset_type.value)),
                         "path": str(draft_dir),
+                        "created_at": str(manifest.get("created_at", "")),
+                        "summary": str(intent.get("mood") or intent.get("vocal_style") or intent.get("lyrics_context") or "Draft"),
                     }
                 )
         return drafts
@@ -168,12 +181,40 @@ class StorageManager:
         ]
 
     def save_song_set(self, song_set: SongSet) -> Path:
+        self.validate_song_set_assets(song_set.instrumental_id, song_set.melody_id, song_set.lyrics_id)
         set_dir = self.data_dir / "sets" / song_set.set_id
         set_dir.mkdir(parents=True, exist_ok=True)
         set_path = set_dir / "set.json"
         self.write_json(set_path, song_set.to_dict())
         self.set_repository.save_set(song_set, set_path)
         return set_dir
+
+    def validate_song_set_assets(self, instrumental_id: str, melody_id: str, lyrics_id: str) -> None:
+        drafts = {draft["asset_id"]: draft for draft in self.list_asset_drafts()}
+        for label, asset_id, asset_type in (
+            ("instrumental", instrumental_id, AssetType.INSTRUMENTAL),
+            ("melodia", melody_id, AssetType.MELODY),
+            ("letra", lyrics_id, AssetType.LYRICS),
+        ):
+            draft = drafts.get(asset_id)
+            if not draft or draft["asset_type"] != asset_type.value:
+                raise ValueError(f"El set necesita un draft valido de {label}.")
+            draft_dir = Path(draft["path"])
+            required_files = ("manifest.json", "intent.json", {
+                AssetType.INSTRUMENTAL: "instrumental.txt",
+                AssetType.MELODY: "melody.txt",
+                AssetType.LYRICS: "lyrics.md",
+            }[asset_type])
+            if any(not (draft_dir / filename).is_file() for filename in required_files):
+                raise ValueError(f"El draft de {label} esta incompleto: faltan manifest, intent o contenido.")
+            manifest = self.read_json(draft_dir / "manifest.json")
+            if manifest.get("asset_id") != asset_id or manifest.get("asset_type") != asset_type.value:
+                raise ValueError(f"El manifest del draft de {label} no corresponde al asset seleccionado.")
+            asset_intent = self.read_json(draft_dir / "intent.json")
+            if not asset_intent:
+                raise ValueError(f"El intent del draft de {label} esta vacio.")
+            if "bpm" in asset_intent:
+                validate_bpm(asset_intent["bpm"])
 
     def list_song_sets(self) -> list[dict[str, str]]:
         sets_dir = self.data_dir / "sets"
@@ -220,76 +261,258 @@ class StorageManager:
             "skipped": skipped,
         }
 
+    def sync_legacy_workflow_to_sqlite(self) -> dict[str, object]:
+        migrated_samples: list[str] = []
+        migrated_songs: list[str] = []
+        skipped: list[str] = []
+        for sample_path in self._legacy_snapshot_paths("samples", "sample.json"):
+            try:
+                payload = self.read_json(sample_path)
+                sample_id = str(payload["sample_id"])
+                set_id = str(payload["set_id"])
+            except (KeyError, OSError, ValueError, json.JSONDecodeError):
+                skipped.append(str(sample_path))
+                continue
+            if self.get_indexed_set(set_id) is None:
+                skipped.append(sample_id)
+                continue
+            normalized = {
+                **payload,
+                "created_at": str(payload.get("created_at") or datetime.fromtimestamp(sample_path.stat().st_mtime, timezone.utc).isoformat()),
+            }
+            existed = self.legacy_song_repository.get_sample(sample_id) is not None
+            self.legacy_song_repository.save_sample(normalized, sample_path, overwrite=False)
+            if not existed:
+                migrated_samples.append(sample_id)
+
+        for song_path in self._legacy_snapshot_paths("songs", "song.json"):
+            try:
+                payload = self.read_json(song_path)
+                song_id = str(payload["song_id"])
+                sample_id = str(payload["sample_id"])
+                set_id = str(payload["set_id"])
+            except (KeyError, OSError, ValueError, json.JSONDecodeError):
+                skipped.append(str(song_path))
+                continue
+            sample = self.legacy_song_repository.get_sample(sample_id)
+            if self.get_indexed_set(set_id) is None or sample is None or str(sample.get("set_id", "")) != set_id:
+                skipped.append(song_id)
+                continue
+            normalized = {
+                **payload,
+                "created_at": str(payload.get("created_at") or datetime.fromtimestamp(song_path.stat().st_mtime, timezone.utc).isoformat()),
+            }
+            existed = self.legacy_song_repository.get_song(song_id) is not None
+            self.legacy_song_repository.save_song(normalized, song_path, overwrite=False)
+            if not existed:
+                migrated_songs.append(song_id)
+        return {"samples": migrated_samples, "songs": migrated_songs, "skipped": skipped}
+
+    def _legacy_snapshot_paths(self, folder: str, filename: str) -> list[Path]:
+        parent = self.data_dir / folder
+        if not parent.exists():
+            return []
+        return sorted(path / filename for path in parent.iterdir() if path.is_dir() and (path / filename).is_file())
+
+    def _materialize_legacy_snapshot(self, payload: dict[str, object], id_field: str) -> dict[str, object]:
+        json_path = Path(str(payload["json_path"]))
+        snapshot = {key: value for key, value in payload.items() if key not in {"json_path", "path"}}
+        if not json_path.exists():
+            self.write_json(json_path, snapshot)
+        return {**snapshot, "path": str(json_path.parent), id_field: str(payload[id_field])}
+
     def get_latest_song_set(self) -> dict[str, object] | None:
-        song_sets = self.list_song_sets()
+        song_sets = self.list_indexed_sets()
         if not song_sets:
             return None
-        latest = song_sets[-1]
-        payload = self.read_json(Path(latest["path"]) / "set.json")
-        payload["path"] = latest["path"]
+        latest = song_sets[0]
+        set_dir = self.data_dir / "sets" / str(latest["set_id"])
+        set_path = set_dir / "set.json"
+        payload = self.serialize_indexed_set(latest)
+        if not set_path.exists():
+            self.write_json(set_path, payload)
+        payload["path"] = str(set_dir)
         return payload
 
     def list_samples(self) -> list[dict[str, str]]:
-        samples_dir = self.data_dir / "samples"
-        if not samples_dir.exists():
-            return []
-        samples: list[dict[str, str]] = []
-        for sample_dir in sorted(path for path in samples_dir.iterdir() if path.is_dir()):
-            sample_path = sample_dir / "sample.json"
-            if not sample_path.exists():
-                continue
-            payload = self.read_json(sample_path)
-            samples.append({"sample_id": str(payload["sample_id"]), "path": str(sample_dir)})
-        return samples
+        return [
+            {"sample_id": str(sample["sample_id"]), "path": str(Path(str(sample["json_path"])).parent)}
+            for sample in self.legacy_song_repository.list_samples()
+        ]
 
     def get_latest_sample(self) -> dict[str, object] | None:
-        samples = self.list_samples()
+        samples = self.legacy_song_repository.list_samples()
         if not samples:
             return None
-        latest = samples[-1]
-        payload = self.read_json(Path(latest["path"]) / "sample.json")
-        payload["path"] = latest["path"]
-        return payload
+        return self._materialize_legacy_snapshot(samples[0], "sample_id")
 
     def list_samples_for_set(self, set_id: str) -> list[dict[str, object]]:
-        samples: list[dict[str, object]] = []
-        for sample in self.list_samples():
-            payload = self.read_json(Path(sample["path"]) / "sample.json")
-            if str(payload.get("set_id", "")) == set_id:
-                payload["path"] = sample["path"]
-                samples.append(payload)
-        return samples
+        return [self._materialize_legacy_snapshot(sample, "sample_id") for sample in self.legacy_song_repository.list_samples(set_id)]
+
+    def set_generation_fingerprint(self, set_id: str) -> str:
+        song_set = self.get_indexed_set(set_id)
+        if song_set is None:
+            raise ValueError("No existe un set valido para calcular la vigencia del sample.")
+        self.validate_song_set_assets(
+            str(song_set["instrumental_id"]),
+            str(song_set["melody_id"]),
+            str(song_set["lyrics_id"]),
+        )
+        asset_files: dict[str, dict[str, str]] = {}
+        for asset_id in (
+            str(song_set["instrumental_id"]),
+            str(song_set["melody_id"]),
+            str(song_set["lyrics_id"]),
+        ):
+            draft = self.find_asset_draft(asset_id)
+            draft_dir = Path(str(draft["path"])) if draft else Path()
+            asset_files[asset_id] = {
+                path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in sorted(draft_dir.iterdir())
+                if path.is_file()
+            }
+        generation_input = {
+            "fingerprint_version": 3,
+            "set": {
+                key: song_set.get(key)
+                for key in ("set_id", "description", "instrumental_id", "melody_id", "lyrics_id", "compatibility_data")
+            },
+            "assets": asset_files,
+            "phase_data": musical_phase_inputs(self.list_project_phase_data(set_id)),
+            "linked_song_specs": self._linked_generation_specs(set_id),
+        }
+        canonical = json.dumps(generation_input, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    def _linked_generation_specs(self, set_id: str) -> dict[str, object]:
+        specs = {}
+        for project in self.song_workflow_repository.list_projects_by_user_id(f"set:{set_id}"):
+            song_id = str(project["id"])
+            record = self.song_workflow_repository.get_spec(song_id)
+            if record is not None:
+                specs[song_id] = {
+                    "json_spec": record["json_spec"],
+                    "schema_version": dict(record.get("revision", {})).get("schema_version", "1.0"),
+                }
+        return specs
+
+    def register_sample_audio(self, set_id: str, sample_id: str, audio_path: Path) -> dict[str, object]:
+        sample = self.legacy_song_repository.get_sample(sample_id)
+        if sample is None or sample.get("set_id") != set_id:
+            raise ValueError("El sample no pertenece al set activo.")
+        if sample.get("set_fingerprint") != self.set_generation_fingerprint(set_id):
+            raise ValueError("El sample esta desactualizado. Regeneralo antes de registrar audio.")
+        sample_path = Path(str(sample["json_path"]))
+        evidence = inspect_sample_wav(audio_path, sample_path.parent)
+        updated = {**sample, "audio_evidence": evidence, "approval_status": "pending"}
+        for key in ("approved_at", "approved_set_fingerprint", "approved_audio_sha256", "listening_confirmed_at"):
+            updated.pop(key, None)
+        self.legacy_song_repository.save_sample(updated, sample_path)
+        self.set_repository.create_phase_event(
+            project_id=set_id, phase_name="SAMPLE", event_type="SAMPLE_AUDIO_REGISTERED",
+            source="SYSTEM", before={"sample_id": sample_id, "audio_evidence": sample.get("audio_evidence")},
+            after={"sample_id": sample_id, "audio_evidence": evidence, "approval_status": "pending"},
+            message="Audio del sample registrado; requiere escucha y aprobacion del usuario.",
+        )
+        return self._materialize_legacy_snapshot(updated, "sample_id")
+
+    def verify_sample_audio(self, sample: dict[str, object]) -> dict[str, object]:
+        persisted = self.legacy_song_repository.get_sample(str(sample.get("sample_id", "")))
+        if persisted is None:
+            raise ValueError("El sample no existe en SQLite.")
+        sample = persisted
+        evidence = dict(sample.get("audio_evidence") or {})
+        if not evidence.get("relative_path") or not evidence.get("sha256"):
+            raise ValueError("El sample no tiene audio registrado; genera su audio antes de aprobarlo.")
+        directory = Path(str(sample["json_path"])).parent
+        current = inspect_sample_wav(directory / str(evidence["relative_path"]), directory)
+        if current != evidence:
+            raise ValueError("El audio del sample cambio; registralo y vuelve a escucharlo y aprobarlo.")
+        return current
+
+    def approve_sample(self, set_id: str, sample_id: str, *, listened: bool = False, audio_sha256: str = "") -> dict[str, object]:
+        sample = self.legacy_song_repository.get_sample(sample_id)
+        if sample is None or str(sample.get("set_id", "")) != set_id:
+            raise ValueError("El sample no pertenece al set activo.")
+        expected_fingerprint = self.set_generation_fingerprint(set_id)
+        if str(sample.get("set_fingerprint", "")) != expected_fingerprint:
+            raise ValueError("El sample esta desactualizado. Regeneralo antes de aprobarlo.")
+        approved = {
+            **sample,
+            "approval_status": "approved",
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+            "approved_set_fingerprint": expected_fingerprint,
+        }
+        if sample.get("audio_evidence"):
+            evidence = self.verify_sample_audio(sample)
+            if listened is not True or audio_sha256 != evidence["sha256"]:
+                raise ValueError("Escucha el audio actual y confirma su revision antes de aprobar el sample.")
+            approved["approved_audio_sha256"] = evidence["sha256"]
+            approved["listening_confirmed_at"] = approved["approved_at"]
+        sample_path = Path(str(sample["json_path"]))
+        self.legacy_song_repository.save_sample(approved, sample_path)
+        self.write_json(sample_path, {key: value for key, value in approved.items() if key not in {"json_path", "path"}})
+        self.set_repository.create_phase_event(
+            project_id=set_id,
+            phase_name="SAMPLE",
+            event_type="SAMPLE_APPROVED",
+            source="USER",
+            before={"sample_id": sample_id, "approval_status": sample.get("approval_status", "pending")},
+            after={"sample_id": sample_id, "approval_status": "approved"},
+            message="El usuario aprobo el sample vigente del set activo.",
+        )
+        return self._materialize_legacy_snapshot(approved, "sample_id")
 
     def list_songs(self) -> list[dict[str, str]]:
-        songs_dir = self.data_dir / "songs"
-        if not songs_dir.exists():
-            return []
-        songs: list[dict[str, str]] = []
-        for song_dir in sorted(path for path in songs_dir.iterdir() if path.is_dir()):
-            song_path = song_dir / "song.json"
-            if not song_path.exists():
-                continue
-            payload = self.read_json(song_path)
-            songs.append({"song_id": str(payload["song_id"]), "path": str(song_dir)})
-        return songs
+        return [
+            {"song_id": str(song["song_id"]), "path": str(Path(str(song["json_path"])).parent)}
+            for song in self.legacy_song_repository.list_songs()
+        ]
 
     def get_latest_song(self) -> dict[str, object] | None:
-        songs = self.list_songs()
+        songs = self.legacy_song_repository.list_songs()
         if not songs:
             return None
-        latest = songs[-1]
-        payload = self.read_json(Path(latest["path"]) / "song.json")
-        payload["path"] = latest["path"]
-        return payload
+        return self._materialize_legacy_snapshot(songs[0], "song_id")
 
     def list_songs_for_set(self, set_id: str) -> list[dict[str, object]]:
-        songs: list[dict[str, object]] = []
-        for song in self.list_songs():
-            payload = self.read_json(Path(song["path"]) / "song.json")
-            if str(payload.get("set_id", "")) == set_id:
-                payload["path"] = song["path"]
-                songs.append(payload)
-        return songs
+        return [self._materialize_legacy_snapshot(song, "song_id") for song in self.legacy_song_repository.list_songs(set_id)]
+
+    def save_legacy_sample(self, payload: dict[str, object], sample_path: Path) -> Path:
+        set_id = str(payload.get("set_id", ""))
+        if self.get_indexed_set(set_id) is None:
+            raise ValueError("El sample requiere un set valido en SQLite.")
+        normalized = {**payload, "created_at": str(payload.get("created_at") or datetime.now(timezone.utc).isoformat())}
+        self.legacy_song_repository.save_sample(normalized, sample_path)
+        self.write_json(sample_path, normalized)
+        self.set_repository.create_phase_event(
+            project_id=set_id,
+            phase_name="SAMPLE",
+            event_type="SAMPLE_CREATED",
+            source="SYSTEM",
+            after={"sample_id": normalized["sample_id"], "status": normalized.get("status", "")},
+            message="Sample creado y registrado en SQLite.",
+        )
+        return sample_path.parent
+
+    def save_legacy_song(self, payload: dict[str, object], song_path: Path) -> Path:
+        set_id = str(payload.get("set_id", ""))
+        sample_id = str(payload.get("sample_id", ""))
+        sample = self.legacy_song_repository.get_sample(sample_id)
+        if self.get_indexed_set(set_id) is None or sample is None or str(sample.get("set_id", "")) != set_id:
+            raise ValueError("La cancion requiere un sample y un set validos en SQLite.")
+        normalized = {**payload, "created_at": str(payload.get("created_at") or datetime.now(timezone.utc).isoformat())}
+        self.legacy_song_repository.save_song(normalized, song_path)
+        self.write_json(song_path, normalized)
+        self.set_repository.create_phase_event(
+            project_id=set_id,
+            phase_name="FULL_SONG",
+            event_type="SONG_CREATED",
+            source="SYSTEM",
+            after={"song_id": normalized["song_id"], "status": normalized.get("status", "")},
+            message="Cancion completa creada y registrada en SQLite.",
+        )
+        return song_path.parent
 
     def get_asset_draft_dir(self, asset_type: AssetType, asset_id: str) -> Path:
         return self.get_asset_parent_dir(asset_type) / asset_id
@@ -328,6 +551,41 @@ class StorageManager:
             export_path = self.data_dir / "sets" / set_id / "set.json"
         self.write_json(export_path, self.serialize_indexed_set(updated))
         return updated
+
+    def delete_indexed_project(self, set_id: str) -> dict[str, object]:
+        song_set = self.get_indexed_set(set_id)
+        if song_set is None:
+            raise ValueError("Proyecto no encontrado.")
+
+        linked_projects = self.song_workflow_repository.list_projects_by_user_id(f"set:{set_id}")
+        deleted_song_projects: list[str] = []
+        for project in linked_projects:
+            song_id = str(project["id"])
+            if self.song_workflow_repository.delete_project(song_id):
+                deleted_song_projects.append(song_id)
+                self.orchestration_repository.delete_project_events([song_id])
+                self._remove_data_tree(self.data_dir / "projects" / song_id)
+
+        legacy = self.legacy_song_repository.delete_by_set(set_id)
+        for song in legacy["songs"]:
+            self._remove_data_tree(Path(str(song["json_path"])).parent)
+        for sample in legacy["samples"]:
+            self._remove_data_tree(Path(str(sample["json_path"])).parent)
+
+        deleted_orchestration_events = self.orchestration_repository.delete_project_events(
+            [set_id, str(song_set.get("project_name", ""))]
+        )
+        deleted_set = self.set_repository.delete_set(set_id)
+        self._remove_data_tree(self.data_dir / "sets" / set_id)
+        return {
+            "deleted": deleted_set,
+            "set_id": set_id,
+            "project_name": str(song_set.get("project_name", set_id)),
+            "professional_projects_deleted": deleted_song_projects,
+            "legacy_samples_deleted": [str(item["sample_id"]) for item in legacy["samples"]],
+            "legacy_songs_deleted": [str(item["song_id"]) for item in legacy["songs"]],
+            "orchestration_events_deleted": deleted_orchestration_events,
+        }
 
     def save_project_phase_data(
         self,
@@ -515,6 +773,17 @@ class StorageManager:
     def get_song_project(self, song_id: str) -> dict[str, object] | None:
         return self.song_workflow_repository.get_project(song_id)
 
+    def _remove_data_tree(self, path: Path) -> None:
+        try:
+            resolved_root = self.data_dir.resolve()
+            resolved_path = path.resolve()
+        except OSError:
+            return
+        if resolved_path == resolved_root or resolved_root not in resolved_path.parents:
+            return
+        if resolved_path.exists() and resolved_path.is_dir():
+            shutil.rmtree(resolved_path)
+
     def list_song_project_events(self, song_id: str) -> list[dict[str, object]]:
         return self.song_workflow_repository.list_events(song_id)
 
@@ -527,8 +796,24 @@ class StorageManager:
         json_spec: dict[str, object],
         approved_by_qwen: bool,
         missing_fields: list[str],
+        schema_version: str = "1.0",
+        technical_review_mode: str = "rule_validation",
+        user_confirmation_status: str = "not_requested",
+        expected_revision_id: str | None = None,
     ) -> dict[str, object]:
-        return self.song_workflow_repository.upsert_spec(song_id, json_spec, approved_by_qwen, missing_fields)
+        return self.song_workflow_repository.upsert_spec(
+            song_id,
+            json_spec,
+            approved_by_qwen,
+            missing_fields,
+            schema_version,
+            technical_review_mode,
+            user_confirmation_status,
+            expected_revision_id,
+        )
+
+    def list_song_spec_revisions(self, song_id: str) -> list[dict[str, object]]:
+        return self.song_workflow_repository.list_spec_revisions(song_id)
 
     def create_song_event(
         self,

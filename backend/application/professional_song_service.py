@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from application.creative_agent_service import CreativeAgentService
@@ -10,9 +11,11 @@ from application.mastering_service import MasteringService
 from application.midi_generation_service import MidiGenerationService
 from application.mixing_service import MixingService
 from application.model_manager_service import ModelManagerService
+from application.model_orchestrator import ModelOrchestrator
 from application.music_plan_service import MusicPlanService
 from application.professional_export_service import ProfessionalExportService
 from application.professional_full_song_service import ProfessionalFullSongService
+from application.song_specification_service import SongSpecificationService
 from application.technical_director_service import TechnicalDirectorService
 from application.vocal_synthesis_service import VocalSynthesisService
 from application.voice_conversion_service import VoiceConversionService
@@ -32,10 +35,13 @@ class ProfessionalSongService:
         voice_conversion_command: str = "",
         local_command_timeout_seconds: int = 3600,
         resource_settings: ResourceMonitorSettings | None = None,
+        model_orchestrator: ModelOrchestrator | None = None,
     ) -> None:
         self.storage = storage
         self.creative_agent = CreativeAgentService()
         self.technical_director = TechnicalDirectorService(self.creative_agent)
+        self.song_specifications = SongSpecificationService()
+        self.model_orchestrator = model_orchestrator
         self.model_manager = model_manager or ModelManagerService()
         self.lyrics_service = LyricsService(storage)
         self.lyrics_review_service = LyricsReviewService(storage)
@@ -127,6 +133,7 @@ class ProfessionalSongService:
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
         project = self._ensure_project_seeded_from_link(project)
+        self._require_confirmed_spec(project)
         spec_record = project.get("spec")
         if not spec_record or not bool(dict(spec_record).get("approved_by_qwen")):
             raise ValueError("La especificacion debe estar aprobada por el director tecnico antes de generar letra.")
@@ -163,6 +170,7 @@ class ProfessionalSongService:
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
         project = self._ensure_project_seeded_from_link(project)
+        self._require_confirmed_spec(project)
         spec_record = project.get("spec")
         if not spec_record or not bool(dict(spec_record).get("approved_by_qwen")):
             raise ValueError("La especificacion debe estar aprobada antes de revisar la letra.")
@@ -191,6 +199,7 @@ class ProfessionalSongService:
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
         project = self._ensure_project_seeded_from_link(project)
+        self._require_confirmed_spec(project)
         spec_record = project.get("spec")
         if not spec_record or not bool(dict(spec_record).get("approved_by_qwen")):
             raise ValueError("La especificacion debe estar aprobada antes de generar el plan musical.")
@@ -229,7 +238,8 @@ class ProfessionalSongService:
         project = self.storage.get_song_project(song_id)
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
-        self._ensure_project_seeded_from_link(project)
+        project = self._ensure_project_seeded_from_link(project)
+        self._require_confirmed_spec(project)
         music_plan = self.music_plan_service.get(song_id)["music_plan"]
         self.model_manager.run_model("qwen", {"song_id": song_id, "phase": SongPhase.MIDI_GENERATION.value})
         self.storage.create_song_event(
@@ -255,6 +265,8 @@ class ProfessionalSongService:
         project = self.storage.get_song_project(song_id)
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
+        project = self._ensure_project_seeded_from_link(project)
+        self._require_confirmed_spec(project)
         music_plan = self.music_plan_service.get(song_id)["music_plan"]
         midi = self.midi_generation_service.get(song_id)
         active_model = "musicgen" if self.instrumental_generation_service.command_template else "local-procedural"
@@ -286,6 +298,7 @@ class ProfessionalSongService:
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
         project = self._ensure_project_seeded_from_link(project)
+        self._require_confirmed_spec(project)
         spec_record = project.get("spec")
         if not spec_record:
             raise ValueError("La especificacion debe existir antes de generar voz.")
@@ -345,6 +358,7 @@ class ProfessionalSongService:
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
         project = self._ensure_project_seeded_from_link(project)
+        self._require_confirmed_spec(project)
         spec_record = project.get("spec")
         if not spec_record:
             raise ValueError("La especificacion debe existir antes de convertir voz.")
@@ -372,8 +386,11 @@ class ProfessionalSongService:
         return self.voice_conversion_service.get(song_id)
 
     def mix_song(self, song_id: str) -> dict[str, object]:
-        if self.storage.get_song_project(song_id) is None:
+        project = self.storage.get_song_project(song_id)
+        if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
+        project = self._ensure_project_seeded_from_link(project)
+        self._require_confirmed_spec(project)
         self.instrumental_generation_service.get(song_id)
         try:
             self.voice_conversion_service.get(song_id)
@@ -403,7 +420,9 @@ class ProfessionalSongService:
         project = self.storage.get_song_project(song_id)
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
-        self._ensure_project_seeded_from_link(project)
+        project = self._refresh_linked_project_for_mastering(project)
+        self._require_confirmed_spec(project)
+        self._require_approved_linked_sample(project)
         if self.full_song_service.configured():
             active_model = "local-full-song-provider"
             self.model_manager.run_model(active_model, {"song_id": song_id, "phase": SongPhase.MASTERING.value})
@@ -477,8 +496,12 @@ class ProfessionalSongService:
         return self.mastering_service.get(song_id)
 
     def export_song(self, song_id: str) -> dict[str, object]:
-        if self.storage.get_song_project(song_id) is None:
+        project = self.storage.get_song_project(song_id)
+        if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
+        project = self._ensure_project_seeded_from_link(project)
+        self._require_confirmed_spec(project)
+        self._require_approved_linked_sample(project)
         self.mastering_service.get(song_id)
         self.storage.create_song_event(
             song_id=song_id,
@@ -558,10 +581,43 @@ class ProfessionalSongService:
         )
 
         candidate_spec = self.creative_agent.build_initial_spec(user_message, existing_spec)
+        candidate_spec = self.song_specifications.add_provenance(existing_spec, candidate_spec, user_message)
         self.model_manager.unload_model("gemma")
         self.model_manager.run_model("qwen", {"song_id": song_id, "candidate_spec": candidate_spec})
         qwen_result = self.technical_director.validate_song_spec(candidate_spec)
         self.model_manager.unload_model("qwen")
+
+        handoff: dict[str, object] | None = None
+        if self.model_orchestrator is not None:
+            handoff = self.model_orchestrator.run_handoff(
+                {
+                    "model_role": "technical",
+                    "task_type": "review_song_spec",
+                    "project_id": song_id,
+                    "project_name": str(project.get("title", song_id)),
+                    "phase": SongPhase.SONG_SPEC_COLLECTION.value,
+                    "question": "Revisa coherencia, viabilidad y faltantes de esta especificacion de cancion.",
+                    "context": {
+                        "candidate_spec": qwen_result["song_spec"],
+                        "deterministic_validation": {
+                            "status": qwen_result["status"],
+                            "missing_fields": qwen_result["missing_fields"],
+                        },
+                    },
+                }
+            )
+        handoff_result = dict(handoff.get("result", {})) if handoff else {}
+        model_review_executed = bool(handoff_result.get("provider_executed", False))
+        technical_review_mode = "provider_review" if model_review_executed else str(handoff_result.get("mode", "rule_validation"))
+        qwen_result.update(
+            {
+                "technical_review_mode": technical_review_mode,
+                "model_review_executed": model_review_executed,
+                "handoff_task_id": str(dict(handoff.get("task", {})).get("task_id", "")) if handoff else "",
+                "handoff_run_id": str(dict(handoff.get("model_run", {})).get("run_id", "")) if handoff else "",
+                "model_review_summary": str(handoff_result.get("summary", "")),
+            }
+        )
 
         approved = bool(qwen_result["approved_by_qwen"])
         missing_fields = [str(item) for item in qwen_result["missing_fields"]]
@@ -570,14 +626,16 @@ class ProfessionalSongService:
             json_spec=dict(qwen_result["song_spec"]),
             approved_by_qwen=approved,
             missing_fields=missing_fields,
+            technical_review_mode=technical_review_mode,
+            user_confirmation_status="pending" if approved else "not_ready",
         )
         artifact = self._write_song_spec_snapshot(song_id, dict(qwen_result["song_spec"]), approved, missing_fields)
         if approved:
-            status = SongPhaseStatus.READY.value
-            progress = 100
-            project_status = SongPhaseStatus.READY.value
-            current_phase = SongPhase.LYRICS_GENERATION.value
-            message = "El director tecnico aprobo la especificacion. El proyecto puede avanzar a generacion de letra cantable."
+            status = SongPhaseStatus.WAITING_USER_INPUT.value
+            progress = 90
+            project_status = SongPhaseStatus.WAITING_USER_INPUT.value
+            current_phase = SongPhase.SONG_SPEC_COLLECTION.value
+            message = "La ficha esta completa y validada. El usuario debe confirmarla antes de generar la letra."
         else:
             status = SongPhaseStatus.WAITING_USER_INPUT.value
             progress = 55
@@ -605,8 +663,79 @@ class ProfessionalSongService:
                 "questions_for_user": qwen_result["questions_for_user"],
             },
             "artifact": artifact,
+            "catalog": self.song_specifications.catalog(dict(qwen_result["song_spec"])),
+            "handoff": handoff,
             "progress": self.progress_for(project),
         }
+
+    def confirm_song_specification(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
+        project = self.storage.get_song_project(song_id)
+        if project is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        record = project.get("spec")
+        if not isinstance(record, dict):
+            raise ValueError("La especificacion aun no existe.")
+        revision = dict(record.get("revision", {}))
+        requested_revision = str(payload.get("revision_id", "")).strip()
+        if not requested_revision or requested_revision != str(revision.get("revision_id", "")):
+            raise ValueError("La revision cambio. Recarga la ficha antes de confirmarla.")
+        if not bool(revision.get("deterministic_valid")) or record.get("missing_fields"):
+            raise ValueError("La especificacion tiene datos pendientes y no se puede confirmar.")
+        confirmed = self.storage.upsert_song_spec(
+            song_id=song_id,
+            json_spec=dict(record.get("json_spec", {})),
+            approved_by_qwen=bool(record.get("approved_by_qwen")),
+            missing_fields=list(record.get("missing_fields", [])),
+            schema_version=str(revision.get("schema_version", "1.0")),
+            technical_review_mode=str(revision.get("technical_review_mode", "rule_validation")),
+            user_confirmation_status="confirmed",
+        )
+        self.storage.create_song_event(
+            song_id=song_id,
+            phase=SongPhase.SONG_SPEC_COLLECTION.value,
+            status=SongPhaseStatus.READY.value,
+            progress=100,
+            message="El usuario confirmo la revision activa de la especificacion.",
+            active_model="user",
+            payload={"confirmed_revision_id": requested_revision, "active_revision": confirmed.get("revision", {})},
+        )
+        project = self.storage.update_song_project_phase(
+            song_id,
+            SongPhase.LYRICS_GENERATION.value,
+            SongPhaseStatus.READY.value,
+        )
+        response = self.get_song_specification(song_id)
+        response["project"] = project
+        response["progress"] = self.progress_for(project)
+        return response
+
+    def get_song_specification(self, song_id: str) -> dict[str, object]:
+        project = self.storage.get_song_project(song_id)
+        if project is None:
+            raise ValueError("Proyecto profesional no encontrado.")
+        record = project.get("spec")
+        spec = dict(record.get("json_spec", {})) if isinstance(record, dict) else {}
+        return {
+            "song_id": song_id,
+            "spec": record,
+            "catalog": self.song_specifications.catalog(spec),
+            "revisions": self.storage.list_song_spec_revisions(song_id),
+        }
+
+    def _require_confirmed_spec(self, project: dict[str, object]) -> dict[str, object]:
+        record = project.get("spec")
+        if not isinstance(record, dict):
+            raise ValueError("Completa la ficha de la cancion antes de continuar.")
+        revision = dict(record.get("revision", {}))
+        if revision.get("user_confirmation_status") != "confirmed":
+            raise ValueError("Revisa y confirma la ficha completa de la cancion antes de continuar.")
+        if not bool(revision.get("deterministic_valid")) or record.get("missing_fields"):
+            raise ValueError("La ficha confirmada tiene datos pendientes; crea y confirma una revision valida.")
+        return record
+
+    def _require_approved_linked_sample(self, project: dict[str, object]) -> dict[str, object] | None:
+        from application.sample_gate import SampleGate
+        return SampleGate(self.storage).require_for_project(project)
 
     def progress_for(self, project: dict[str, object]) -> dict[str, object]:
         current_phase = str(project.get("current_phase", PHASE_SEQUENCE[0].value))
@@ -629,6 +758,7 @@ class ProfessionalSongService:
     ) -> dict[str, object]:
         project_dir = self.storage.data_dir / "projects" / song_id
         path = project_dir / "song_spec.json"
+        markdown_path = project_dir / "song_spec.md"
         self.storage.write_json(
             path,
             {
@@ -638,13 +768,35 @@ class ProfessionalSongService:
                 "song_spec": spec,
             },
         )
+        catalog = self.song_specifications.catalog(spec)
+        markdown_lines = [
+            f"# Especificacion de cancion: {spec.get('title', song_id)}",
+            "",
+            f"Estado: {'completa para esta etapa' if approved else 'requiere informacion'}",
+            "",
+        ]
+        for group in catalog["groups"]:
+            markdown_lines.extend([f"## {group['label']}", ""])
+            for field in group["fields"]:
+                value = field.get("value")
+                rendered = ", ".join(str(item) for item in value) if isinstance(value, list) else str(value or "Por decidir")
+                markdown_lines.append(f"- **{field['label']}:** {rendered}")
+            markdown_lines.append("")
+        markdown_path.parent.mkdir(parents=True, exist_ok=True)
+        markdown_path.write_text("\n".join(markdown_lines), encoding="utf-8")
         return self.storage.create_song_artifact(
             artifact_id=f"{song_id}_song_spec",
             song_id=song_id,
             phase=SongPhase.SONG_SPEC_COLLECTION.value,
             artifact_type="song_spec",
             file_path=str(Path(path)),
-            metadata={"approved_by_qwen": approved, "missing_fields": missing_fields},
+            metadata={
+                "approved_by_qwen": approved,
+                "missing_fields": missing_fields,
+                "validation_basis": "deterministic_rules",
+                "model_review_executed": False,
+                "markdown_path": str(markdown_path),
+            },
         )
 
     def _seed_project_from_set(
@@ -665,6 +817,8 @@ class ProfessionalSongService:
             json_spec=spec,
             approved_by_qwen=True,
             missing_fields=[],
+            technical_review_mode="sqlite_import",
+            user_confirmation_status="confirmed",
         )
         spec_artifact = self._write_song_spec_snapshot(song_id, spec, True, [])
 
@@ -716,7 +870,12 @@ class ProfessionalSongService:
         )
         return self.storage.update_song_project_phase(song_id, target_phase.value, SongPhaseStatus.READY.value)
 
-    def _ensure_project_seeded_from_link(self, project: dict[str, object]) -> dict[str, object]:
+    def _ensure_project_seeded_from_link(
+        self,
+        project: dict[str, object],
+        *,
+        force_refresh: bool = False,
+    ) -> dict[str, object]:
         user_id = str(project.get("user_id", ""))
         if not user_id.startswith("set:"):
             return project
@@ -726,6 +885,12 @@ class ProfessionalSongService:
         music_plan_path = self.storage.data_dir / "projects" / song_id / "music_plan.json"
         spec = project.get("spec")
         source_set_id = user_id.split(":", 1)[1].strip()
+        if force_refresh and source_set_id:
+            return self._seed_project_from_set(
+                song_id,
+                source_set_id,
+                {"title": str(project.get("title") or "Cancion")},
+            )
         if spec and bool(dict(spec).get("approved_by_qwen")):
             if source_set_id and not music_plan_path.exists():
                 phase_data = self.storage.list_project_phase_data(source_set_id)
@@ -794,6 +959,17 @@ class ProfessionalSongService:
         )
         duration = self._duration_seconds(music_plan, intent)
         bpm = int(self._first_number(music_plan.get("bpm"), intent.get("bpm"), instrumental_intent.get("bpm"), 72))
+        voice_style = self._normalize_voice_style(
+            self._first_text(
+                voice.get("mainVoice"),
+                voice.get("style"),
+                voice.get("vocalStyle"),
+                intent.get("vocalType"),
+                intent.get("voice_style"),
+                melody_intent.get("vocal_style"),
+                "soft female vocal",
+            )
+        )
         return {
             "title": title,
             "project_name": title,
@@ -803,13 +979,7 @@ class ProfessionalSongService:
             "language": language,
             "theme": self._first_text(lyrics.get("theme"), intent.get("theme"), lyrics_intent.get("theme"), description, "cancion personal"),
             "emotion": self._first_text(intent.get("mood"), music_plan.get("mood"), instrumental_intent.get("mood"), "tender"),
-            "voice_style": self._first_text(
-                voice.get("style"),
-                voice.get("vocalStyle"),
-                melody_intent.get("vocal_style"),
-                intent.get("voice_style"),
-                "soft female vocal",
-            ),
+            "voice_style": voice_style,
             "bpm": bpm,
             "key": self._first_text(music_plan.get("key"), intent.get("key"), instrumental_intent.get("key"), "C major"),
             "duration_seconds": duration,
@@ -845,18 +1015,9 @@ class ProfessionalSongService:
     ) -> str:
         lyrics_data = self._phase_payload(phase_data, "lyrics")
         editor = dict(lyrics_data.get("lyricsEditor", {}))
-        content = str(editor.get("content") or "").strip()
+        content = self._lyrics_sections_markdown(song_set, lyrics_data)
         if not content:
-            sections = lyrics_data.get("lyricSections", [])
-            if isinstance(sections, list) and sections:
-                lines = [f"# {song_set.get('project_name', 'Letra')}", ""]
-                for section in sections:
-                    item = dict(section)
-                    label = str(item.get("type") or item.get("label") or "Verse").strip() or "Verse"
-                    text = str(item.get("text") or "").strip()
-                    if text:
-                        lines.extend([f"## {label}", text, ""])
-                content = "\n".join(lines).strip()
+            content = str(editor.get("content") or "").strip()
         if not content:
             content = str(dict(assets.get("lyrics", {})).get("content") or "").strip()
         if not content:
@@ -864,7 +1025,54 @@ class ProfessionalSongService:
                 f"# {song_set.get('project_name', 'Letra')}\n\n"
                 "## Verse 1\nPendiente de completar desde la fase Lyrics.\n"
             )
-        return content.rstrip() + "\n"
+        return self._resolve_lyrics_placeholders(content, lyrics_data).rstrip() + "\n"
+
+    def _lyrics_sections_markdown(self, song_set: dict[str, object], lyrics_data: dict[str, object]) -> str:
+        sections = lyrics_data.get("lyricSections", [])
+        if not isinstance(sections, list) or not sections:
+            return ""
+        lines = [f"# {song_set.get('project_name', 'Letra')}", ""]
+        for section in sections:
+            item = dict(section)
+            label = str(item.get("type") or item.get("label") or "Verse").strip() or "Verse"
+            text = str(item.get("text") or "").strip()
+            if text:
+                lines.extend([f"## {label}", text, ""])
+        return "\n".join(lines).strip()
+
+    def _resolve_lyrics_placeholders(self, content: str, lyrics_data: dict[str, object]) -> str:
+        lyrics = self._dict_or_empty(lyrics_data.get("lyrics", {}))
+        placeholders = self._dict_or_empty(lyrics.get("placeholders", {}))
+        resolved = content
+        for key, value in placeholders.items():
+            resolved = resolved.replace("{" + str(key) + "}", str(value))
+        return resolved
+
+    def _normalize_voice_style(self, value: str) -> str:
+        text = value.strip()
+        lowered = text.lower()
+        if any(token in lowered for token in ("femenina", "female", "mujer", "woman")):
+            return "soft warm female lead vocal, consistent female singer"
+        if any(token in lowered for token in ("masculina", "male", "hombre", "man", "tenor", "baritone")):
+            return "soft warm male lead vocal, consistent male singer"
+        return text
+
+    def _refresh_linked_project_for_mastering(self, project: dict[str, object]) -> dict[str, object]:
+        refreshed = self._ensure_project_seeded_from_link(project, force_refresh=True)
+        song_id = str(refreshed["id"])
+        lyrics_path = self.storage.data_dir / "projects" / song_id / "lyrics.md"
+        if lyrics_path.exists():
+            lyrics_text = lyrics_path.read_text(encoding="utf-8")
+            if "# Letra mock" in lyrics_text or "Pendiente de completar" in lyrics_text:
+                raise ValueError("La letra final todavia apunta a un mock. Guarda la fase Lyrics antes de generar.")
+            unresolved = sorted(set(re.findall(r"\{[^{}\n]+\}", lyrics_text)))
+            if unresolved:
+                raise ValueError(
+                    "La letra final contiene placeholders sin resolver: "
+                    + ", ".join(unresolved)
+                    + ". Completa esos campos antes de generar."
+                )
+        return refreshed
 
     def _write_approved_lyrics_snapshot(
         self,

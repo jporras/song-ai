@@ -1,8 +1,11 @@
 ﻿from pathlib import Path
 
+from datetime import datetime, timezone
+
 from audio.formats import planned_final_mix_exports, planned_stem_exports
 from core.storage import StorageManager
 from utils.ids import generate_id
+from application.sample_gate import SampleGate
 
 
 class FullSongBuilder:
@@ -13,6 +16,12 @@ class FullSongBuilder:
         latest_sample = self.storage.get_latest_sample()
         if latest_sample is None:
             raise ValueError("No hay sample valido. Genera un sample antes de crear la cancion completa.")
+        return self.create_for_set(str(latest_sample.get("set_id", "")), str(latest_sample.get("sample_id", "")))
+
+    def create_for_set(self, set_id: str, sample_id: str | None = None) -> Path:
+        latest_sample = SampleGate(self.storage).require_for_set(
+            set_id, real_output=False, sample_id=sample_id,
+        )
 
         song_id = generate_id("song")
         song_dir = self.storage.data_dir / "songs" / song_id
@@ -21,8 +30,7 @@ class FullSongBuilder:
         song_dir.mkdir(parents=True, exist_ok=True)
         exports_dir.mkdir(parents=True, exist_ok=True)
         stems_dir.mkdir(parents=True, exist_ok=True)
-        self.storage.write_json(
-            song_dir / "song.json",
+        self.storage.save_legacy_song(
             {
                 "song_id": song_id,
                 "sample_id": latest_sample["sample_id"],
@@ -62,7 +70,9 @@ class FullSongBuilder:
                     "exports/final_mix.mock.txt",
                     "exports/README.md",
                 ],
+                "created_at": datetime.now(timezone.utc).isoformat(),
             },
+            song_dir / "song.json",
         )
         (exports_dir / "final_mix.mock.txt").write_text(
             "Mock full song placeholder.\n"

@@ -6,6 +6,7 @@ import zipfile
 
 from core.storage import StorageManager
 from models.song_workflow import SongPhase, SongPhaseStatus
+from application.sample_gate import SampleGate
 
 
 class ProfessionalExportService:
@@ -29,6 +30,7 @@ class ProfessionalExportService:
         project = self.storage.get_song_project(song_id)
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
+        SampleGate(self.storage).require_for_project(project)
         artifacts = self._existing_artifacts(project)
         required = self._required_artifacts(artifacts)
         available_types = {str(artifact["type"]) for artifact in artifacts}
@@ -82,15 +84,21 @@ class ProfessionalExportService:
         }
 
     def _create_project_zip(self, song_id: str, project_dir: Path, artifacts: list[dict[str, object]]) -> dict[str, object]:
-        zip_path = project_dir / "project_export.zip"
+        project_root = project_dir.resolve()
+        zip_path = project_root / "project_export.zip"
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zip_file:
             seen: set[Path] = set()
             for artifact in artifacts:
-                path = Path(str(artifact["file_path"]))
+                artifact_type = str(artifact.get("type", ""))
+                if artifact_type in {"project_zip", "export_manifest_json"}:
+                    continue
+                path = Path(str(artifact["file_path"])).resolve()
                 if not path.exists() or path in seen:
                     continue
+                if path == zip_path:
+                    continue
                 seen.add(path)
-                zip_file.write(path, path.relative_to(project_dir))
+                zip_file.write(path, path.relative_to(project_root))
         return self.storage.create_song_artifact(
             artifact_id=f"{song_id}_project_zip",
             song_id=song_id,
@@ -104,17 +112,20 @@ class ProfessionalExportService:
         project = self.storage.get_song_project(song_id)
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
+        artifacts = self._existing_artifacts(project)
+        quality = self._quality_report(artifacts)
+        try:
+            SampleGate(self.storage).require_for_project(project)
+        except ValueError as error:
+            quality = {**quality, "export_ready": False, "message": str(error)}
         manifest_path = self.storage.data_dir / "projects" / song_id / "export_manifest.json"
         if manifest_path.exists():
-            manifest = self.storage.read_json(manifest_path)
             return {
                 "song_id": song_id,
                 "manifest": str(manifest_path),
-                "quality": manifest.get("quality", {}),
-                "artifacts": manifest.get("artifacts", []),
+                "quality": quality,
+                "artifacts": [self._artifact_export_entry(song_id, artifact, quality) for artifact in artifacts],
             }
-        artifacts = self._existing_artifacts(project)
-        quality = self._quality_report(artifacts)
         return {
             "song_id": song_id,
             "manifest": "",
@@ -126,6 +137,8 @@ class ProfessionalExportService:
         project = self.storage.get_song_project(song_id)
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
+        if self._is_final_download(artifact_type):
+            SampleGate(self.storage).require_for_project(project)
         artifacts = self._existing_artifacts(project)
         quality = self._quality_report(artifacts)
         if self._is_final_download(artifact_type) and not bool(quality["export_ready"]):

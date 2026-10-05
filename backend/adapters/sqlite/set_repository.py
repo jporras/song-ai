@@ -212,6 +212,17 @@ class SetRepository:
             )
         return self.get_set(set_id)
 
+    def delete_set(self, set_id: str) -> bool:
+        with self._connect() as connection:
+            existing = connection.execute("SELECT set_id FROM song_sets WHERE set_id = ?", (set_id,)).fetchone()
+            if existing is None:
+                return False
+            connection.execute("DELETE FROM project_ui_state WHERE set_id = ?", (set_id,))
+            connection.execute("DELETE FROM project_phase_events WHERE project_id = ?", (set_id,))
+            connection.execute("DELETE FROM project_phase_data WHERE set_id = ?", (set_id,))
+            connection.execute("DELETE FROM song_sets WHERE set_id = ?", (set_id,))
+        return True
+
     def save_phase_data(
         self,
         set_id: str,

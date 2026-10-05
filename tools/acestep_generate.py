@@ -23,6 +23,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 # Import local sin interferencias
 from audio.accelerator_detection import choose_ace_device
+from models.ace_step_tasks import validate_task_inputs
 
 
 def patch_transformers_dtype_kwarg_for_acestep() -> bool:
@@ -79,6 +80,19 @@ def main() -> int:
         help="Ruta de checkpoints ACE-Step.",
     )
     parser.add_argument("--duration", type=float, default=60.0, help="Duracion en segundos.")
+    parser.add_argument("--bpm", type=int, default=None)
+    parser.add_argument("--key-scale", default="")
+    parser.add_argument("--time-signature", choices=("", "2", "3", "4", "6"), default="")
+    parser.add_argument("--vocal-language", default="en")
+    parser.add_argument("--task-type", choices=("text2music", "cover", "repaint", "lego", "extract", "complete"), default="text2music")
+    parser.add_argument("--src-audio", default="")
+    parser.add_argument("--reference-audio", default="")
+    parser.add_argument("--instruction", default="")
+    parser.add_argument("--tracks", default="", help="Pistas objetivo separadas por coma.")
+    parser.add_argument("--repainting-start", type=float, default=0)
+    parser.add_argument("--repainting-end", type=float, default=-1)
+    parser.add_argument("--audio-cover-strength", type=float, default=1)
+    parser.add_argument("--chunk-mask-mode", choices=("auto", "explicit"), default="auto")
     parser.add_argument("--infer-step", type=int, default=27)
     parser.add_argument(
         "--oss-steps",
@@ -139,6 +153,15 @@ def main() -> int:
         help="Etiqueta diagnostica de salida: instrumental, vocal o full_song_with_vocals.",
     )
     args = parser.parse_args()
+    selected_config = resolve_acestep_v15_config_path(Path(args.checkpoint_path), args.config_path)
+    validate_task_inputs(args.task_type, selected_config, args.src_audio, args.instruction,
+                         args.repainting_start, args.repainting_end,
+                         tuple(track.strip() for track in args.tracks.split(",") if track.strip()))
+    for audio in (args.src_audio, args.reference_audio):
+        if audio and not Path(audio).is_file():
+            raise ValueError("El archivo de audio fuente/referencia no existe.")
+    if not 0 <= args.audio_cover_strength <= 1:
+        raise ValueError("La fuerza de conservacion debe estar entre 0 y 1.")
 
     prompt = Path(args.prompt).read_text(encoding="utf-8")
     lyrics = Path(args.lyrics).read_text(encoding="utf-8")
@@ -287,8 +310,13 @@ def main() -> int:
         print_pipeline_device_summary(diagnostics["runtime"])
 
         print_check("generation", True, f"iniciando {args.duration}s infer_step={args.infer_step} oss_steps={args.oss_steps}")
+        task_instruction = {"instruction": args.instruction} if args.instruction else {}
         result = handler.generate_music(
             captions=prompt,
+            bpm=args.bpm,
+            key_scale=args.key_scale,
+            time_signature=args.time_signature,
+            vocal_language=args.vocal_language,
             global_caption="",
             lyrics=lyrics,
             inference_steps=args.infer_step,
@@ -296,12 +324,19 @@ def main() -> int:
             use_random_seed=False,
             seed=args.seed,
             audio_duration=args.duration,
-            task_type="text2music",
+            task_type=args.task_type,
+            src_audio=args.src_audio or None,
+            reference_audio=args.reference_audio or None,
+            repainting_start=args.repainting_start,
+            repainting_end=args.repainting_end,
+            audio_cover_strength=args.audio_cover_strength,
+            chunk_mask_mode=args.chunk_mask_mode,
             infer_method="ode",
             sampler_mode=args.scheduler_type,
             cfg_interval_start=0.0,
             cfg_interval_end=1.0,
             use_tiled_decode=truthy(args.overlapped_decode),
+            **task_instruction,
         )
         save_acestep_v15_audio(result, output_path)
     except Exception as error:
@@ -730,6 +765,17 @@ def build_diagnostics(args: argparse.Namespace, prompt: str, lyrics: str, output
         },
         "parameters": {
             "audio_duration": args.duration,
+            "task_type": getattr(args, "task_type", "text2music"),
+            "src_audio": getattr(args, "src_audio", ""),
+            "reference_audio": getattr(args, "reference_audio", ""),
+            "instruction": getattr(args, "instruction", ""),
+            "target_tracks": getattr(args, "tracks", ""),
+            "repainting_start": getattr(args, "repainting_start", 0),
+            "repainting_end": getattr(args, "repainting_end", -1),
+            "bpm": getattr(args, "bpm", None),
+            "key_scale": getattr(args, "key_scale", ""),
+            "time_signature": getattr(args, "time_signature", ""),
+            "vocal_language": getattr(args, "vocal_language", "en"),
             "infer_step": args.infer_step,
             "guidance_scale": args.guidance_scale,
             "scheduler_type": args.scheduler_type,

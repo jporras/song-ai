@@ -313,6 +313,19 @@ class OrchestrationRepository:
                 ).fetchall()
         return [self.project_event_row_to_dict(row) for row in rows]
 
+    def delete_project_events(self, project_ids: list[str]) -> int:
+        project_ids = [project_id for project_id in project_ids if project_id]
+        if not project_ids:
+            return 0
+
+        placeholders = ",".join("?" for _ in project_ids)
+        with sqlite3.connect(self.db_path) as connection:
+            cursor = connection.execute(
+                f"DELETE FROM project_events WHERE project_id IN ({placeholders})",
+                tuple(project_ids),
+            )
+            return int(cursor.rowcount)
+
     def get_project_event(self, event_id: str) -> dict[str, object] | None:
         with sqlite3.connect(self.db_path) as connection:
             connection.row_factory = sqlite3.Row
