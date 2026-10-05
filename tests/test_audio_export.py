@@ -493,6 +493,8 @@ class AudioExportTest(unittest.TestCase):
             self.assertTrue((Path(temp_dir) / "projects" / song_id / "mixing.log").exists())
 
     @unittest.skipIf(not shutil.which("ffmpeg"), "ffmpeg no esta disponible para exportar MP3")
+    # Downstream format contracts use an explicit gate stub; gate behavior has dedicated tests.
+    @patch("application.sample_gate.SampleGate.require_for_project", new=lambda self, project, **kwargs: {})
     def test_professional_mastering_creates_final_wav_mp3_and_flac(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             storage = StorageManager(Path(temp_dir))
@@ -538,6 +540,7 @@ class AudioExportTest(unittest.TestCase):
             self.assertTrue((Path(temp_dir) / "projects" / song_id / "mastering.log").exists())
 
     @unittest.skipIf(not shutil.which("ffmpeg"), "ffmpeg no esta disponible para exportar MP3")
+    @patch("application.sample_gate.SampleGate.require_for_project", new=lambda self, project, **kwargs: {})
     def test_professional_export_rejects_procedural_vocal_guide(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             storage = StorageManager(Path(temp_dir))
@@ -578,6 +581,7 @@ class AudioExportTest(unittest.TestCase):
                 service.professional_artifact_download_file(song_id, "final_song_mp3")
 
     @unittest.skipIf(not shutil.which("ffmpeg"), "ffmpeg no esta disponible para exportar MP3")
+    @patch("application.sample_gate.SampleGate.require_for_project", new=lambda self, project, **kwargs: {})
     def test_professional_export_lists_and_downloads_artifacts(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
@@ -672,6 +676,7 @@ class AudioExportTest(unittest.TestCase):
             self.assertIn("no existe", missing["message"])
 
     @unittest.skipIf(not shutil.which("ffmpeg"), "ffmpeg no esta disponible para exportar MP3")
+    @patch("application.sample_gate.SampleGate.require_for_project", new=lambda self, project, **kwargs: {})
     def test_professional_full_song_command_can_create_export_without_stem_vocals(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
