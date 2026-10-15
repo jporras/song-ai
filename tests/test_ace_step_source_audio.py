@@ -51,14 +51,14 @@ class SourceAudioTest(unittest.TestCase):
         store = Mock()
         store.get_song_project.return_value = {"id": "song1", "spec": record}
         inspector = Mock()
-        inspector.inspect.return_value = {"duration_seconds": 4, "sha256": "checksum"}
+        inspector.inspect.return_value = {"artifact_id": "a1", "duration_seconds": 4, "sha256": "checksum"}
         preview = PreviewAceStepPlan(store, inspector)
         plan = preview.execute("song1", "Letra")
         self.assertEqual(plan["source_audio_evidence"]["sha256"], "checksum")
         self.assertNotIn("source_artifact_verification", plan["pending"])
         self.assertFalse(plan["ready_for_execution"])
         old_hash = plan["plan_sha256"]
-        inspector.inspect.return_value = {"duration_seconds": 4, "sha256": "replaced"}
+        inspector.inspect.return_value = {"artifact_id": "a1", "duration_seconds": 4, "sha256": "replaced"}
         self.assertNotEqual(preview.execute("song1", "Letra")["plan_sha256"], old_hash)
         for start, end in ((4, -1), (1, 5)):
             record["json_spec"].update(repainting_start=start, repainting_end=end)

@@ -246,3 +246,31 @@ await page.route('**/api/projects/*/phases/intent', route =>
 3. Agregar regresiones para persistencia, descarte, navegacion, validacion, seleccion de assets y recuperacion de errores; repetir los recorridos MCP sobre datos aislados.
 4. Ejecutar build y pruebas relevantes, anotar resultados exactos y limites. No certificar audio real usando mocks.
 5. Actualizar README y este documento por ID con cambios, evidencia y pendientes. No marcar un hallazgo resuelto solo por modificar codigo.
+
+## Auditoria MCP de los avances locales — 2026-10-06
+
+Entorno: Chrome aislado, Playwright MCP 0.0.83 por stdio, viewport 1440x1000, FastAPI 127.0.0.1:8012 y SQLite temporal. APIs musicales externas y autoinicio LLM desactivados. Proyecto QA MCP S06 creado desde UI con tres drafts y set valido. Los dos candidatos son WAV sinteticos de 1 y 2 segundos marcados como fixtures, no canciones ACE-Step. Evidencia local: `.playwright-mcp/s06-audit/transcript.jsonl` y `production-final.png`.
+
+| Recorrido | Resultado observado |
+| --- | --- |
+| Ocho pantallas y proyecto | Navegables; faltan tres piezas bloquea crear; drafts/set completos permiten avanzar |
+| Seis modos | Controles condicionales para fuente, intervalo y pistas visibles; no se ejecuto inferencia |
+| Ficha y plan | Guardado pendiente, confirmacion explicita, preparacion y aprobacion; estado recuperado tras recarga |
+| A/B | Seleccion de candidato historico, tabla y dos reproductores; iniciar uno pausa al otro |
+| Opinion y correccion | Opinion changes_requested guardada; intervalo fuera de duracion rechazado 400; intervalo valido guardado 200; propuesta recuperada tras recarga |
+| Revision tecnica | Handoff devuelve mock_handoff_after_provider_error; identificado como fallback, no inferencia validada |
+| Propuesta a controles | Carga explicita repaint sin modificar revision guardada; descarte disponible |
+| Sample | Copia del candidato al set 200; comprobacion de correspondencia y opinion ejecutadas; solicitar cambios bloquea aprobacion con mensaje concreto |
+| Final | Masterizar deshabilitado; llamada directa al backend devuelve 400 |
+| Navegacion y persistencia | Cambios sin guardar muestran modal; descartar restaura 72 BPM; guardar y continuar persiste 83 en SQLite y UI tras recarga; plan/sample previos quedan desactualizados |
+| Recuperacion Gemma | Fallo de red inyectado conserva texto y reactiva Enviar; ruta de prueba retirada |
+| Captura y consola | Captura de Production revisada; ultima consulta tras recarga sin errores de consola; hubo error de red deliberado durante prueba de recuperacion |
+
+Defectos corregidos en esta auditoria:
+
+- Export listo aparecia por tener artefactos de especificacion/letra: ahora exige calidad export_ready del proyecto actual. Repeticion en navegador correcta.
+- El polling borraba la confirmacion del plan: ahora la conserva si identidad, hash y vigencia no cambian. Repeticion de 11,5 segundos y aprobacion correctas; regresion Node agregada.
+
+Verificacion posterior a cambios: 9 pruebas frontend aprobadas y build correcto. Backend completo anterior: 190 pruebas aprobadas en 322,272 segundos; no repetido en esta auditoria exclusivamente frontend. Los timeouts del harness por selectores incorrectos, URL relativa y esperar una solicitud que la validacion UI impide no cuentan como fallos del producto; se repitieron con selectores/URL correctos o se verifico el bloqueo visible y backend.
+
+Limites: recorrido de escritorio y controles implementados, no validacion de todos los criterios de todos los sprints. Sin inferencia ACE-Step/voz real, audio musical escuchado y aceptado, prueba de personas amateur ni certificacion movil. S06 y entregas musicales pendientes conservan su estado abierto. Cambios locales sin publicar.

@@ -18,6 +18,72 @@ from tests.test_sample_audio_evidence import write_audio
 
 
 class CandidateJobsTest(unittest.TestCase):
+    def test_dispatch_failure_releases_token_and_allows_explicit_retry(self):
+        self.dispatcher.submit.side_effect = RuntimeError('worker unavailable')
+        with self.assertRaisesRegex(RuntimeError, 'worker unavailable'):
+            self.jobs.start('song', {**self.request, 'request_id': 'failed-dispatch'})
+        failed = self.jobs.latest('song')
+        self.assertEqual(failed['status'], 'failed')
+        self.assertEqual(self.jobs.cancellations, {})
+        self.generate.assert_not_called()
+        orchestrator = ModelOrchestrator(self.store, Mock())
+        self.assertIsNone(orchestrator.active_audio_task())
+        self.dispatcher.submit.side_effect = None
+        replay = self.jobs.start('song', {**self.request, 'request_id': 'failed-dispatch'})
+        self.assertEqual(replay['task_id'], failed['task_id'])
+        self.assertEqual(self.dispatcher.submit.call_count, 1)
+        retry = self.jobs.start('song', {**self.request, 'request_id': 'explicit-retry'})
+        self.dispatcher.submit.call_args.args[0]()
+        self.assertEqual(self.jobs.get('song', retry['task_id'])['status'], 'completed')
+        self.assertEqual(self.jobs.cancellations, {})
+        self.assertIsNone(orchestrator.active_audio_task())
+
+    def test_request_identity_replays_persisted_job_without_second_dispatch_or_preflight(self):
+        check = Mock(return_value={'status': 'checked'})
+        jobs = AceStepCandidateJobs(self.store, self.generate, self.review, self.dispatcher, preflight=check)
+        request = {**self.request, 'request_id': 'user-action-1'}
+        original = jobs.start('song', request)
+        self.assertEqual(jobs.start('song', request)['task_id'], original['task_id'])
+        self.dispatcher.submit.call_args.args[0]()
+        restored_store = StorageManager(Path(self.folder.name))
+        restored = AceStepCandidateJobs(restored_store, self.generate, self.review, self.dispatcher, preflight=check)
+        self.review.latest.return_value = None  # replay is history, not fresh generation
+        replay = restored.start('song', request)
+        self.assertEqual(replay['status'], 'completed')
+        self.assertEqual(replay['task_id'], original['task_id'])
+        self.dispatcher.submit.assert_called_once()
+        check.assert_called_once()
+        self.assertEqual(len(restored_store.list_tasks()), 1)
+
+    def test_identity_conflicts_and_malformed_requests_cannot_dispatch(self):
+        self.jobs.start('song', {**self.request, 'request_id': 'one'})
+        with self.assertRaisesRegex(ValueError, 'otros parametros'):
+            self.jobs.start('song', {**self.request, 'request_id': 'one', 'plan_sha256': 'changed'})
+        for identity in ('', '../unsafe', True, 'x' * 129):
+            with self.subTest(identity=identity), self.assertRaises(ValueError):
+                self.jobs.start('song', {**self.request, 'request_id': identity})
+        with self.assertRaises(ValueError): self.jobs.start('song', {**self.request, 'unknown': True})
+        self.dispatcher.submit.assert_called_once()
+
+    def test_same_identity_is_scoped_to_project_and_new_action_does_not_replay(self):
+        request = {**self.request, 'request_id': 'one'}
+        first = self.jobs.start('song', request)
+        self.dispatcher.submit.call_args.args[0]()
+        second = self.jobs.start('other', request)
+        self.assertNotEqual(first['task_id'], second['task_id'])
+        self.dispatcher.submit.call_args.args[0]()
+        third = self.jobs.start('song', {**request, 'request_id': 'two'})
+        self.assertNotEqual(first['task_id'], third['task_id'])
+
+    def test_history_is_project_scoped_and_does_not_change_tasks(self):
+        for task_id, song in (("a", "song"), ("b", "other"), ("c", "song")):
+            self.store.create_task(task_id, self.jobs.TASK_TYPE, "music", {"song_id": song}, "Prueba")
+        before = self.store.list_tasks()
+        history = self.jobs.history("song")
+        self.assertEqual({task["task_id"] for task in history}, {"a", "c"})
+        self.assertEqual(len(self.jobs.history("song", limit=1)), 1)
+        self.assertEqual(self.jobs.history("missing"), [])
+        self.assertEqual(self.store.list_tasks(), before)
     def test_direct_registry_calls_obey_audio_guard_and_resume_after_cancel(self):
         registry = ProviderRegistry()
         orchestrator = ModelOrchestrator(self.store, registry)

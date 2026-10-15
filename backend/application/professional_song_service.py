@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from application.set_music_spec_projection import SetMusicSpecProjection
 from application.creative_agent_service import CreativeAgentService
 from application.instrumental_generation_service import InstrumentalGenerationService
 from application.lyrics_review_service import LyricsReviewService
@@ -24,7 +25,7 @@ from core.storage import StorageManager
 from models.song_workflow import PHASE_LABELS, PHASE_SEQUENCE, SongPhase, SongPhaseStatus
 
 
-class ProfessionalSongService:
+class ProfessionalSongService(SetMusicSpecProjection):
     def __init__(
         self,
         storage: StorageManager,
@@ -195,39 +196,8 @@ class ProfessionalSongService:
         return result
 
     def generate_music_plan(self, song_id: str) -> dict[str, object]:
-        project = self.storage.get_song_project(song_id)
-        if project is None:
-            raise ValueError("Proyecto profesional no encontrado.")
-        project = self._ensure_project_seeded_from_link(project)
-        self._require_confirmed_spec(project)
-        spec_record = project.get("spec")
-        if not spec_record or not bool(dict(spec_record).get("approved_by_qwen")):
-            raise ValueError("La especificacion debe estar aprobada antes de generar el plan musical.")
-        lyrics_approved_path = self.storage.data_dir / "projects" / song_id / "lyrics_approved.json"
-        if not lyrics_approved_path.exists():
-            raise ValueError("La letra debe estar aprobada por el director tecnico antes de generar el plan musical.")
-        lyrics_approved = self.storage.read_json(lyrics_approved_path)
-        if not bool(lyrics_approved.get("approved_by_qwen")):
-            raise ValueError("La letra aprobada no esta disponible; revisa la fase LYRICS_TECHNICAL_REVIEW.")
-
-        self.model_manager.run_model("qwen", {"song_id": song_id, "phase": SongPhase.MUSIC_PLAN_GENERATION.value})
-        self.storage.create_song_event(
-            song_id=song_id,
-            phase=SongPhase.MUSIC_PLAN_GENERATION.value,
-            status=SongPhaseStatus.RUNNING.value,
-            progress=40,
-            message="El director tecnico esta creando el plan musical tecnico para MIDI e instrumental.",
-            active_model="qwen",
-            payload={"lyrics_approved": str(lyrics_approved_path)},
-        )
-        result = self.music_plan_service.generate(
-            song_id,
-            dict(dict(spec_record).get("json_spec", {})),
-            lyrics_approved,
-        )
-        self.model_manager.unload_model("qwen")
-        result["progress"] = self.progress_for(result["project"])
-        return result
+        from application.local_planning_commands import GenerateLocalMusicPlan
+        return GenerateLocalMusicPlan(_HistoricalProductionContext(self), self.music_plan_service).execute(song_id)
 
     def get_music_plan(self, song_id: str) -> dict[str, object]:
         if self.storage.get_song_project(song_id) is None:
@@ -235,26 +205,8 @@ class ProfessionalSongService:
         return self.music_plan_service.get(song_id)
 
     def generate_midi(self, song_id: str) -> dict[str, object]:
-        project = self.storage.get_song_project(song_id)
-        if project is None:
-            raise ValueError("Proyecto profesional no encontrado.")
-        project = self._ensure_project_seeded_from_link(project)
-        self._require_confirmed_spec(project)
-        music_plan = self.music_plan_service.get(song_id)["music_plan"]
-        self.model_manager.run_model("qwen", {"song_id": song_id, "phase": SongPhase.MIDI_GENERATION.value})
-        self.storage.create_song_event(
-            song_id=song_id,
-            phase=SongPhase.MIDI_GENERATION.value,
-            status=SongPhaseStatus.RUNNING.value,
-            progress=45,
-            message="El director tecnico esta coordinando el MIDI base con acordes, melodia vocal guia y marcadores.",
-            active_model="qwen",
-            payload={"music_plan": str(self.storage.data_dir / "projects" / song_id / "music_plan.json")},
-        )
-        result = self.midi_generation_service.generate(song_id, dict(music_plan))
-        self.model_manager.unload_model("qwen")
-        result["progress"] = self.progress_for(result["project"])
-        return result
+        from application.local_planning_commands import GenerateLocalMidi
+        return GenerateLocalMidi(_HistoricalProductionContext(self), self.midi_generation_service).execute(song_id)
 
     def get_midi(self, song_id: str) -> dict[str, object]:
         if self.storage.get_song_project(song_id) is None:
@@ -262,31 +214,8 @@ class ProfessionalSongService:
         return self.midi_generation_service.get(song_id)
 
     def generate_instrumental(self, song_id: str) -> dict[str, object]:
-        project = self.storage.get_song_project(song_id)
-        if project is None:
-            raise ValueError("Proyecto profesional no encontrado.")
-        project = self._ensure_project_seeded_from_link(project)
-        self._require_confirmed_spec(project)
-        music_plan = self.music_plan_service.get(song_id)["music_plan"]
-        midi = self.midi_generation_service.get(song_id)
-        active_model = "musicgen" if self.instrumental_generation_service.command_template else "local-procedural"
-        self.model_manager.run_model(active_model, {"song_id": song_id, "phase": SongPhase.INSTRUMENTAL_GENERATION.value})
-        self.storage.create_song_event(
-            song_id=song_id,
-            phase=SongPhase.INSTRUMENTAL_GENERATION.value,
-            status=SongPhaseStatus.RUNNING.value,
-            progress=45,
-            message="Generando instrumental desde music_plan.json y song_base.mid.",
-            active_model=active_model,
-            payload={
-                "music_plan": str(self.storage.data_dir / "projects" / song_id / "music_plan.json"),
-                "midi": str(midi["midi"]),
-            },
-        )
-        result = self.instrumental_generation_service.generate(song_id, dict(music_plan), str(midi["midi"]))
-        self.model_manager.unload_model(active_model)
-        result["progress"] = self.progress_for(result["project"])
-        return result
+        from application.local_stem_commands import GenerateLocalInstrumental
+        return GenerateLocalInstrumental(_HistoricalProductionContext(self), self.instrumental_generation_service).execute(song_id)
 
     def get_instrumental(self, song_id: str) -> dict[str, object]:
         if self.storage.get_song_project(song_id) is None:
@@ -294,59 +223,8 @@ class ProfessionalSongService:
         return self.instrumental_generation_service.get(song_id)
 
     def generate_vocals(self, song_id: str) -> dict[str, object]:
-        project = self.storage.get_song_project(song_id)
-        if project is None:
-            raise ValueError("Proyecto profesional no encontrado.")
-        project = self._ensure_project_seeded_from_link(project)
-        self._require_confirmed_spec(project)
-        spec_record = project.get("spec")
-        if not spec_record:
-            raise ValueError("La especificacion debe existir antes de generar voz.")
-        lyrics_approved_path = self.storage.data_dir / "projects" / song_id / "lyrics_approved.json"
-        if not lyrics_approved_path.exists():
-            raise ValueError("La letra aprobada debe existir antes de generar voz.")
-        lyrics_approved = self.storage.read_json(lyrics_approved_path)
-        midi = self.midi_generation_service.get(song_id)
-        self.instrumental_generation_service.get(song_id)
-        active_model = "singing-voice-provider" if self.vocal_synthesis_service.command_template else "local-vocal-guide"
-        self.model_manager.run_model(active_model, {"song_id": song_id, "phase": SongPhase.VOCAL_SYNTHESIS.value})
-        self.storage.create_song_event(
-            song_id=song_id,
-            phase=SongPhase.VOCAL_SYNTHESIS.value,
-            status=SongPhaseStatus.RUNNING.value,
-            progress=45,
-            message="Generando voz cantada/guia desde lyrics_approved.json y melodia vocal MIDI.",
-            active_model=active_model,
-            payload={"lyrics_approved": str(lyrics_approved_path), "midi_metadata": str(self.storage.data_dir / "projects" / song_id / "midi_metadata.json")},
-        )
-        spec = dict(dict(spec_record).get("json_spec", {}))
-        try:
-            result = self.vocal_synthesis_service.generate(
-                song_id,
-                lyrics_approved,
-                dict(midi["metadata"]),
-                str(spec.get("voice_style", "soft vocal")),
-            )
-        except Exception as exc:
-            self.storage.create_song_event(
-                song_id=song_id,
-                phase=SongPhase.VOCAL_SYNTHESIS.value,
-                status=SongPhaseStatus.FAILED.value,
-                progress=100,
-                message=f"La generacion de voz fallo: {exc}",
-                active_model=active_model,
-                payload={"error": str(exc)},
-            )
-            self.storage.update_song_project_phase(
-                song_id,
-                SongPhase.VOCAL_SYNTHESIS.value,
-                SongPhaseStatus.FAILED.value,
-            )
-            raise
-        finally:
-            self.model_manager.unload_model(active_model)
-        result["progress"] = self.progress_for(result["project"])
-        return result
+        from application.local_stem_commands import GenerateLocalVocals
+        return GenerateLocalVocals(_HistoricalProductionContext(self), self.vocal_synthesis_service).execute(song_id)
 
     def get_vocals(self, song_id: str) -> dict[str, object]:
         if self.storage.get_song_project(song_id) is None:
@@ -354,31 +232,8 @@ class ProfessionalSongService:
         return self.vocal_synthesis_service.get(song_id)
 
     def convert_voice(self, song_id: str) -> dict[str, object]:
-        project = self.storage.get_song_project(song_id)
-        if project is None:
-            raise ValueError("Proyecto profesional no encontrado.")
-        project = self._ensure_project_seeded_from_link(project)
-        self._require_confirmed_spec(project)
-        spec_record = project.get("spec")
-        if not spec_record:
-            raise ValueError("La especificacion debe existir antes de convertir voz.")
-        self.vocal_synthesis_service.get(song_id)
-        spec = dict(dict(spec_record).get("json_spec", {}))
-        active_model = "rvc-or-compatible" if self.voice_conversion_service.command_template else "none"
-        self.model_manager.run_model(active_model, {"song_id": song_id, "phase": SongPhase.VOICE_CONVERSION.value})
-        self.storage.create_song_event(
-            song_id=song_id,
-            phase=SongPhase.VOICE_CONVERSION.value,
-            status=SongPhaseStatus.RUNNING.value if self.voice_conversion_service.command_template else SongPhaseStatus.SKIPPED.value,
-            progress=50,
-            message="Evaluando conversion de voz opcional.",
-            active_model=active_model,
-            payload={"voice_style": str(spec.get("voice_style", ""))},
-        )
-        result = self.voice_conversion_service.run(song_id, str(spec.get("voice_style", "soft vocal")))
-        self.model_manager.unload_model(active_model)
-        result["progress"] = self.progress_for(result["project"])
-        return result
+        from application.local_stem_commands import ConvertLocalVoice
+        return ConvertLocalVoice(_HistoricalProductionContext(self), self.voice_conversion_service).execute(song_id)
 
     def get_converted_voice(self, song_id: str) -> dict[str, object]:
         if self.storage.get_song_project(song_id) is None:
@@ -386,30 +241,8 @@ class ProfessionalSongService:
         return self.voice_conversion_service.get(song_id)
 
     def mix_song(self, song_id: str) -> dict[str, object]:
-        project = self.storage.get_song_project(song_id)
-        if project is None:
-            raise ValueError("Proyecto profesional no encontrado.")
-        project = self._ensure_project_seeded_from_link(project)
-        self._require_confirmed_spec(project)
-        self.instrumental_generation_service.get(song_id)
-        try:
-            self.voice_conversion_service.get(song_id)
-        except ValueError:
-            self.vocal_synthesis_service.get(song_id)
-        self.model_manager.run_model("local-mixer", {"song_id": song_id, "phase": SongPhase.MIXING.value})
-        self.storage.create_song_event(
-            song_id=song_id,
-            phase=SongPhase.MIXING.value,
-            status=SongPhaseStatus.RUNNING.value,
-            progress=45,
-            message="Mezclando instrumental y voz con ganancia, reverb suave y normalizacion.",
-            active_model="local-mixer",
-            payload={},
-        )
-        result = self.mixing_service.mix(song_id)
-        self.model_manager.unload_model("local-mixer")
-        result["progress"] = self.progress_for(result["project"])
-        return result
+        from application.local_mix_command import MixLocalSong
+        return MixLocalSong(_HistoricalProductionContext(self), self.mixing_service).execute(song_id)
 
     def get_mix(self, song_id: str) -> dict[str, object]:
         if self.storage.get_song_project(song_id) is None:
@@ -417,78 +250,8 @@ class ProfessionalSongService:
         return self.mixing_service.get(song_id)
 
     def master_song(self, song_id: str, generation_profile: str | None = None) -> dict[str, object]:
-        project = self.storage.get_song_project(song_id)
-        if project is None:
-            raise ValueError("Proyecto profesional no encontrado.")
-        project = self._refresh_linked_project_for_mastering(project)
-        self._require_confirmed_spec(project)
-        self._require_approved_linked_sample(project)
-        if self.full_song_service.configured():
-            active_model = "local-full-song-provider"
-            self.model_manager.run_model(active_model, {"song_id": song_id, "phase": SongPhase.MASTERING.value})
-            self.storage.update_song_project_phase(song_id, SongPhase.MASTERING.value, SongPhaseStatus.RUNNING.value)
-            self.storage.create_song_event(
-                song_id=song_id,
-                phase=SongPhase.MASTERING.value,
-                status=SongPhaseStatus.RUNNING.value,
-                progress=35,
-                message="Generando cancion final completa con provider local full-song.",
-                active_model=active_model,
-                payload={},
-            )
-            try:
-                result = self.full_song_service.generate(song_id, generation_profile=generation_profile)
-            except Exception as exc:
-                self.storage.create_song_event(
-                    song_id=song_id,
-                    phase=SongPhase.MASTERING.value,
-                    status=SongPhaseStatus.FAILED.value,
-                    progress=100,
-                    message=f"La generacion full-song fallo: {exc}",
-                    active_model=active_model,
-                    payload={"error": str(exc)},
-                )
-                self.storage.update_song_project_phase(
-                    song_id,
-                    SongPhase.MASTERING.value,
-                    SongPhaseStatus.FAILED.value,
-                )
-                raise
-            finally:
-                self.model_manager.unload_model(active_model)
-            result["progress"] = self.progress_for(result["project"])
-            return result
-        self.mixing_service.get(song_id)
-        active_model = "local-mastering"
-        self.model_manager.run_model(active_model, {"song_id": song_id, "phase": SongPhase.MASTERING.value})
-        self.storage.update_song_project_phase(song_id, SongPhase.MASTERING.value, SongPhaseStatus.RUNNING.value)
-        self.storage.create_song_event(
-            song_id=song_id,
-            phase=SongPhase.MASTERING.value,
-            status=SongPhaseStatus.RUNNING.value,
-            progress=45,
-            message="Masterizando mix.wav y preparando final_song.wav/final_song.mp3.",
-            active_model=active_model,
-            payload={},
-        )
-        try:
-            result = self.mastering_service.master(song_id)
-        except Exception as exc:
-            self.storage.create_song_event(
-                song_id=song_id,
-                phase=SongPhase.MASTERING.value,
-                status=SongPhaseStatus.FAILED.value,
-                progress=100,
-                message=f"Mastering fallo: {exc}",
-                active_model=active_model,
-                payload={"error": str(exc)},
-            )
-            self.storage.update_song_project_phase(song_id, SongPhase.MASTERING.value, SongPhaseStatus.FAILED.value)
-            raise
-        finally:
-            self.model_manager.unload_model(active_model)
-        result["progress"] = self.progress_for(result["project"])
-        return result
+        from application.local_master_command import MasterLocalSong
+        return MasterLocalSong(_HistoricalProductionContext(self), self.full_song_service, self.mixing_service, self.mastering_service).execute(song_id, generation_profile=generation_profile)
 
     def get_master(self, song_id: str) -> dict[str, object]:
         if self.storage.get_song_project(song_id) is None:
@@ -536,27 +299,14 @@ class ProfessionalSongService:
         return self.storage.verify_song_artifact(song_id, artifact_type)
 
     def regenerate_artifact(self, song_id: str, artifact_type: str) -> dict[str, object]:
-        if artifact_type in {"lyrics_markdown", "lyrics_json"}:
-            return self.generate_lyrics(song_id)
-        if artifact_type == "lyrics_approved_json":
-            return self.review_lyrics(song_id)
-        if artifact_type == "music_plan_json":
-            return self.generate_music_plan(song_id)
-        if artifact_type in {"midi", "midi_metadata_json"}:
-            return self.generate_midi(song_id)
-        if artifact_type == "instrumental_wav":
-            return self.generate_instrumental(song_id)
-        if artifact_type == "vocals_wav":
-            return self.generate_vocals(song_id)
-        if artifact_type == "vocals_converted_wav":
-            return self.convert_voice(song_id)
-        if artifact_type == "mix_wav":
-            return self.mix_song(song_id)
-        if artifact_type in {"final_song_wav", "final_song_mp3", "final_song_flac"}:
-            return self.master_song(song_id)
-        if artifact_type in {"export_manifest_json", "project_zip"}:
-            return self.export_song(song_id)
-        raise ValueError(f"No hay regenerador registrado para {artifact_type}.")
+        from application.artifact_regeneration import ArtifactRegeneration
+        return ArtifactRegeneration({
+            'lyrics':self.generate_lyrics, 'lyrics_review':self.review_lyrics,
+            'music_plan':self.generate_music_plan, 'midi':self.generate_midi,
+            'instrumental':self.generate_instrumental, 'vocals':self.generate_vocals,
+            'voice_conversion':self.convert_voice, 'mix':self.mix_song,
+            'master':self.master_song, 'export':self.export_song,
+        }).execute(song_id, artifact_type)
 
     def collect_spec(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
         project = self.storage.get_song_project(song_id)
@@ -669,85 +419,24 @@ class ProfessionalSongService:
         }
 
     def confirm_song_specification(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
-        project = self.storage.get_song_project(song_id)
-        if project is None:
-            raise ValueError("Proyecto profesional no encontrado.")
-        record = project.get("spec")
-        if not isinstance(record, dict):
-            raise ValueError("La especificacion aun no existe.")
-        revision = dict(record.get("revision", {}))
-        requested_revision = str(payload.get("revision_id", "")).strip()
-        if not requested_revision or requested_revision != str(revision.get("revision_id", "")):
-            raise ValueError("La revision cambio. Recarga la ficha antes de confirmarla.")
-        if not bool(revision.get("deterministic_valid")) or record.get("missing_fields"):
-            raise ValueError("La especificacion tiene datos pendientes y no se puede confirmar.")
-        confirmed = self.storage.upsert_song_spec(
-            song_id=song_id,
-            json_spec=dict(record.get("json_spec", {})),
-            approved_by_qwen=bool(record.get("approved_by_qwen")),
-            missing_fields=list(record.get("missing_fields", [])),
-            schema_version=str(revision.get("schema_version", "1.0")),
-            technical_review_mode=str(revision.get("technical_review_mode", "rule_validation")),
-            user_confirmation_status="confirmed",
-        )
-        self.storage.create_song_event(
-            song_id=song_id,
-            phase=SongPhase.SONG_SPEC_COLLECTION.value,
-            status=SongPhaseStatus.READY.value,
-            progress=100,
-            message="El usuario confirmo la revision activa de la especificacion.",
-            active_model="user",
-            payload={"confirmed_revision_id": requested_revision, "active_revision": confirmed.get("revision", {})},
-        )
-        project = self.storage.update_song_project_phase(
-            song_id,
-            SongPhase.LYRICS_GENERATION.value,
-            SongPhaseStatus.READY.value,
-        )
-        response = self.get_song_specification(song_id)
-        response["project"] = project
-        response["progress"] = self.progress_for(project)
-        return response
+        from application.music_spec_revision_service import MusicSpecRevisionService
+        return MusicSpecRevisionService(self.storage).confirm_song_specification(song_id, payload)
 
     def get_song_specification(self, song_id: str) -> dict[str, object]:
-        project = self.storage.get_song_project(song_id)
-        if project is None:
-            raise ValueError("Proyecto profesional no encontrado.")
-        record = project.get("spec")
-        spec = dict(record.get("json_spec", {})) if isinstance(record, dict) else {}
-        return {
-            "song_id": song_id,
-            "spec": record,
-            "catalog": self.song_specifications.catalog(spec),
-            "revisions": self.storage.list_song_spec_revisions(song_id),
-        }
+        from application.music_spec_revision_service import MusicSpecRevisionService
+        return MusicSpecRevisionService(self.storage).get_song_specification(song_id)
 
     def _require_confirmed_spec(self, project: dict[str, object]) -> dict[str, object]:
-        record = project.get("spec")
-        if not isinstance(record, dict):
-            raise ValueError("Completa la ficha de la cancion antes de continuar.")
-        revision = dict(record.get("revision", {}))
-        if revision.get("user_confirmation_status") != "confirmed":
-            raise ValueError("Revisa y confirma la ficha completa de la cancion antes de continuar.")
-        if not bool(revision.get("deterministic_valid")) or record.get("missing_fields"):
-            raise ValueError("La ficha confirmada tiene datos pendientes; crea y confirma una revision valida.")
-        return record
+        from application.music_spec_revision_service import require_confirmed_music_spec
+        return require_confirmed_music_spec(project)
 
     def _require_approved_linked_sample(self, project: dict[str, object]) -> dict[str, object] | None:
         from application.sample_gate import SampleGate
         return SampleGate(self.storage).require_for_project(project)
 
     def progress_for(self, project: dict[str, object]) -> dict[str, object]:
-        current_phase = str(project.get("current_phase", PHASE_SEQUENCE[0].value))
-        total = len(PHASE_SEQUENCE)
-        index_by_phase = {phase.value: index for index, phase in enumerate(PHASE_SEQUENCE, start=1)}
-        current_number = index_by_phase.get(current_phase, 1)
-        return {
-            "current": current_number,
-            "total": total,
-            "label": PHASE_LABELS.get(PHASE_SEQUENCE[current_number - 1], "Fase desconocida"),
-            "status": str(project.get("status", "pending")),
-        }
+        from application.music_spec_revision_service import MusicSpecRevisionService
+        return MusicSpecRevisionService(self.storage).progress_for(project)
 
     def _write_song_spec_snapshot(
         self,
@@ -891,6 +580,8 @@ class ProfessionalSongService:
                 source_set_id,
                 {"title": str(project.get("title") or "Cancion")},
             )
+        if spec and (spec.get('json_spec', {}).get('_editor_phases') or spec.get('json_spec', {}).get('_consolidation')):
+            return project
         if spec and bool(dict(spec).get("approved_by_qwen")):
             if source_set_id and not music_plan_path.exists():
                 phase_data = self.storage.list_project_phase_data(source_set_id)
@@ -911,151 +602,14 @@ class ProfessionalSongService:
             {"title": str(project.get("title") or "Cancion")},
         )
 
-    def _assets_for_set(self, song_set: dict[str, object]) -> dict[str, dict[str, object]]:
-        assets: dict[str, dict[str, object]] = {}
-        for key, asset_key in (
-            ("instrumental", "instrumental_id"),
-            ("melody", "melody_id"),
-            ("lyrics", "lyrics_id"),
-        ):
-            asset_id = str(song_set.get(asset_key, "")).strip()
-            if asset_id:
-                try:
-                    assets[key] = self.storage.get_asset_draft_detail(asset_id)
-                except ValueError:
-                    assets[key] = {}
-        return assets
 
-    def _spec_from_set_data(
-        self,
-        song_set: dict[str, object],
-        phase_data: dict[str, object],
-        assets: dict[str, dict[str, object]],
-        payload: dict[str, object],
-    ) -> dict[str, object]:
-        intent = self._dict_or_empty(self._phase_payload(phase_data, "intent").get("intent", {}))
-        music_plan = self._dict_or_empty(self._phase_payload(phase_data, "music-plan").get("musicPlan", {}))
-        voice = self._dict_or_text_style(self._phase_payload(phase_data, "voice").get("voice", {}))
-        lyrics = self._dict_or_empty(self._phase_payload(phase_data, "lyrics").get("lyrics", {}))
-        instrumental_intent = dict(dict(assets.get("instrumental", {})).get("intent", {}))
-        melody_intent = dict(dict(assets.get("melody", {})).get("intent", {}))
-        lyrics_intent = dict(dict(assets.get("lyrics", {})).get("intent", {}))
 
-        title = str(payload.get("title") or song_set.get("project_name") or "Cancion")
-        description = str(payload.get("description") or song_set.get("description") or "")
-        language = self._first_text(
-            lyrics.get("language"),
-            intent.get("language"),
-            lyrics_intent.get("language"),
-            "Spanish",
-        )
-        structure = self._structure_from_editor(phase_data, music_plan, lyrics_intent)
-        instruments = self._list_value(
-            intent.get("instruments")
-            or music_plan.get("instruments")
-            or instrumental_intent.get("instruments")
-            or instrumental_intent.get("instrumentation")
-            or ["acoustic guitar", "soft pad"]
-        )
-        duration = self._duration_seconds(music_plan, intent)
-        bpm = int(self._first_number(music_plan.get("bpm"), intent.get("bpm"), instrumental_intent.get("bpm"), 72))
-        voice_style = self._normalize_voice_style(
-            self._first_text(
-                voice.get("mainVoice"),
-                voice.get("style"),
-                voice.get("vocalStyle"),
-                intent.get("vocalType"),
-                intent.get("voice_style"),
-                melody_intent.get("vocal_style"),
-                "soft female vocal",
-            )
-        )
-        return {
-            "title": title,
-            "project_name": title,
-            "description": description,
-            "song_type": self._first_text(intent.get("song_type"), instrumental_intent.get("genre"), "personal_song"),
-            "recipient_name": self._first_text(intent.get("recipient"), intent.get("recipient_name"), "persona querida"),
-            "language": language,
-            "theme": self._first_text(lyrics.get("theme"), intent.get("theme"), lyrics_intent.get("theme"), description, "cancion personal"),
-            "emotion": self._first_text(intent.get("mood"), music_plan.get("mood"), instrumental_intent.get("mood"), "tender"),
-            "voice_style": voice_style,
-            "bpm": bpm,
-            "key": self._first_text(music_plan.get("key"), intent.get("key"), instrumental_intent.get("key"), "C major"),
-            "duration_seconds": duration,
-            "structure": structure,
-            "instruments": instruments,
-            "output_format": self._first_text(intent.get("output_format"), "mp3"),
-            "source_set_id": str(song_set["set_id"]),
-            "source_of_truth": "sqlite_phase_data",
-        }
 
-    def _phase_payload(self, phase_data: dict[str, object], phase: str) -> dict[str, object]:
-        record = dict(phase_data.get(phase, {}))
-        data = dict(record.get("data", {}))
-        nested = data.get("data")
-        if isinstance(nested, dict):
-            return dict(nested)
-        return data
 
-    def _dict_or_empty(self, value: object) -> dict[str, object]:
-        return dict(value) if isinstance(value, dict) else {}
 
-    def _dict_or_text_style(self, value: object) -> dict[str, object]:
-        if isinstance(value, dict):
-            return dict(value)
-        text = str(value).strip()
-        return {"style": text} if text else {}
 
-    def _lyrics_markdown_from_set(
-        self,
-        song_set: dict[str, object],
-        phase_data: dict[str, object],
-        assets: dict[str, dict[str, object]],
-    ) -> str:
-        lyrics_data = self._phase_payload(phase_data, "lyrics")
-        editor = dict(lyrics_data.get("lyricsEditor", {}))
-        content = self._lyrics_sections_markdown(song_set, lyrics_data)
-        if not content:
-            content = str(editor.get("content") or "").strip()
-        if not content:
-            content = str(dict(assets.get("lyrics", {})).get("content") or "").strip()
-        if not content:
-            content = (
-                f"# {song_set.get('project_name', 'Letra')}\n\n"
-                "## Verse 1\nPendiente de completar desde la fase Lyrics.\n"
-            )
-        return self._resolve_lyrics_placeholders(content, lyrics_data).rstrip() + "\n"
 
-    def _lyrics_sections_markdown(self, song_set: dict[str, object], lyrics_data: dict[str, object]) -> str:
-        sections = lyrics_data.get("lyricSections", [])
-        if not isinstance(sections, list) or not sections:
-            return ""
-        lines = [f"# {song_set.get('project_name', 'Letra')}", ""]
-        for section in sections:
-            item = dict(section)
-            label = str(item.get("type") or item.get("label") or "Verse").strip() or "Verse"
-            text = str(item.get("text") or "").strip()
-            if text:
-                lines.extend([f"## {label}", text, ""])
-        return "\n".join(lines).strip()
 
-    def _resolve_lyrics_placeholders(self, content: str, lyrics_data: dict[str, object]) -> str:
-        lyrics = self._dict_or_empty(lyrics_data.get("lyrics", {}))
-        placeholders = self._dict_or_empty(lyrics.get("placeholders", {}))
-        resolved = content
-        for key, value in placeholders.items():
-            resolved = resolved.replace("{" + str(key) + "}", str(value))
-        return resolved
-
-    def _normalize_voice_style(self, value: str) -> str:
-        text = value.strip()
-        lowered = text.lower()
-        if any(token in lowered for token in ("femenina", "female", "mujer", "woman")):
-            return "soft warm female lead vocal, consistent female singer"
-        if any(token in lowered for token in ("masculina", "male", "hombre", "man", "tenor", "baritone")):
-            return "soft warm male lead vocal, consistent male singer"
-        return text
 
     def _refresh_linked_project_for_mastering(self, project: dict[str, object]) -> dict[str, object]:
         refreshed = self._ensure_project_seeded_from_link(project, force_refresh=True)
@@ -1198,68 +752,21 @@ class ProfessionalSongService:
             return SongPhase.MIDI_GENERATION
         return SongPhase.MUSIC_PLAN_GENERATION
 
-    def _structure_from_editor(
-        self,
-        phase_data: dict[str, object],
-        music_plan: object,
-        lyrics_intent: dict[str, object],
-    ) -> list[str]:
-        lyrics_data = self._phase_payload(phase_data, "lyrics")
-        sections = lyrics_data.get("lyricSections", [])
-        if isinstance(sections, list) and sections:
-            return [self._section_id(str(dict(item).get("type") or "verse")) for item in sections]
-        plan_sections = dict(music_plan).get("sections", []) if isinstance(music_plan, dict) else []
-        if isinstance(plan_sections, list) and plan_sections:
-            return [self._section_id(str(dict(item).get("name") or dict(item).get("section") or "verse")) for item in plan_sections]
-        structure = lyrics_intent.get("structure", [])
-        if isinstance(structure, str):
-            return [self._section_id(item) for item in structure.split(",") if item.strip()]
-        if isinstance(structure, list) and structure:
-            return [self._section_id(str(item)) for item in structure]
-        return ["intro", "verse_1", "chorus", "bridge", "outro"]
 
-    def _duration_seconds(self, music_plan: object, intent: object) -> int:
-        if isinstance(music_plan, dict):
-            direct = self._first_number(music_plan.get("durationSeconds"), music_plan.get("duration_seconds"), 0)
-            if direct:
-                return int(direct)
-            sections = music_plan.get("sections", [])
-            if isinstance(sections, list) and sections:
-                total = 0
-                for section in sections:
-                    item = dict(section)
-                    total += int(self._first_number(item.get("duration"), item.get("duration_seconds"), 0))
-                if total:
-                    return total
-        if isinstance(intent, dict):
-            direct = self._first_number(intent.get("durationSeconds"), intent.get("duration_seconds"), 0)
-            if direct:
-                return int(direct)
-        return 120
+from application.local_production_context import LocalProductionContext
 
-    def _section_id(self, label: str) -> str:
-        return label.strip().lower().replace(" ", "_").replace("-", "_")
 
-    def _list_value(self, value: object) -> list[str]:
-        if isinstance(value, list):
-            return [str(item) for item in value if str(item).strip()]
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        return []
+class _HistoricalProductionContext(LocalProductionContext):
+    """Keep old preparation side effects behind explicit compatibility access."""
+    def __init__(self, service):
+        super().__init__(service.storage)
+        self.service = service
 
-    def _first_text(self, *values: object) -> str:
-        for value in values:
-            text = str(value or "").strip()
-            if text:
-                return text
-        return ""
+    def require_project(self, project):
+        project = self.service._ensure_project_seeded_from_link(project)
+        return super().require_project(project)
 
-    def _first_number(self, *values: object) -> float:
-        for value in values:
-            try:
-                number = float(value)
-            except (TypeError, ValueError):
-                continue
-            if number > 0:
-                return number
-        return 0
+    def prepare_final_project(self, project):
+        project = self.service._refresh_linked_project_for_mastering(project)
+        self.service._require_confirmed_spec(project)
+        return project

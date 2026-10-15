@@ -7,6 +7,8 @@ from pathlib import Path
 
 from adapters.acestep_configuration_audit import audit_acestep_configuration
 from adapters.acestep_task_audit import wrapper_tasks
+from adapters.acestep_checkpoint_inventory import observe_checkpoint_root
+from audio.ace_step_profiles import TURBO_PROFILE
 
 
 class AceStepSteering:
@@ -49,6 +51,7 @@ class AceStepSteering:
         except metadata.PackageNotFoundError:
             version = None
         runtime = {"package_version": version, "integration": "handler.generate_music",
+                   "checkpoint_prerequisites": observe_checkpoint_root(self.root / TURBO_PROFILE.checkpoint_root),
                    "model_config_inventory": model_configs,
                    "wrapper_tasks": tasks, "wrapper_keyword_arguments": passed,
                    "verified_tasks": [], "public_generation_task_selection": False,
@@ -61,5 +64,12 @@ class AceStepSteering:
                     "role": role, "role_sha256": hashlib.sha256(role_guidance.encode()).hexdigest(),
                     "wrapper_sha256": hashlib.sha256(wrapper_bytes).hexdigest(), "runtime": runtime}
         revision = hashlib.sha256(json.dumps(evidence, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        # Retain complete audit evidence in results; prompts need capabilities, not resolver source expressions.
+        prompt_runtime = {key: value for key, value in runtime.items() if key != "configuration"}
+        inventory = runtime['checkpoint_prerequisites']
+        prompt_runtime['checkpoint_prerequisites'] = {key: inventory[key] for key in
+            ('checkpoint_root', 'route_prerequisites', 'loaded_verified', 'generation_verified', 'scope')}
+        prompt_runtime["configuration"] = {key: runtime["configuration"].get(key) for key in
+            ("status", "effective_config", "effective_checkpoint", "loaded_verified", "limitations")}
         return {**evidence, "revision": revision,
-                "prompt_context": f"{role_guidance}\n\n{guidance}\n\nEstado local observado (no prueba de audio):\n{json.dumps(runtime, ensure_ascii=False)}"}
+                "prompt_context": f"{role_guidance}\n\n{guidance}\n\nEstado local observado (no prueba de audio):\n{json.dumps(prompt_runtime, ensure_ascii=False, separators=(',', ':'))}"}

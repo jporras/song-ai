@@ -189,23 +189,22 @@ class SongWorkflowRepository:
                 """
             )
 
-    def create_project(self, project: SongProject) -> dict[str, object]:
+    def create_project(self, project: SongProject, reuse_linked: bool = False) -> dict[str, object]:
+        existing_id = None
         with self._connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO song_projects (id, title, user_id, status, current_phase, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    project.id,
-                    project.title,
-                    project.user_id,
-                    project.status,
-                    project.current_phase,
-                    project.created_at,
-                    project.updated_at,
-                ),
-            )
+            if reuse_linked:
+                if not project.user_id.startswith('set:') or not project.user_id[4:].strip():
+                    raise ValueError('La reutilización requiere un vínculo válido con un set.')
+                connection.execute('BEGIN IMMEDIATE')
+                matches = connection.execute('SELECT id FROM song_projects WHERE user_id = ?',
+                                             (project.user_id,)).fetchall()
+                if len(matches) > 1:
+                    raise ValueError('Hay varias fichas vinculadas; resuelve el proyecto activo antes de crear.')
+                existing_id = str(matches[0][0]) if matches else None
+            if existing_id is None:
+                self._insert_project(connection, project)
+        if existing_id is not None:
+            return {**(self.get_project(existing_id) or {}), '_creation_reused':True}
         self.create_event(
             song_id=project.id,
             phase=SongPhase.SONG_SPEC_COLLECTION.value,
@@ -216,6 +215,23 @@ class SongWorkflowRepository:
             payload={"title": project.title, "phase_count": len(PHASE_SEQUENCE)},
         )
         return self.get_project(project.id) or {}
+
+    def _insert_project(self, connection, project):
+        connection.execute(
+            """
+            INSERT INTO song_projects (id, title, user_id, status, current_phase, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                project.id,
+                project.title,
+                project.user_id,
+                project.status,
+                project.current_phase,
+                project.created_at,
+                project.updated_at,
+            ),
+        )
 
     def list_projects(self) -> list[dict[str, object]]:
         with self._connect() as connection:
@@ -419,8 +435,10 @@ class SongWorkflowRepository:
         technical_review_mode: str = "rule_validation",
         user_confirmation_status: str = "not_requested",
         expected_revision_id: str | None = None,
+        deterministic_valid: bool | None = None,
     ) -> dict[str, object]:
         now = utc_now()
+        valid = approved_by_qwen if deterministic_valid is None else deterministic_valid
         compilation_status = "needs_information" if missing_fields else "complete_for_stage"
         with self._connect() as connection:
             if expected_revision_id is not None:
@@ -453,7 +471,7 @@ class SongWorkflowRepository:
             latest = connection.execute(
                 """
                 SELECT revision_number, json_spec, compilation_status, technical_review_mode,
-                       user_confirmation_status, missing_fields_json
+                       user_confirmation_status, missing_fields_json, deterministic_valid
                 FROM song_spec_revisions
                 WHERE song_id = ?
                 ORDER BY revision_number DESC
@@ -470,6 +488,7 @@ class SongWorkflowRepository:
                 and str(latest[3]) == technical_review_mode
                 and str(latest[4]) == user_confirmation_status
                 and str(latest[5]) == missing_payload
+                and bool(latest[6]) == bool(valid)
             )
             if not unchanged:
                 revision_number = int(latest[0]) + 1 if latest else 1
@@ -483,7 +502,7 @@ class SongWorkflowRepository:
                     """,
                     (
                         f"spec_rev_{uuid4().hex[:12]}", song_id, revision_number, schema_version,
-                        json_payload, compilation_status, 1 if approved_by_qwen else 0,
+                        json_payload, compilation_status, 1 if valid else 0,
                         technical_review_mode, user_confirmation_status, missing_payload, now,
                     ),
                 )

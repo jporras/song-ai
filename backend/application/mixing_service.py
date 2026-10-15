@@ -65,14 +65,8 @@ class MixingService:
         }
 
     def get(self, song_id: str) -> dict[str, object]:
-        path = self.storage.data_dir / "projects" / song_id / "mix.wav"
-        if not path.exists():
-            raise ValueError("Este proyecto aun no tiene mix.wav.")
-        return {
-            "song_id": song_id,
-            "mix": str(path),
-            "size_bytes": path.stat().st_size,
-        }
+        from application.local_production_artifact_queries import LocalProductionArtifactQueries
+        return LocalProductionArtifactQueries(self.storage).get(song_id, 'mix')
 
     def _voice_path(self, project_dir: Path) -> Path:
         converted = project_dir / "vocals_converted.wav"

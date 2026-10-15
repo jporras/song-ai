@@ -2,6 +2,7 @@
 from adapters.ace_step_execution import AceStepExecutionArguments
 from adapters.ace_step_preflight import AceStepPreflight
 from pathlib import Path
+from adapters.ace_step_runtime_evidence import read_candidate_runtime
 
 
 class AceStepCandidateRunner:
@@ -16,3 +17,7 @@ class AceStepCandidateRunner:
             directory / "ace_plan_lyrics.md", output, directory / "generation.log",
             directory / "ace_step_diagnostics.json", profile, process_arguments=argv, revalidate=revalidate,
             execution_phase="SONG_SPEC_COLLECTION", cancellation_check=cancellation_check)
+        evidence = read_candidate_runtime(directory, output, profile, item['plan'])
+        if evidence.get('input_observation', {}).get('status') != 'matched':
+            raise ValueError('La traza de ejecucion no permite comprobar el plan aprobado; revisa el diagnostico antes de continuar.')
+        return evidence

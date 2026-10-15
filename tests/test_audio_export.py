@@ -88,7 +88,9 @@ class AudioExportTest(unittest.TestCase):
             self.assertEqual(len(project["events"]), 1)
             self.assertIn("Gemma", project["events"][0]["message"])
 
-    def test_professional_spec_collection_routes_gemma_to_qwen(self) -> None:
+    # Historical workflow fixtures deliberately use the retained service.
+    # Active assistance is covered by test_local_intent_assistance without auto-saving.
+    def test_legacy_spec_collection_routes_rules_and_preserves_old_workflow(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             storage = StorageManager(Path(temp_dir))
             service = SongService(storage)
@@ -96,7 +98,7 @@ class AudioExportTest(unittest.TestCase):
             created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
             song_id = str(created["project"]["id"])
 
-            first = service.collect_professional_spec(
+            first = service.professional_songs.collect_spec(
                 song_id,
                 {"message": "Quiero una cancion de cuna dulce para Isabella."},
             )
@@ -106,7 +108,7 @@ class AudioExportTest(unittest.TestCase):
             self.assertIn("voice_style", first["qwen"]["missing_fields"])
             self.assertIn("Gemma", first["project"]["events"][0]["message"])
 
-            second = service.collect_professional_spec(
+            second = service.professional_songs.collect_spec(
                 song_id,
                 {
                     "message": (
@@ -142,7 +144,7 @@ class AudioExportTest(unittest.TestCase):
             self.assertEqual(recipient["source"], "extracted_from_user_message")
 
             with self.assertRaisesRegex(ValueError, "confirma la ficha completa"):
-                service.generate_professional_lyrics(song_id)
+                service.professional_songs.generate_lyrics(song_id)
 
             confirmed = service.confirm_professional_specification(
                 song_id,
@@ -166,7 +168,7 @@ class AudioExportTest(unittest.TestCase):
             service.bootstrap()
             created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
             song_id = str(created["project"]["id"])
-            service.collect_professional_spec(
+            service.professional_songs.collect_spec(
                 song_id,
                 {
                     "message": (
@@ -177,7 +179,7 @@ class AudioExportTest(unittest.TestCase):
             )
 
             self.confirm_current_spec(service, song_id)
-            generated = service.generate_professional_lyrics(song_id)
+            generated = service.professional_songs.generate_lyrics(song_id)
             lyrics = service.get_professional_lyrics(song_id)
 
             self.assertEqual(generated["progress"]["current"], 3)
@@ -188,7 +190,7 @@ class AudioExportTest(unittest.TestCase):
             self.assertTrue((Path(temp_dir) / "projects" / song_id / "lyrics.json").exists())
             self.assertTrue((Path(temp_dir) / "projects" / song_id / "lyrics.md").exists())
 
-            edited = service.update_professional_lyrics(
+            edited = service.professional_songs.update_lyrics(
                 song_id,
                 {"content": "# Cancion editada\n\n## Verse 1\nIsabella, duerme con calma\n"},
             )
@@ -203,7 +205,7 @@ class AudioExportTest(unittest.TestCase):
             service.bootstrap()
             created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
             song_id = str(created["project"]["id"])
-            service.collect_professional_spec(
+            service.professional_songs.collect_spec(
                 song_id,
                 {
                     "message": (
@@ -213,9 +215,9 @@ class AudioExportTest(unittest.TestCase):
                 },
             )
             self.confirm_current_spec(service, song_id)
-            service.generate_professional_lyrics(song_id)
+            service.professional_songs.generate_lyrics(song_id)
 
-            reviewed = service.review_professional_lyrics(song_id)
+            reviewed = service.professional_songs.review_lyrics(song_id)
 
             self.assertEqual(reviewed["review"]["status"], "approved")
             self.assertEqual(reviewed["progress"]["current"], 4)
@@ -228,7 +230,7 @@ class AudioExportTest(unittest.TestCase):
             service.bootstrap()
             created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
             song_id = str(created["project"]["id"])
-            service.collect_professional_spec(
+            service.professional_songs.collect_spec(
                 song_id,
                 {
                     "message": (
@@ -238,10 +240,10 @@ class AudioExportTest(unittest.TestCase):
                 },
             )
             self.confirm_current_spec(service, song_id)
-            service.generate_professional_lyrics(song_id)
-            service.update_professional_lyrics(song_id, {"content": "# Borrador\n\n## Verse 1\nUna linea sola\n"})
+            service.professional_songs.generate_lyrics(song_id)
+            service.professional_songs.update_lyrics(song_id, {"content": "# Borrador\n\n## Verse 1\nUna linea sola\n"})
 
-            reviewed = service.review_professional_lyrics(song_id)
+            reviewed = service.professional_songs.review_lyrics(song_id)
 
             self.assertEqual(reviewed["review"]["status"], "needs_revision")
             self.assertEqual(reviewed["progress"]["current"], 2)
@@ -254,7 +256,7 @@ class AudioExportTest(unittest.TestCase):
             service.bootstrap()
             created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
             song_id = str(created["project"]["id"])
-            service.collect_professional_spec(
+            service.professional_songs.collect_spec(
                 song_id,
                 {
                     "message": (
@@ -264,8 +266,8 @@ class AudioExportTest(unittest.TestCase):
                 },
             )
             self.confirm_current_spec(service, song_id)
-            service.generate_professional_lyrics(song_id)
-            service.update_professional_lyrics(
+            service.professional_songs.generate_lyrics(song_id)
+            service.professional_songs.update_lyrics(
                 song_id,
                 {
                     "content": (
@@ -279,7 +281,7 @@ class AudioExportTest(unittest.TestCase):
                 },
             )
 
-            reviewed = service.review_professional_lyrics(song_id)
+            reviewed = service.professional_songs.review_lyrics(song_id)
 
             self.assertEqual(reviewed["review"]["status"], "needs_revision")
             self.assertIn("technical_tokens_in_lyrics", [issue["code"] for issue in reviewed["review"]["issues"]])
@@ -291,7 +293,7 @@ class AudioExportTest(unittest.TestCase):
             service.bootstrap()
             created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
             song_id = str(created["project"]["id"])
-            service.collect_professional_spec(
+            service.professional_songs.collect_spec(
                 song_id,
                 {
                     "message": (
@@ -301,8 +303,8 @@ class AudioExportTest(unittest.TestCase):
                 },
             )
             self.confirm_current_spec(service, song_id)
-            service.generate_professional_lyrics(song_id)
-            service.review_professional_lyrics(song_id)
+            service.professional_songs.generate_lyrics(song_id)
+            service.professional_songs.review_lyrics(song_id)
 
             generated = service.generate_professional_music_plan(song_id)
             plan = service.get_professional_music_plan(song_id)
@@ -322,7 +324,7 @@ class AudioExportTest(unittest.TestCase):
             service.bootstrap()
             created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
             song_id = str(created["project"]["id"])
-            service.collect_professional_spec(
+            service.professional_songs.collect_spec(
                 song_id,
                 {
                     "message": (
@@ -332,8 +334,8 @@ class AudioExportTest(unittest.TestCase):
                 },
             )
             self.confirm_current_spec(service, song_id)
-            service.generate_professional_lyrics(song_id)
-            service.review_professional_lyrics(song_id)
+            service.professional_songs.generate_lyrics(song_id)
+            service.professional_songs.review_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
 
             generated = service.generate_professional_midi(song_id)
@@ -355,7 +357,7 @@ class AudioExportTest(unittest.TestCase):
             service.bootstrap()
             created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
             song_id = str(created["project"]["id"])
-            service.collect_professional_spec(
+            service.professional_songs.collect_spec(
                 song_id,
                 {
                     "message": (
@@ -365,8 +367,8 @@ class AudioExportTest(unittest.TestCase):
                 },
             )
             self.confirm_current_spec(service, song_id)
-            service.generate_professional_lyrics(song_id)
-            service.review_professional_lyrics(song_id)
+            service.professional_songs.generate_lyrics(song_id)
+            service.professional_songs.review_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
             service.generate_professional_midi(song_id)
 
@@ -389,7 +391,7 @@ class AudioExportTest(unittest.TestCase):
             service.bootstrap()
             created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
             song_id = str(created["project"]["id"])
-            service.collect_professional_spec(
+            service.professional_songs.collect_spec(
                 song_id,
                 {
                     "message": (
@@ -399,8 +401,8 @@ class AudioExportTest(unittest.TestCase):
                 },
             )
             self.confirm_current_spec(service, song_id)
-            service.generate_professional_lyrics(song_id)
-            service.review_professional_lyrics(song_id)
+            service.professional_songs.generate_lyrics(song_id)
+            service.professional_songs.review_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
             service.generate_professional_midi(song_id)
             service.generate_professional_instrumental(song_id)
@@ -424,7 +426,7 @@ class AudioExportTest(unittest.TestCase):
             service.bootstrap()
             created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
             song_id = str(created["project"]["id"])
-            service.collect_professional_spec(
+            service.professional_songs.collect_spec(
                 song_id,
                 {
                     "message": (
@@ -434,8 +436,8 @@ class AudioExportTest(unittest.TestCase):
                 },
             )
             self.confirm_current_spec(service, song_id)
-            service.generate_professional_lyrics(song_id)
-            service.review_professional_lyrics(song_id)
+            service.professional_songs.generate_lyrics(song_id)
+            service.professional_songs.review_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
             service.generate_professional_midi(song_id)
             service.generate_professional_instrumental(song_id)
@@ -462,7 +464,7 @@ class AudioExportTest(unittest.TestCase):
             service.bootstrap()
             created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
             song_id = str(created["project"]["id"])
-            service.collect_professional_spec(
+            service.professional_songs.collect_spec(
                 song_id,
                 {
                     "message": (
@@ -472,8 +474,8 @@ class AudioExportTest(unittest.TestCase):
                 },
             )
             self.confirm_current_spec(service, song_id)
-            service.generate_professional_lyrics(song_id)
-            service.review_professional_lyrics(song_id)
+            service.professional_songs.generate_lyrics(song_id)
+            service.professional_songs.review_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
             service.generate_professional_midi(song_id)
             service.generate_professional_instrumental(song_id)
@@ -494,7 +496,7 @@ class AudioExportTest(unittest.TestCase):
 
     @unittest.skipIf(not shutil.which("ffmpeg"), "ffmpeg no esta disponible para exportar MP3")
     # Downstream format contracts use an explicit gate stub; gate behavior has dedicated tests.
-    @patch("application.sample_gate.SampleGate.require_for_project", new=lambda self, project, **kwargs: {})
+    @patch("application.final_production_gate.FinalProductionGate.require_for_project", new=lambda self, project, **kwargs: {})
     def test_professional_mastering_creates_final_wav_mp3_and_flac(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             storage = StorageManager(Path(temp_dir))
@@ -502,7 +504,7 @@ class AudioExportTest(unittest.TestCase):
             service.bootstrap()
             created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
             song_id = str(created["project"]["id"])
-            service.collect_professional_spec(
+            service.professional_songs.collect_spec(
                 song_id,
                 {
                     "message": (
@@ -512,8 +514,8 @@ class AudioExportTest(unittest.TestCase):
                 },
             )
             self.confirm_current_spec(service, song_id)
-            service.generate_professional_lyrics(song_id)
-            service.review_professional_lyrics(song_id)
+            service.professional_songs.generate_lyrics(song_id)
+            service.professional_songs.review_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
             service.generate_professional_midi(song_id)
             service.generate_professional_instrumental(song_id)
@@ -540,7 +542,7 @@ class AudioExportTest(unittest.TestCase):
             self.assertTrue((Path(temp_dir) / "projects" / song_id / "mastering.log").exists())
 
     @unittest.skipIf(not shutil.which("ffmpeg"), "ffmpeg no esta disponible para exportar MP3")
-    @patch("application.sample_gate.SampleGate.require_for_project", new=lambda self, project, **kwargs: {})
+    @patch("application.final_production_gate.FinalProductionGate.require_for_project", new=lambda self, project, **kwargs: {})
     def test_professional_export_rejects_procedural_vocal_guide(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             storage = StorageManager(Path(temp_dir))
@@ -548,7 +550,7 @@ class AudioExportTest(unittest.TestCase):
             service.bootstrap()
             created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
             song_id = str(created["project"]["id"])
-            service.collect_professional_spec(
+            service.professional_songs.collect_spec(
                 song_id,
                 {
                     "message": (
@@ -558,8 +560,8 @@ class AudioExportTest(unittest.TestCase):
                 },
             )
             self.confirm_current_spec(service, song_id)
-            service.generate_professional_lyrics(song_id)
-            service.review_professional_lyrics(song_id)
+            service.professional_songs.generate_lyrics(song_id)
+            service.professional_songs.review_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
             service.generate_professional_midi(song_id)
             service.generate_professional_instrumental(song_id)
@@ -581,7 +583,7 @@ class AudioExportTest(unittest.TestCase):
                 service.professional_artifact_download_file(song_id, "final_song_mp3")
 
     @unittest.skipIf(not shutil.which("ffmpeg"), "ffmpeg no esta disponible para exportar MP3")
-    @patch("application.sample_gate.SampleGate.require_for_project", new=lambda self, project, **kwargs: {})
+    @patch("application.final_production_gate.FinalProductionGate.require_for_project", new=lambda self, project, **kwargs: {})
     def test_professional_export_lists_and_downloads_artifacts(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
@@ -607,7 +609,7 @@ class AudioExportTest(unittest.TestCase):
             service.bootstrap()
             created = service.create_professional_project({"title": "Cancion de cuna para Isabella"})
             song_id = str(created["project"]["id"])
-            service.collect_professional_spec(
+            service.professional_songs.collect_spec(
                 song_id,
                 {
                     "message": (
@@ -617,8 +619,8 @@ class AudioExportTest(unittest.TestCase):
                 },
             )
             self.confirm_current_spec(service, song_id)
-            service.generate_professional_lyrics(song_id)
-            service.review_professional_lyrics(song_id)
+            service.professional_songs.generate_lyrics(song_id)
+            service.professional_songs.review_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
             service.generate_professional_midi(song_id)
             service.generate_professional_instrumental(song_id)
@@ -676,7 +678,9 @@ class AudioExportTest(unittest.TestCase):
             self.assertIn("no existe", missing["message"])
 
     @unittest.skipIf(not shutil.which("ffmpeg"), "ffmpeg no esta disponible para exportar MP3")
-    @patch("application.sample_gate.SampleGate.require_for_project", new=lambda self, project, **kwargs: {})
+    @patch("application.final_production_gate.FinalProductionGate.require_for_project", new=lambda self, project, **kwargs: {})
+    @patch("audio.resource_monitor.ResourceMonitor.prepare_for_audio", new=lambda self, *args, **kwargs:
+           {"snapshot": {}, "readiness": {"ready": True, "decision": "test_fixture"}, "released_llm": False})
     def test_professional_full_song_command_can_create_export_without_stem_vocals(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             temp_path = Path(temp_dir)
@@ -702,7 +706,7 @@ class AudioExportTest(unittest.TestCase):
             service.bootstrap()
             created = service.create_professional_project({"title": "Cancion full song"})
             song_id = str(created["project"]["id"])
-            service.collect_professional_spec(
+            service.professional_songs.collect_spec(
                 song_id,
                 {
                     "message": (
@@ -712,8 +716,8 @@ class AudioExportTest(unittest.TestCase):
                 },
             )
             self.confirm_current_spec(service, song_id)
-            service.generate_professional_lyrics(song_id)
-            service.review_professional_lyrics(song_id)
+            service.professional_songs.generate_lyrics(song_id)
+            service.professional_songs.review_lyrics(song_id)
             service.generate_professional_music_plan(song_id)
             service.generate_professional_midi(song_id)
 
@@ -970,6 +974,9 @@ class AudioExportTest(unittest.TestCase):
 
     def test_acestep_diagnostics_preserve_spanish_lyrics_and_sections(self) -> None:
         args = SimpleNamespace(
+            shift=None,
+            config_path="acestep-v15-turbo",
+            generation_api="direct",
             prompt="prompt.txt",
             lyrics="lyrics.md",
             duration=8,
@@ -999,6 +1006,8 @@ class AudioExportTest(unittest.TestCase):
         self.assertIn("chorus", [section["label"] for section in diagnostics["input"]["sections"]])
         self.assertFalse(diagnostics["parameters"]["instrumental_mode"])
         self.assertTrue(diagnostics["parameters"]["sung_vocal_requested"])
+        self.assertEqual(diagnostics["parameters"]["shift"], 3.0)
+        self.assertEqual(diagnostics["parameters"]["generation_api"], "direct")
 
     def test_local_pipeline_does_not_report_ace_step_ready_when_module_is_missing(self) -> None:
         base_settings = Settings.load()
@@ -1175,6 +1184,28 @@ class AudioExportTest(unittest.TestCase):
 
             self.assertEqual(saved["ui_state"]["last_active_phase"], "music-plan")
             self.assertEqual(loaded["ui_state"]["last_active_phase"], "music-plan")
+            before = loaded["phase_data"]
+            service.save_project_active_phase(set_id, {"phase": "production", "builder_step": "studio"})
+            # Read through a fresh storage instance, rather than in-memory service state.
+            reopened = StorageManager(Path(temp_dir))
+            self.assertEqual(reopened.get_project_ui_state(set_id)["builder_step"], "studio")
+            with self.assertRaises(ValueError):
+                service.save_project_active_phase(set_id, {"phase": "lyrics", "builder_step": "studio"})
+            self.assertEqual(reopened.get_project_ui_state(set_id)["builder_step"], "studio")
+            self.assertEqual(service.get_project(set_id)["phase_data"], before)
+            service.save_project_active_phase(set_id, {"phase": "lyrics"})
+            self.assertEqual(reopened.get_project_ui_state(set_id)["builder_step"], "")
+            service.save_project_active_phase(set_id, {"phase":"production", "builder_step":"studio", "open_panels":{"resources":True,"activity":False}})
+            self.assertEqual(reopened.get_project_ui_state(set_id)["open_panels"], {"resources":True,"activity":False})
+            service.save_project_active_phase(set_id, {"phase":"lyrics"})
+            self.assertTrue(reopened.get_project_ui_state(set_id)["open_panels"]["resources"])
+            with self.assertRaises(ValueError):
+                service.save_project_active_phase(set_id, {"phase":"lyrics","open_panels":{"resources":"true"}})
+            service.save_project_active_phase(set_id, {"phase":"lyrics","open_panels":{}})
+            self.assertEqual(reopened.get_project_ui_state(set_id)["open_panels"], {})
+            self.assertEqual(service.get_project(set_id)["phase_data"], before)
+
+
 
     def test_gemma_assistant_sees_saved_editor_phases_before_production(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
@@ -1240,7 +1271,7 @@ class AudioExportTest(unittest.TestCase):
             self.assertIn("guardar fase:intent", answer["message"])
             self.assertEqual(answer["technical_validation"]["source_of_truth"], "sqlite")
 
-    def test_production_project_created_from_active_set_is_prepared_for_export_tasks(self) -> None:
+    def test_production_project_from_set_requires_review_without_automatic_export_assets(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             storage = StorageManager(Path(temp_dir))
             service = SongService(storage, Settings.load())
@@ -1310,19 +1341,19 @@ class AudioExportTest(unittest.TestCase):
             song_id = str(created_pro["project"]["id"])
             project_dir = Path(temp_dir) / "projects" / song_id
 
-            self.assertEqual(created_pro["project"]["current_phase"], "MIDI_GENERATION")
-            self.assertTrue(created_pro["project"]["spec"]["approved_by_qwen"])
+            self.assertEqual(created_pro["project"]["current_phase"], "SONG_SPEC_COLLECTION")
+            self.assertFalse(created_pro["project"]["spec"]["approved_by_qwen"])
             self.assertTrue((project_dir / "song_spec.json").exists())
             self.assertTrue((project_dir / "lyrics.md").exists())
-            self.assertTrue((project_dir / "lyrics_approved.json").exists())
-            self.assertTrue((project_dir / "music_plan.json").exists())
+            self.assertFalse((project_dir / "lyrics_approved.json").exists())
+            self.assertFalse((project_dir / "music_plan.json").exists())
             self.assertIn("Duerme mi cielo", (project_dir / "lyrics.md").read_text(encoding="utf-8"))
 
-            generated_plan = service.get_professional_music_plan(song_id)
+            with self.assertRaises(ValueError):
+                service.get_professional_music_plan(song_id)
+            self.assertEqual(created_pro["project"]["spec"]["json_spec"]["bpm"], 72)
 
-            self.assertEqual(generated_plan["music_plan"]["bpm"], 72)
-
-    def test_existing_linked_production_project_is_repaired_from_active_set(self) -> None:
+    def test_listing_existing_linked_project_does_not_reseed_or_approve(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             storage = StorageManager(Path(temp_dir))
             service = SongService(storage, Settings.load())
@@ -1352,10 +1383,9 @@ class AudioExportTest(unittest.TestCase):
 
             listed = service.list_professional_projects()
             repaired = next(project for project in listed["projects"] if project["id"] == song_id)
-            generated_plan = service.generate_professional_music_plan(song_id)
-
-            self.assertTrue(repaired["spec"]["approved_by_qwen"])
-            self.assertEqual(generated_plan["music_plan"]["bpm"], 72)
+            with self.assertRaisesRegex(ValueError, "Completa la ficha"):
+                service.generate_professional_music_plan(song_id)
+            self.assertIsNone(repaired.get("spec"))
 
     def test_audio_export_contains_song_mock_context_and_local_pipeline_status(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:

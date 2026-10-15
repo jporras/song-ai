@@ -61,6 +61,10 @@ class AceStepSteeringTest(unittest.TestCase):
             prompt = provider.interpret.call_args.args[0]
             self.assertIn("Contrato ACE-Step", prompt)
             self.assertIn("Proyecto activo: balada en espanol", prompt)
+            self.assertIn("music_tools", prompt)
+            self.assertIn("Sample previo opcional", prompt)
+            self.assertNotIn("sample de audio obligatorio", prompt)
+            self.assertNotIn("ficha confirmada y sample vigente", prompt)
             self.assertEqual(result["engine_steering"]["role"], role)
             self.assertNotIn("prompt_context", result["engine_steering"])
 

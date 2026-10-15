@@ -23,6 +23,9 @@ class AceStepCandidateService:
             project = self.store.get_song_project(song_id)
             if project is None:
                 raise ValueError("Proyecto no encontrado.")
+            owner = str(project.get("user_id", ""))
+            set_id = owner[4:].strip() if owner.startswith("set:") else ""
+            set_fingerprint = self.store.set_generation_fingerprint(set_id) if set_id else None
             item = self.review.latest(song_id)
             if not item or item["effective_status"] != "approved" or request.get("plan_sha256") != item["plan"]["plan_sha256"]:
                 raise ValueError("Revisa y aprueba el plan vigente antes de generar un borrador.")
@@ -39,6 +42,11 @@ class AceStepCandidateService:
             def revalidate():
                 if cancellation_check is not None:
                     cancellation_check()
+                active_project = self.store.get_song_project(song_id)
+                if active_project is None or active_project.get("user_id", "") != project.get("user_id", ""):
+                    raise ValueError("El proyecto cambio de set; solicita un nuevo borrador.")
+                if set_id and self.store.set_generation_fingerprint(set_id) != set_fingerprint:
+                    raise ValueError("El set cambio durante la generacion; genera otro candidato con sus datos vigentes.")
                 current = self.review.latest(song_id)
                 if not current or current["effective_status"] != "approved" or current["plan_id"] != item["plan_id"] or current["plan"]["plan_sha256"] != item["plan"]["plan_sha256"]:
                     raise ValueError("El plan o sus inputs cambiaron; el borrador no se asociara a esa revision.")
@@ -48,9 +56,9 @@ class AceStepCandidateService:
                 payload={"run_id": run_id, "plan_id": item["plan_id"], "task_type": item["plan"]["payload"]["task_type"]})
             try:
                 if cancellation_check is None:
-                    self.runner.run(project, item, profile, directory, output, revalidate)
+                    runtime = self.runner.run(project, item, profile, directory, output, revalidate)
                 else:
-                    self.runner.run(project, item, profile, directory, output, revalidate, cancellation_check=cancellation_check)
+                    runtime = self.runner.run(project, item, profile, directory, output, revalidate, cancellation_check=cancellation_check)
                 evidence = self.audio_inspector(output, directory)
                 fidelity = CandidateFidelityReport().build(item["plan"], evidence)
                 revalidate()
@@ -58,6 +66,8 @@ class AceStepCandidateService:
                     phase="SONG_SPEC_COLLECTION", artifact_type="ace_step_candidate_wav", file_path=str(output),
                     metadata={"plan_id": item["plan_id"], "plan_sha256": item["plan"]["plan_sha256"],
                         "spec_revision_id": item["plan"]["spec_revision_id"], "task_type": item["plan"]["payload"]["task_type"],
+                        "set_id": set_id or None, "set_fingerprint": set_fingerprint,
+                        "runtime_evidence": runtime if isinstance(runtime, dict) else {"status": "pending", "quality_verified": False},
                         "quality_status": "exploratory_candidate", "audio_evidence": evidence,
                         "sample_approved": False, "musical_quality_verified": False, "fidelity_report": fidelity})
             except Exception as error:

@@ -14,6 +14,7 @@ from models.song_set import SongSet
 from models.music_validation import validate_bpm
 from models.generation_inputs import musical_phase_inputs
 from adapters.sample_audio_evidence import inspect_sample_wav
+from adapters.pcm_signal_metrics import measure_pcm_signal
 
 
 class StorageManager:
@@ -69,7 +70,7 @@ class StorageManager:
         )
         return draft_dir
 
-    def list_asset_drafts(self) -> list[dict[str, str]]:
+    def list_asset_drafts(self, include_superseded: bool = False) -> list[dict[str, str]]:
         drafts: list[dict[str, str]] = []
         for asset_type in AssetType:
             parent = self.get_asset_parent_dir(asset_type)
@@ -80,6 +81,8 @@ class StorageManager:
                 if not metadata_path.exists():
                     continue
                 metadata = self.read_json(metadata_path)
+                if not include_superseded and metadata.get("metadata", {}).get("workspace_role") in {"superseded", "fixture"}:
+                    continue
                 manifest_path = draft_dir / "manifest.json"
                 intent_path = draft_dir / "intent.json"
                 manifest = self.read_json(manifest_path) if manifest_path.is_file() else {}
@@ -96,7 +99,7 @@ class StorageManager:
         return drafts
 
     def find_asset_draft(self, asset_id: str) -> dict[str, str] | None:
-        for draft in self.list_asset_drafts():
+        for draft in self.list_asset_drafts(include_superseded=True):
             if draft["asset_id"] == asset_id:
                 return draft
         return None
@@ -434,6 +437,8 @@ class StorageManager:
         sample = self.legacy_song_repository.get_sample(sample_id)
         if sample is None or str(sample.get("set_id", "")) != set_id:
             raise ValueError("El sample no pertenece al set activo.")
+        if sample.get("listening_review", {}).get("decision") == "changes_requested":
+            raise ValueError("Solicitaste cambios para este sample. Revisa el audio y registra una nueva opinion antes de aprobarlo.")
         expected_fingerprint = self.set_generation_fingerprint(set_id)
         if str(sample.get("set_fingerprint", "")) != expected_fingerprint:
             raise ValueError("El sample esta desactualizado. Regeneralo antes de aprobarlo.")
@@ -447,6 +452,7 @@ class StorageManager:
             evidence = self.verify_sample_audio(sample)
             if listened is not True or audio_sha256 != evidence["sha256"]:
                 raise ValueError("Escucha el audio actual y confirma su revision antes de aprobar el sample.")
+            approved["signal_metrics"] = self.verify_sample_signal(sample)
             approved["approved_audio_sha256"] = evidence["sha256"]
             approved["listening_confirmed_at"] = approved["approved_at"]
         sample_path = Path(str(sample["json_path"]))
@@ -463,6 +469,17 @@ class StorageManager:
         )
         return self._materialize_legacy_snapshot(approved, "sample_id")
 
+    def verify_sample_signal(self, sample: dict[str, object]) -> dict[str, object]:
+        evidence = self.verify_sample_audio(sample)
+        persisted = self.legacy_song_repository.get_sample(str(sample["sample_id"]))
+        directory = Path(str(persisted["json_path"])).parent
+        metrics = measure_pcm_signal(directory / evidence["relative_path"], directory)
+        if metrics.get("audio_sha256") != evidence["sha256"] or metrics.get("status") != "measured":
+            raise ValueError("No se pudo verificar la señal de este sample; vuelve a comprobar su audio.")
+        if metrics.get("digital_silence") is True:
+            raise ValueError("El sample contiene solo silencio digital. Genera otro candidato con audio antes de aprobarlo.")
+        return metrics
+
     def list_songs(self) -> list[dict[str, str]]:
         return [
             {"song_id": str(song["song_id"]), "path": str(Path(str(song["json_path"])).parent)}
@@ -478,7 +495,7 @@ class StorageManager:
     def list_songs_for_set(self, set_id: str) -> list[dict[str, object]]:
         return [self._materialize_legacy_snapshot(song, "song_id") for song in self.legacy_song_repository.list_songs(set_id)]
 
-    def save_legacy_sample(self, payload: dict[str, object], sample_path: Path) -> Path:
+    def save_legacy_sample(self, payload: dict[str, object], sample_path: Path, *, event_type: str = "SAMPLE_CREATED", message: str = "Sample creado y registrado en SQLite.") -> Path:
         set_id = str(payload.get("set_id", ""))
         if self.get_indexed_set(set_id) is None:
             raise ValueError("El sample requiere un set valido en SQLite.")
@@ -488,10 +505,10 @@ class StorageManager:
         self.set_repository.create_phase_event(
             project_id=set_id,
             phase_name="SAMPLE",
-            event_type="SAMPLE_CREATED",
+            event_type=event_type,
             source="SYSTEM",
             after={"sample_id": normalized["sample_id"], "status": normalized.get("status", "")},
-            message="Sample creado y registrado en SQLite.",
+            message=message,
         )
         return sample_path.parent
 
@@ -537,7 +554,8 @@ class StorageManager:
         return self.json_config_repository.list_paths()
 
     def list_indexed_sets(self) -> list[dict[str, object]]:
-        return self.set_repository.list_sets()
+        return [item for item in self.set_repository.list_sets()
+                if item.get("compatibility_data", {}).get("workspace_role") != "fixture"]
 
     def get_indexed_set(self, set_id: str) -> dict[str, object] | None:
         return self.set_repository.get_set(set_id)
@@ -645,8 +663,8 @@ class StorageManager:
             error_message=error_message,
         )
 
-    def save_project_ui_state(self, set_id: str, last_active_phase: str) -> dict[str, object] | None:
-        return self.set_repository.save_ui_state(set_id, last_active_phase)
+    def save_project_ui_state(self, set_id: str, last_active_phase: str, builder_step: str = "", open_panels: dict[str, bool] | None = None) -> dict[str, object] | None:
+        return self.set_repository.save_ui_state(set_id, last_active_phase, builder_step, open_panels)
 
     def get_project_ui_state(self, set_id: str) -> dict[str, object]:
         return self.set_repository.get_ui_state(set_id)
@@ -762,13 +780,16 @@ class StorageManager:
     def list_project_events(self, project_id: str | None = None) -> list[dict[str, object]]:
         return self.orchestration_repository.list_project_events(project_id)
 
-    def create_song_project(self, title: str, user_id: str = "local-user") -> dict[str, object]:
+    def create_song_project(self, title: str, user_id: str = "local-user", reuse_linked: bool = False) -> dict[str, object]:
         from models.song_workflow import SongProject
 
-        return self.song_workflow_repository.create_project(SongProject.create(title=title, user_id=user_id))
+        return self.song_workflow_repository.create_project(SongProject.create(title=title, user_id=user_id), reuse_linked=reuse_linked)
 
     def list_song_projects(self) -> list[dict[str, object]]:
-        return self.song_workflow_repository.list_projects()
+        fixtures = {item["set_id"] for item in self.set_repository.list_sets()
+                    if item.get("compatibility_data", {}).get("workspace_role") == "fixture"}
+        return [item for item in self.song_workflow_repository.list_projects()
+                if item.get("user_id") not in {f"set:{key}" for key in fixtures}]
 
     def get_song_project(self, song_id: str) -> dict[str, object] | None:
         return self.song_workflow_repository.get_project(song_id)
@@ -787,6 +808,9 @@ class StorageManager:
     def list_song_project_events(self, song_id: str) -> list[dict[str, object]]:
         return self.song_workflow_repository.list_events(song_id)
 
+    def update_song_artifact_metadata(self, artifact_id: str, metadata: dict[str, object]) -> None:
+        self.song_workflow_repository.update_artifact_metadata(artifact_id, metadata)
+
     def update_song_project_phase(self, song_id: str, phase: str, status: str) -> dict[str, object]:
         return self.song_workflow_repository.update_project_phase(song_id, phase, status)
 
@@ -800,6 +824,7 @@ class StorageManager:
         technical_review_mode: str = "rule_validation",
         user_confirmation_status: str = "not_requested",
         expected_revision_id: str | None = None,
+        deterministic_valid: bool | None = None,
     ) -> dict[str, object]:
         return self.song_workflow_repository.upsert_spec(
             song_id,
@@ -810,6 +835,7 @@ class StorageManager:
             technical_review_mode,
             user_confirmation_status,
             expected_revision_id,
+            deterministic_valid,
         )
 
     def list_song_spec_revisions(self, song_id: str) -> list[dict[str, object]]:

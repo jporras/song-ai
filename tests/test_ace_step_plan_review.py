@@ -16,6 +16,24 @@ from tests import test_ace_step_plan_compiler
 
 
 class PlanReviewTest(unittest.TestCase):
+    def test_selected_asset_content_change_invalidates_linked_plan_in_sqlite(self):
+        from application.song_service import SongService
+        from tests.test_set_validation import SetValidationTest
+        service = SongService(self.store)
+        service.bootstrap()
+        set_id = SetValidationTest().create_valid_set(service).name
+        song_id = self.store.create_song_project("Vinculado", f"set:{set_id}")["id"]
+        self.store.upsert_song_spec(song_id, self.spec, True, [], user_confirmation_status="confirmed")
+        item = self.review.prepare(song_id, "Letra")
+        request = {"plan_sha256": item["plan"]["plan_sha256"], "lyrics_confirmed": True}
+        self.review.approve(song_id, item["plan_id"], request)
+        song_set = self.store.get_indexed_set(set_id)
+        self.store.update_lyrics_markdown(song_set["lyrics_id"], "Nueva letra elegida")
+        self.assertEqual(self.review.latest(song_id)["effective_status"], "stale")
+        with self.assertRaises(ValueError):
+            self.review.approve(song_id, item["plan_id"], request)
+        self.assertEqual(self.repo.get(song_id, item["plan_id"])["status"], "approved")
+
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.folder.cleanup)
@@ -96,6 +114,10 @@ class PlanReviewTest(unittest.TestCase):
                                   user_confirmation_status="confirmed")
         review = ReviewAceStepPlan(PreviewAceStepPlan(self.store, AceStepSourceAudio(self.store.data_dir)), self.repo)
         item = review.prepare(self.song_id, "Letra")
+        trace = next(entry for entry in item['plan']['input_trace']['entries'] if entry['target'] == 'src_audio')
+        self.assertEqual(trace['verification_status'], 'verified_project_audio_artifact')
+        self.assertEqual(trace['audio_sha256'], item['plan']['source_audio_evidence']['sha256'])
+
         write_audio(audio, 100)
         self.assertEqual(review.latest(self.song_id)["effective_status"], "stale")
         with self.assertRaisesRegex(ValueError, "inputs"):

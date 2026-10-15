@@ -1,0 +1,123 @@
+:root {
+  --color-primary-rgb:157,131,247;
+  --color-surface-rgb:24,29,40;
+  --color-background:#10131B; --color-surface:#181D28;
+  --color-surface-secondary:#202735; --color-surface-elevated:#293243;
+  --color-primary:#9D83F7; --color-primary-hover:#B29BFF; --color-primary-active:#8B6CE6;
+  --color-secondary:#82D3E8; --color-text-primary:#F1F4FA;
+  --color-text-secondary:#B6C0D2; --color-text-muted:#A0ACC1;
+  --color-text-on-primary:#10131B; --color-border:#343D4F;
+  --color-border-strong:#7D8AA3; --color-success:#79D9A0;
+  --color-warning:#F4C66A; --color-error:#FF909C; --color-info:#90C6FF;
+  --color-ai:#B79FFF; --color-ai-surface:#251F36; --color-ai-border:#9980CF;
+  --color-focus:#CEBEFF; --color-disabled-surface:#252C3A;
+  --color-disabled-text:#A0ACC1; --color-disabled-border:#4B576D;
+  --color-selected-surface:#2D2542; --color-generation-surface:#172E38;
+  --color-overlay:#10131BCC;
+  --bg:var(--color-background); --panel:var(--color-surface);
+  --sidebar:var(--color-surface-secondary); --border:var(--color-border);
+  --text:var(--color-text-primary); --muted:var(--color-text-secondary);
+  --accent:var(--color-primary); --accent-soft:var(--color-selected-surface);
+  --ready:var(--color-success); --dirty:var(--color-warning); --outdated:var(--color-warning);
+  --processing:var(--color-secondary); --error:var(--color-error);
+  font-family:"Segoe UI",system-ui,-apple-system,BlinkMacSystemFont,sans-serif;
+}
+body {background:var(--color-background)}
+button,input,select,textarea {min-height:44px}
+button {background:var(--color-surface);color:var(--color-text-primary)}
+button.primary {background:var(--color-primary);color:var(--color-text-on-primary);border-color:var(--color-primary)}
+button.primary:hover:not(:disabled) {background:var(--color-primary-hover);color:var(--color-text-on-primary)}
+button.primary:hover:not(:disabled) {border-color:var(--color-primary-hover)}
+button.primary:active:not(:disabled) {background:var(--color-primary-active)}
+button:disabled,input:disabled,select:disabled,textarea:disabled {
+  opacity:1;background:var(--color-disabled-surface);color:var(--color-disabled-text);border-color:var(--color-disabled-border);
+}
+input,select,textarea {background:var(--color-surface);color:var(--color-text-primary);border-color:var(--color-border-strong)}
+::placeholder {color:var(--color-text-muted);opacity:1}
+/* Keep native HTML semantics; define visible indicators across browser engines. */
+input[type=range] {appearance:none;min-height:44px;background:transparent}
+input[type=range]::-webkit-slider-runnable-track {height:6px;background:var(--color-border-strong);border-radius:999px}
+input[type=range]::-moz-range-track {height:6px;background:var(--color-border-strong);border-radius:999px}
+input[type=range]::-webkit-slider-thumb {appearance:none;width:20px;height:20px;margin-top:-7px;background:var(--color-primary);border:2px solid var(--color-background);border-radius:50%;box-shadow:none}
+input[type=range]::-moz-range-thumb {width:16px;height:16px;background:var(--color-primary);border:2px solid var(--color-background);border-radius:50%;box-shadow:none}
+input[type=checkbox],input[type=radio] {appearance:none;display:inline-block;vertical-align:middle;width:24px;height:24px;min-height:24px;flex-shrink:0;border:2px solid var(--color-border-strong);background:var(--color-surface);padding:0;cursor:pointer}
+input[type=checkbox] {border-radius:4px}
+input[type=radio] {border-radius:50%}
+input[type=checkbox]:checked,input[type=radio]:checked {background-color:var(--color-primary);border-color:var(--color-primary)}
+input[type=checkbox]:checked {background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m5 12 4 4 10-10' fill='none' stroke='%2310131B' stroke-width='3'/%3E%3C/svg%3E");background-size:100% 100%}
+input[type=radio]:checked {background-image:radial-gradient(circle,var(--color-text-on-primary) 0 4px,transparent 4.5px)}
+@media(forced-colors:active) {input[type=checkbox],input[type=radio],input[type=range] {appearance:auto;background-image:none!important}}
+:focus-visible {outline:2px solid var(--color-focus);outline-offset:3px}
+summary {min-height:44px;cursor:pointer;padding-block:10px}
+.panel,.side-card {background:var(--color-surface);border-color:var(--color-border)}
+.gemma-footer {background:var(--color-ai-surface);border-color:var(--color-ai-border)}
+.modal-backdrop {background:var(--color-overlay)}
+.builder-flow {padding:20px;border:1px solid var(--color-border);border-radius:16px;background:var(--color-surface);margin-bottom:24px}
+.builder-steps {display:flex;flex-wrap:wrap;gap:8px;list-style:none;padding:0;margin:0 0 16px}
+.builder-steps button {text-align:left;border-color:var(--color-border-strong)}
+.builder-steps button[aria-current=step] {background:var(--color-selected-surface);border-color:var(--color-primary)}
+.builder-flow p {color:var(--color-text-secondary)}
+.builder-actions {display:flex;gap:12px;flex-wrap:wrap}
+.section-timeline {background:var(--color-surface-secondary);padding:16px;border-radius:12px;margin-block:16px}
+.section-timeline ol {display:flex;gap:10px;overflow-x:auto;padding:0 0 8px;list-style:none;max-width:100%}
+.section-timeline li {flex:0 0 auto}
+.lyric-card {scroll-margin-block:24px}
+dialog.modal {color:var(--color-text-primary);background:var(--color-surface-elevated);border:1px solid var(--color-border-strong);max-width:calc(100vw - 32px)}
+dialog::backdrop {background:var(--color-overlay)}
+dialog.modal .eyebrow {color:var(--color-text-secondary)}
+@media (max-width:640px) {.builder-steps {display:grid;grid-template-columns:1fr 1fr}.builder-flow{padding:14px}.builder-steps button{width:100%}}
+@media (prefers-reduced-motion:reduce) {*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+@media (forced-colors:active) {button,input,select,textarea{border:1px solid ButtonText}:focus-visible{outline-color:Highlight}}
+/* Builder summary uses persisted status, not an estimate of audio quality. */
+.builder-project-summary { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.builder-status-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 12px; list-style: none; padding: 0; }
+.builder-status-list li { border: 1px solid var(--color-border); border-radius: 8px; padding: 12px; min-width: 0; }
+.builder-status-list strong, .builder-status-list span { display: block; }
+.decision-value { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.comparison-scroll { max-width: 100%; overflow-x: auto; }
+.comparison-scroll table { width: 100%; min-width: 480px; }
+.workspace, .production-view, .specification-panel, .specification-groups, .specification-group, .specification-fields, .comparison-scroll { min-width: 0; }
+.specification-groups { grid-template-columns: minmax(0, 1fr); }
+.specification-groups > section { min-width: 0; }
+
+.audio-waveform {min-width:0;margin-block:1rem;padding:1rem;border:1px solid var(--color-border);border-radius:12px;background:var(--color-surface-secondary)}
+.audio-waveform svg {display:block;width:100%;height:120px;margin-block:1rem;background:var(--color-background)}
+.waveform-axis {stroke:var(--color-border-strong)}
+.waveform-peak {stroke:var(--color-secondary);stroke-width:2}
+.waveform-selection {fill:var(--color-primary);fill-opacity:.22}
+.waveform-interval {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
+.waveform-interval label,.waveform-interval input {min-width:0;width:100%}
+@media(max-width:600px){.waveform-interval {grid-template-columns:minmax(0,1fr)}}
+
+.production-flow-panel,.flow-guide,.flow-step,.flow-step > div,.studio-panel {min-width:0}
+.flow-guide {grid-template-columns:minmax(0,1fr)}
+.production-view audio {width:100%;max-width:100%;min-width:0}
+
+.production-view {grid-template-columns:minmax(0,1fr)}
+.production-view .panel {min-width:0}
+.production-view button {white-space:normal;overflow-wrap:anywhere}
+@media(max-width:600px){.production-view .section-head,.production-view .flow-step {grid-template-columns:minmax(0,1fr)}.production-view .section-head > div {min-width:0}.production-view .panel {overflow-wrap:anywhere}}
+
+.skip-link {position:fixed;top:8px;left:8px;z-index:10000;padding:12px;background:var(--color-primary);color:var(--color-text-on-primary);transform:translateY(-200%)}
+.skip-link:focus {transform:translateY(0)}
+dialog.modal::backdrop {background:var(--color-overlay)}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after {scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+.studio-candidate-context {padding:1rem;border:1px solid var(--color-border);border-radius:12px;margin-block:1rem;min-width:0}
+.studio-candidate-context pre {white-space:pre-wrap;overflow-wrap:anywhere}
+
+.workspace {grid-template-columns:minmax(0,1fr)}
+.workspace > *, .view,.view > *, .panel,.panel > *, .creation-panel, .creation-panel > *, .lyric-card, .lyric-card > * {min-width:0}
+.workspace input,.workspace textarea,.workspace select {min-width:0;max-width:100%}
+.workspace button {white-space:normal;overflow-wrap:anywhere}
+@media(max-width:640px){.workspace .grid,.workspace .section-head,.workspace .creation-panel,.workspace .lyric-card header {grid-template-columns:minmax(0,1fr)}.workspace .panel {overflow-wrap:anywhere}.waveform {gap:2px}.waveform span {min-width:0}}
+
+@media(max-width:640px){.workspace .hero-strip,.workspace .intent-brief,.workspace .accordion-grid,.workspace .slider-grid {grid-template-columns:minmax(0,1fr)}.workspace .hero-strip > div,.workspace .intent-brief > div {min-width:0;overflow-wrap:anywhere}.workspace input[type=range] {width:100%;margin-inline:0}.workspace .accordion-grid > * {min-width:0}}
+
+.builder-context {display:flex;flex-wrap:wrap;gap:.5rem 1rem;margin-bottom:1rem}
+.builder-context span {color:var(--color-text-secondary)}
+
+/* Keep focused content above the fixed assistant, including enlarged text. */
+html {scroll-padding-bottom:calc(var(--copilot-height,300px) + 24px)}
+.workspace {padding-bottom:max(300px,calc(var(--copilot-height,300px) + 32px))}
+.gemma-footer {max-height:50vh;overflow-y:auto}

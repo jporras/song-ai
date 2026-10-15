@@ -7,6 +7,9 @@ venv/
 docs/*
 !docs/
 !docs/*.md
+!docs/sprint_progress.json
+!docs/steering/
+!docs/steering/*.md
 data/
 frontend/node_modules/
 frontend/dist/

@@ -11,6 +11,12 @@ class LyricsReviewService:
     def __init__(self, storage: StorageManager) -> None:
         self.storage = storage
 
+    def evaluate(self, spec: dict, lyrics_payload: dict) -> dict:
+        sections = [dict(section) for section in lyrics_payload.get('sections', [])]
+        issues = self._issues(spec, sections)
+        return {'issues':issues, 'metrics':self._metrics(sections),
+                'recommendations':self._recommendations(issues)}
+
     def review(self, song_id: str, spec: dict[str, object], lyrics_payload: dict[str, object]) -> dict[str, object]:
         sections = [dict(section) for section in list(lyrics_payload.get("sections", []))]
         issues = self._issues(spec, sections)

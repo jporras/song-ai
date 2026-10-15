@@ -1,5 +1,9 @@
 # Revisión del flujo para una persona sin experiencia musical
 
+## Decisiones vigentes del usuario — 2026-10-07
+
+[Contrato de decisiones](SONG_BUILDER_APPROVED_DECISIONS_20261007.md): **sample previo opcional, sin bloqueo de generación completa**; instrumental como intención soportada con ejecución condicionada a validación; dirección por sección en MusicSpec aunque su traducción tenga límites; referencia audio opcional/avanzada, sin clonación; perfil ACE-Step automático por defecto y manual disponible para cualquiera. Esta decisión sustituye requisitos anteriores incompatibles en este documento. Las descripciones de pruebas/gates del árbol anterior son históricas; retirar el bloqueo de sample sigue pendiente de implementación y regresión. Mantener set válido, request confirmado y evaluación/aceptación de audio separadas.
+
 Fecha: 2026-10-03. Alcance: revisión documental y del código visible; no se hizo una prueba de usabilidad con personas ni se generó audio real. Las propuestas de esta página están **pendientes de implementación**.
 
 El contrato complementario de [calidad de audio y voz personalizada](AMATEUR_AUDIO_VOICE_STEERING.md) define controles técnicos, revisión por escucha, sample representativo y alcance futuro para usar una voz de referencia. No existe todavía una opción de copiar una voz humana en el producto. Las prioridades de ambos contratos se integran en [ROADMAPP.md](ROADMAPP.md).

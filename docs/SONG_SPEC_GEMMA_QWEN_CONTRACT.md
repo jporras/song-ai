@@ -1,5 +1,11 @@
 # Contrato: especificación completa de canción con Gemma y Qwen
 
+## Decisiones vigentes del usuario — 2026-10-07
+
+[Contrato de decisiones](SONG_BUILDER_APPROVED_DECISIONS_20261007.md): **sample previo opcional, sin bloqueo de generación completa**; instrumental como intención soportada con ejecución condicionada a validación; dirección por sección en MusicSpec aunque su traducción tenga límites; referencia audio opcional/avanzada, sin clonación; perfil ACE-Step automático por defecto y manual disponible para cualquiera. Esta decisión sustituye requisitos anteriores incompatibles en este documento. Las descripciones de pruebas/gates del árbol anterior son históricas; retirar el bloqueo de sample sigue pendiente de implementación y regresión. Mantener set válido, request confirmado y evaluación/aceptación de audio separadas.
+
+Criterio transversal incorporado el 2026-10-07: [AC-ACE-USER-01](ACE_STEP_USER_INPUT_ACCEPTANCE.md). Por cada input ACE-Step conectado, probar que USER llega desde MusicSpec al request sin modificación no autorizada y registrar transformaciones. Gate de compilación/fidelidad del pedido, independiente de aceptación del audio; pruebas pendientes.
+
 Fecha: 2026-10-03. Estado: **implementación iniciada el 2026-10-04**. Este documento define el trabajo conjunto del assistant creativo y el director técnico para preservar los deseos del usuario y producir una especificación ejecutable. Complementa [el recorrido amateur](AMATEUR_USER_FLOW_REVIEW.md) y [los criterios de audio y voz](AMATEUR_AUDIO_VOICE_STEERING.md); no sustituye sus criterios de calidad.
 
 Entregas iniciales: existe historial inmutable `song_spec_revisions`, endpoint de consulta de ficha/revisiones, catálogo backend versionado, snapshots `song_spec.json`/`song_spec.md` y vista de cobertura en Production. La compilación registra task/model run/evento para la revisión técnica y diferencia provider real, mock y fallback. Los campos iniciales conservan procedencia básica. El usuario puede confirmar la revisión activa y se rechaza una confirmación obsoleta. La revisión completa permanece en la fase de ficha hasta confirmarse; backend y UI bloquean las fases profesionales posteriores mientras siga pendiente. Quedan pendientes la inferencia real de Gemma en esta ruta, respuesta estructurada de Qwen que pueda proponer cambios, procedencia por requisito/decisión, editor completo y gates dependientes del sample o de cambios creativos posteriores.
@@ -11,6 +17,8 @@ Entregas iniciales: existe historial inmutable `song_spec_revisions`, endpoint d
 Se incorpora el adjunto «Implementar un sistema de fidelidad a la intención musical en Song-AI». Su alcance es integrar los seis modos en el recorrido completo, con entradas revisables y trazabilidad del resultado. `MusicSpec` designa la especificación versionada existente en SQLite (`song_specs`/`song_spec_revisions`); no crear un archivo o servicio paralelo como fuente activa. `ACEPlan` evoluciona el compilador existente. La aprobación de especificación, la del plan, la del sample y la del audio final son decisiones diferentes.
 
 #### Diagnóstico del código actual
+
+Actualizacion 2026-10-04: la tabla siguiente conserva el diagnostico inicial. El estado vigente por fase esta en `AI_MUSIC_STUDIO_SPRINT_PLAN.md`, seccion S06. Ya existen editor por modo, planes persistidos/aprobados, runner exploratorio para seis tareas, fuente verificada, huella del set, propuestas de correccion y contexto persistido para asistencia. Sigue pendiente la respuesta musical estructurada de Qwen con propuestas por requisito, audio real, representatividad y aceptacion amateur; esos avances no demuestran inferencia o calidad.
 
 | Componente existente | Reutilización y brecha |
 | --- | --- |
@@ -192,3 +200,15 @@ El documento completo permite dirigir y auditar calidad y fidelidad; ningún LLM
 | SP-09 | P1 | Interfaz de configuración completa sincronizada con IA y especificación. | Todo campo editable tiene control accesible; formularios y conversación convergen en la misma revisión. Propuesta no guardada, conflicto de edición, fallo de persistencia y respuesta tardía se resuelven sin pérdida. El recorrido se completa también con controles visibles sin depender exclusivamente del chat. |
 
 Fixtures/mocks prueban estructura y estados; casos de inferencia real prueban extracción y compilación con los mismos briefs y versiones de modelos registrados. Incluir exclusiones, nombres/acentos, propuestas contradictorias, cambio de deseos, dos proyectos, respuesta tardía y provider incapaz. No medir fidelidad solo por tener campos llenos. Los resultados de esta evaluación deben quedar en README con límites y pendientes.
+
+## Propuesta técnica local revisable — 2026-10-07
+
+`POST /api/pro/projects/{song_id}/spec/proposal` registra `compile_song_spec` en el orquestador y ejecuta el provider técnico desde la ficha persistida, su revisión y los 49 campos del catálogo. La salida llama.cpp se restringe mediante JSON Schema; la aplicación comprueba cobertura, tipos, opciones, valores vigentes, faltantes obligatorios y compatibilidad del modo/checkpoint. Los campos informativos y referencias se conservan: el modelo no inventa rutas, artefactos ni perfiles vocales.
+
+Cuando un handoff contiene `candidate_plan` o `current_spec` con modo/configuración, adjunta `engine_input_validation` desde el mismo contrato determinista de tareas. Se persiste antes de la inferencia y acompaña el resultado sin mutar las entradas originales. Una comprobación estructural no verifica el archivo fuente, carga, generación ni audio; la opinión textual del modelo sigue marcada como no verificada. Qwen recibe el bloqueo concreto en lugar de inferirlo solamente de documentación general.
+
+La propuesta y su steering se guardan como resultado de task/model run en SQLite, con procedencia `qwen_proposal`, revisión de origen y confirmación pendiente. No se reemplaza `song_specs`, no se confirma por el usuario y no se aprueba audio. Una compilación inválida o un error del provider deja la task fallida y conserva la ficha; un fallback no se presenta como compilación real.
+
+Production ofrece preparación explícita, lectura por familias con etiquetas del catálogo y documento técnico desplegable. `GET /api/pro/projects/{song_id}/spec` recupera únicamente una propuesta real, validada y correspondiente al proyecto y revisión actuales. Respuestas de otro proyecto o revisión antigua no se aplican. Los cambios conversacionales se revisan antes de usarlos en el formulario y requieren guardado explícito.
+
+Cobertura de campos no equivale a decisiones completas: `null` puede indicar un dato pendiente o no aplicable. Opcionales delegados y voz personalizada ausente no son por sí solos conflictos. Un review de Qwen sigue separado de la validación determinista, la revisión creativa del usuario y la escucha del audio. La evidencia real y sus límites se registran en README.

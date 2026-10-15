@@ -65,14 +65,8 @@ class VoiceConversionService:
         }
 
     def get(self, song_id: str) -> dict[str, object]:
-        converted_path = self.storage.data_dir / "projects" / song_id / "vocals_converted.wav"
-        if not converted_path.exists():
-            raise ValueError("Este proyecto aun no tiene vocals_converted.wav.")
-        return {
-            "song_id": song_id,
-            "vocals_converted": str(converted_path),
-            "size_bytes": converted_path.stat().st_size,
-        }
+        from application.local_production_artifact_queries import LocalProductionArtifactQueries
+        return LocalProductionArtifactQueries(self.storage).get(song_id, 'vocals_converted')
 
     def _run_command(self, project_dir: Path, vocals_path: Path, converted_path: Path, log_path: Path) -> None:
         command = self.command_template.format(

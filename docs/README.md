@@ -1,10 +1,22 @@
 # Mapa de documentación
 
+Estado vigente del sprint al 2026-10-15: [handoff de pendientes técnicos y aceptación](PENDING_SPRINT_HANDOFF_20261015.md), [avance calculado](SPRINT_PROGRESS.md) y [lote por complejidad](SPRINT_VERIFICATION_BATCH_20261015.md). Los apartados históricos de este índice se deben leer con ese estado vigente.
+
 Este índice indica qué documento consultar antes de cambiar Song AI. El README de la raíz describe el estado ejecutable y cómo iniciarlo; `AGENTS.md` fija las reglas del proyecto. Los planes y reportes fechados no demuestran por sí solos que una función esté implementada: hay que comprobar el código y las pruebas del árbol actual.
 
 ## Documentos de trabajo
 
-El backlog operativo del estudio editable y del copilot bidireccional está en [AI_MUSIC_STUDIO_SPRINT_PLAN.md](AI_MUSIC_STUDIO_SPRINT_PLAN.md). Incluye auditoría estática, arquitectura incremental, S00–S18, dependencias, cobertura funcional y aceptación. La nueva filosofía establece una interfaz común sin ocultar controles por experiencia; las capacidades reales determinan disponibilidad.
+Decisiones explícitas vigentes: [sample opcional, instrumental condicionado, dirección por sección, referencia opcional y perfil automático con ajuste manual accesible](SONG_BUILDER_APPROVED_DECISIONS_20261007.md). Sustituyen reglas anteriores incompatibles. Retirar el gate obligatorio de sample en código sigue pendiente.
+
+Criterio de aceptación transversal: [AC-ACE-USER-01](ACE_STEP_USER_INPUT_ACCEPTANCE.md), conservación de decisiones USER hasta request y trazabilidad de transformaciones por input conectado. Pruebas pendientes.
+
+El backlog operativo del estudio editable y del copilot bidireccional está en [AI_MUSIC_STUDIO_SPRINT_PLAN.md](AI_MUSIC_STUDIO_SPRINT_PLAN.md). Incluye auditoría estática, arquitectura incremental, S00–S18, dependencias, cobertura funcional y aceptación. Una interfaz común asistida para todas las personas, sin niveles de experiencia. Controles musicales visibles con etiquetas claras y tooltips que explican significado, efecto y ejemplo; ayuda disponible por teclado y toque. Los ajustes adicionales se agrupan por tarea/relevancia y están accesibles para cualquiera. La IA recomienda y explica sin reemplazar decisiones USER; la misma MusicSpec alimenta controles y chat. Las capacidades reales determinan disponibilidad.
+
+Análisis previo a implementación: [Song Builder orientado a ACE-Step](SONG_BUILDER_ACE_STEP_ANALYSIS_20261007.md). Incluye estado comprobado, problemas, arquitectura, esquema, perfil de capacidades, recorrido, migración y fases alineadas con los sprints. La propuesta todavía no está implementada ni validada con usuarios amateur.
+
+Diseño de interacción para revisión del usuario: [Arquitectura UX/UI del Song Builder](SONG_BUILDER_UX_ARCHITECTURE_20261007.md), apartados A–M. Define creación Custom/text2music, matriz de inputs humanos/técnicos, autoridad, pantallas de la interfaz común asistida, preguntas dinámicas, preflight y Studio mínimo. Complementa el análisis técnico; implementación pendiente de autorización, sin cambio de framework.
+
+Capa visual para revisión: [Design System propuesto A–Q](SONG_AI_DESIGN_SYSTEM_PROPOSAL_20261007.md), con auditoría estática, tokens Dark/Light, 66 pares de contraste calculados, componentes, estados, responsive y migración. `DESIGN_SYSTEM.md` mantiene las reglas actuales; la propuesta no está implementada. Los artefactos de `docs/design-system/` son documentos de diseño y medición, no tokens importados por la app.
 
 | Documento | Para qué sirve | Estado y límite |
 | --- | --- | --- |

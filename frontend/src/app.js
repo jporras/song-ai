@@ -1,7 +1,31 @@
+import { validPhaseRanges } from "./phase_range_validation.js";
 import { createApp } from "vue";
+import { emotionalControls, validEmotionalValues } from "./emotional_controls.js";
 import { apiUrl, readApiPayload } from "./api_client.js";
 import { productionActions } from "./production_actions.js";
+import { capabilityControls } from "./ace_capability_controls.js";
+import { proposalContext, proposalContextMatches } from "./assistant_proposal_context.js";
+import { appendAppliedProposal } from "./assistant_proposal_queue.js";
 import "./styles.css";
+import "./design_system.css";
+import { builderSteps, phaseToOpenAfterLoad } from "./song_builder_flow.js";
+import { BuilderShell } from "./builder_shell.js";
+import { StudioDelivery, studioDeliveryState } from "./studio_delivery.js";
+import { SpecRevisionHistory } from "./spec_revision_history.js";
+import { lyricsReplacementBlockReason } from "./lyrics_replacement_policy.js";
+import { protectedLinesUnchanged } from "./lyric_line_protection.js";
+import { canApplySectionProposal } from "./lyric_section_proposal.js";
+import { builderProjectStatus } from "./builder_project_status.js";
+import { BuilderProjectSummary } from "./builder_project_summary.js";
+import { DecisionCard } from "./decision_card.js";
+import { GenerationPreflight, generationPreflight } from "./generation_preflight.js";
+import { GenerationStatus } from "./generation_status.js";
+import { ListeningDecision, ListeningReviewSummary } from "./listening_decision.js";
+import { PlanRequestReview } from "./plan_request_review.js";
+import { CandidateComparisonView } from "./candidate_comparison_view.js";
+import { AudioWaveform } from "./audio_waveform.js";
+import { StudioCandidateContext } from "./studio_candidate_context.js";
+import { containDialogTab, syncDialog } from "./dialog_keyboard.js";
 
 const ROUTE_BY_TAB = {
   library: "/library",
@@ -62,6 +86,7 @@ function cloneJson(value) {
 }
 
 createApp({
+  components: {SpecRevisionHistory, StudioDelivery, BuilderShell, BuilderProjectSummary, DecisionCard, GenerationPreflight, GenerationStatus, ListeningDecision, ListeningReviewSummary, PlanRequestReview, CandidateComparisonView, AudioWaveform, StudioCandidateContext},
   data() {
     return {
       activeTab: "library",
@@ -251,19 +276,64 @@ createApp({
       pendingActiveProjectId: "",
       professionalProjects: [],
       professionalSpecification: { spec: null, catalog: { groups: [], summary: {} }, revisions: [] },
+      specRestoreBusy: false,
       confirmingSpecification: false,
       aceConfigurationDraft: null,
       aceConfigurationRevision: "",
       savingAceConfiguration: false,
+      legacyMigrationPreview: null,
+      legacyMigrationBusy: false,
+      aceConfigurationOriginalDraft: null,
       acePlanReview: null,
+      specProposal: null,
+      specProposalBusy: false,
+      specProposalError: "",
+      assistantPendingPatch: null,
+      fullLyricsProposal: null,
+      appliedFullLyricsProposal: null,
+      fullLyricsBusy: false,
+      assistantAppliedPatches: [],
+      builderSteps,
+      emotionalControls,
+      builderStepId: '',
+      uiPanels: {},
+      uiPanelsProjectId: '',
+      uiStateSaveQueue: Promise.resolve(),
+      pendingBuilderStep: null,
+      pendingLyricDeletion: null,
+      unlockedLyricSectionIds: [],
+      unlockedLyricLineIds: [],
+      unlockedLyricDirectionIds: [],
+      lyricSectionProposals: {},
       acePlanLyricsDraft: null,
       acePlanLyricsConfirmed: false,
       acePlanBusy: false,
       acePlanProjectId: "",
       aceCandidateJob: null,
+      aceCandidateHistory: [],
+      aceComparisonTaskId: "",
+      sourceImportBusy: false,
+      sourceImportAuthorized: false,
       aceCandidateBusy: false,
+      aceCandidateRequest: null,
       aceCandidateAuthorized: false,
       aceCandidateTimer: null,
+      candidateListeningConfirmed: false,
+      candidateListeningDecision: "",
+      candidateListeningNotes: "",
+      candidateListeningCriteria: {},
+      sampleRepresentativityReport: null,
+      sampleFeedbackDecision: "",
+      sampleFeedbackNotes: "",
+      sampleListeningReviewView: null,
+      candidateListeningReview: null,
+      candidateCorrection: { scope: "", start: null, end: null, target_tracks: [], instruction: "" },
+      candidateCorrectionProposal: null,
+      aceTrackOptions: [
+        ["vocals", "Voz principal"], ["backing_vocals", "Coros"], ["drums", "Bateria"], ["bass", "Bajo"],
+        ["guitar", "Guitarra"], ["keyboard", "Teclado"], ["percussion", "Percusion"], ["strings", "Cuerdas"],
+        ["synth", "Sintetizador"], ["fx", "Efectos"], ["brass", "Metales"], ["woodwinds", "Vientos de madera"],
+      ].map(([value, label]) => ({ value, label })),
       sampleCheckpointRunning: false,
       sampleListeningConfirmation: "",
       productionProjectId: "",
@@ -314,6 +384,29 @@ createApp({
     };
   },
   computed: {
+    studioDeliveryState() {
+      return studioDeliveryState({projectId:this.activeProjectId,sample:this.activeSampleCheckpoint,
+        sampleAudio:this.sampleAudioUrl,running:this.localFinalRunning,canGenerate:this.canGenerateLocalFinalSong,
+        finalMessage:this.localFinalStatusMessage,exports:this.exportables,
+        candidateAudio:this.aceCandidateAudioUrl(),candidateRunning:['pending','running','cancelling'].includes(this.aceCandidateJob?.status)});
+    },
+    generationPreflightState() {
+      return generationPreflight(this.activeProject,this.acePlanReview,this.resourceStatus,this.dirty);
+    },
+    builderSummaryStatus() {
+      return builderProjectStatus(this.activeProject, this.acePlanReview, this.dirty ? this.dirtyPhase : '');
+    },
+    lyricsReplacementBlocked() {
+      return lyricsReplacementBlockReason(this.lyricSections, [...this.unlockedLyricSectionIds, ...this.unlockedLyricLineIds, ...this.unlockedLyricDirectionIds]);
+    },
+    currentBuilderStep() {
+      const selected = builderSteps.find(step => step.id === this.builderStepId && step.tab === this.activeTab);
+      return selected || builderSteps.find(step => step.tab === this.activeTab)
+        || builderSteps.find(step => step.id === (this.activeTab === 'voice' ? 'sound' : 'composition'));
+    },
+    nextBuilderStep() {
+      return builderSteps[builderSteps.findIndex(step => step.id === this.currentBuilderStep?.id) + 1] || null;
+    },
     currentTab() {
       return this.tabs.find((tab) => tab.id === this.activeTab) || this.tabs[0];
     },
@@ -336,7 +429,7 @@ createApp({
       return byId;
     },
     productionGlobalStatus() {
-      if (this.exportManifest?.artifacts?.length) return "Export listo";
+      if (this.exportManifest?.song_id === this.productionProjectId && this.exportManifest?.quality?.export_ready === true) return "Export listo";
       if (this.activeProfessionalProject?.current_phase) return `${this.activeProfessionalProject.current_phase} / ${this.activeProfessionalProject.status}`;
       if (this.activeProjectId) return "Proyecto cargado, Production pendiente";
       return "Sin proyecto activo";
@@ -349,6 +442,9 @@ createApp({
         requiredDecided: Number(summary.required_decided || 0),
         required: Number(summary.required || 0),
       };
+    },
+    aceCapabilityControls() {
+      return capabilityControls(this.professionalSpecification?.catalog, this.aceConfigurationDraft || {});
     },
     specificationRevision() {
       return this.professionalSpecification?.spec?.revision || null;
@@ -367,10 +463,10 @@ createApp({
     },
     sampleCheckpointStatus() {
       const sample = this.activeSampleCheckpoint;
-      if (!sample) return { state: "missing", title: "Sample pendiente", detail: "Crea un fragmento del set activo antes de generar la canción completa.", ready: false };
-      if (sample.freshness_status === "stale") return { state: "stale", title: "Sample desactualizado", detail: "Cambió la canción desde la última revisión. Regenera el sample.", ready: false };
+      if (!sample) return { state: "missing", title: "Sample opcional", detail: "Puedes generar la canción completa con un set válido y el plan confirmado, o crear un fragmento para revisarlo primero.", ready: false };
+      if (sample.freshness_status === "stale") return { state: "stale", title: "Sample desactualizado", detail: "Cambió la canción desde la última revisión. Si quieres usar este sample como evidencia, regénéralo; no bloquea generar la canción completa.", ready: false };
       if (sample.approval_status !== "approved") return { state: "pending", title: "Sample listo para revisar", detail: sample.audio_evidence ? "Escucha el audio y confirma que revisaste esta versión." : "Este checkpoint es mock y no contiene audio. Su aprobación solo valida el recorrido de prueba.", ready: false };
-      return { state: "approved", title: sample.audio_evidence ? "Audio revisado" : "Checkpoint mock aprobado", detail: "La producción real requiere un sample representativo verificado. Esta aprobación todavía no habilita mastering ni exportación final.", ready: false };
+      return { state: "approved", title: sample.audio_evidence ? "Audio revisado" : "Checkpoint mock aprobado", detail: "La revisión corresponde a este sample. La canción completa requiere su propia evaluación; generar no exige sample previo.", ready: false };
     },
     sampleReviewKey() {
       const sample = this.activeSampleCheckpoint;
@@ -614,16 +710,15 @@ createApp({
         { name: "MP3", type: "final_song_mp3", size: "pendiente", url: "" },
         { name: "FLAC", type: "final_song_flac", size: "pendiente", url: "" },
         { name: "WAV", type: "final_song_wav", size: "pendiente", url: "" },
-        { name: "MIDI", type: "midi", size: "pendiente", url: "" },
         { name: "ZIP proyecto completo", type: "project_zip", size: "pendiente", url: "" },
       ];
     },
     productionPipelineSteps() {
       const songId = this.activeProfessionalProject?.id || "";
       return [
-        { phase: "SONG_SPEC_COLLECTION", label: "Especificacion", summary: "Intent creativo aprobado", action: "Enviar intent", method: "POST", url: `/api/pro/projects/${songId}/spec/messages`, requires: songId },
-        { phase: "LYRICS_GENERATION", label: "Letra", summary: "Letra cantable por secciones", action: "Generar letra", method: "POST", url: `/api/pro/projects/${songId}/lyrics`, requires: songId },
-        { phase: "LYRICS_TECHNICAL_REVIEW", label: "Revision", summary: "Letra validada para duracion y estilo", action: "Aprobar letra", method: "POST", url: `/api/pro/projects/${songId}/lyrics/review`, requires: songId },
+        { phase: "SONG_SPEC_COLLECTION", label: "Idea", summary: "Asistencia sobre la ficha guardada; decisiones por revisar", action: "Consultar idea", method: "POST", url: `/api/pro/projects/${songId}/spec/messages`, requires: songId },
+        { phase: "LYRICS_GENERATION", label: "Letra", summary: "Propuesta por revisar y guardar en el editor", action: "Revisar propuesta de letra", method: "POST", url: `/api/pro/projects/${songId}/lyrics`, requires: songId },
+        { phase: "LYRICS_TECHNICAL_REVIEW", label: "Revision", summary: "Comprobación de reglas; aprobación del usuario y audio separadas", action: "Comprobar letra", method: "POST", url: `/api/pro/projects/${songId}/lyrics/review`, requires: songId },
         { phase: "MUSIC_PLAN_GENERATION", label: "Plan musical", summary: "BPM, tonalidad, estructura y dinamica", action: "Generar plan", method: "POST", url: `/api/pro/projects/${songId}/music-plan`, requires: songId },
         { phase: "MIDI_GENERATION", label: "MIDI", summary: "Melodia guia y base armonica editable", action: "Crear MIDI", method: "POST", url: `/api/pro/projects/${songId}/midi`, requires: songId },
         { phase: "INSTRUMENTAL_GENERATION", label: "Instrumental", summary: "Audio base desde el plan musical", action: "Generar instrumental", method: "POST", url: `/api/pro/projects/${songId}/instrumental`, requires: songId },
@@ -696,8 +791,7 @@ createApp({
         const specConfirmed = this.specificationRevision?.user_confirmation_status === "confirmed";
         const requiresConfirmedSpec = step.phase !== "SONG_SPEC_COLLECTION";
         const blockedBySpec = requiresConfirmedSpec && !specConfirmed;
-        const blockedBySample = ["MASTERING", "EXPORT"].includes(step.phase) && !this.sampleCheckpointStatus.ready;
-        const canRun = Boolean(step.requires) && ["current", "complete", "error"].includes(state) && !this.productionRunningPhase && !isActuallyRunning && !blockedBySpec && !blockedBySample;
+        const canRun = Boolean(step.requires) && ["current", "complete", "error"].includes(state) && !this.productionRunningPhase && !isActuallyRunning && !blockedBySpec;
         return {
           ...step,
           state,
@@ -706,9 +800,7 @@ createApp({
           stateLabel,
           statusDetail: blockedBySpec
             ? "Confirma primero la ficha completa de la cancion."
-            : blockedBySample
-              ? "Crea, revisa y aprueba un sample vigente del proyecto."
-              : latestEvent.message || step.summary,
+            : latestEvent.message || step.summary,
           statusTime: latestEvent.created_at ? this.formatResourceTime(latestEvent.created_at) : "",
           startedAt: isActuallyRunning && runningEvent?.created_at ? this.formatResourceTime(runningEvent.created_at) : "",
           elapsedLabel: isActuallyRunning && runningEvent?.created_at ? this.formatElapsedSince(runningEvent.created_at) : "",
@@ -725,24 +817,24 @@ createApp({
         {
           number: "1",
           title: "Preparar idea",
-          purpose: "Define intención, letra, plan musical y MIDI editable.",
-          phases: "Intent → Lyrics → Music Plan → MIDI",
+          purpose: "Revisa la idea, el instrumental, la melodía vocal y la letra antes de confirmar la configuración.",
+          phases: "Idea → Instrumental, melodía vocal y letra → Revisar",
           action: null,
-          actionLabel: "Se trabaja en las fases laterales",
+          actionLabel: "Preparar en los pasos del proyecto",
         },
         {
           number: "2",
           title: "Generar canción",
           purpose: "Ejecuta ACE-Step local para crear una canción completa con voz integrada.",
-          phases: "Mastering / Full Song",
+          phases: "Configuración y plan confirmados → Canción completa",
           action: byPhase.MASTERING,
           actionLabel: byPhase.MASTERING?.action || "Generar",
         },
         {
           number: "3",
           title: "Preparar descargas",
-          purpose: "Crea manifest, ZIP y enlaces para MP3, WAV, FLAC y MIDI.",
-          phases: "Export",
+          purpose: "Revisa los archivos disponibles y descarga solo los que estén generados y verificados.",
+          phases: "Studio → Archivos disponibles",
           action: byPhase.EXPORT,
           actionLabel: byPhase.EXPORT?.action || "Exportar",
         },
@@ -899,20 +991,152 @@ createApp({
     await this.loadJsonConfigs();
     this.startResourceAutoRefresh();
     this.startUiClock();
+    await this.$nextTick();
+    const copilot = document.querySelector('.gemma-footer');
+    if (copilot && window.ResizeObserver) {
+      this.copilotResizeObserver = new ResizeObserver(() => {
+        document.documentElement.style.setProperty('--copilot-height', `${Math.ceil(copilot.getBoundingClientRect().height)}px`);
+      });
+      this.copilotResizeObserver.observe(copilot);
+    }
   },
   beforeUnmount() {
+    this.copilotResizeObserver?.disconnect();
+    document.documentElement.style.removeProperty('--copilot-height');
     window.removeEventListener("popstate", this.popstateHandler);
     window.removeEventListener("beforeunload", this.beforeUnloadHandler);
     this.stopResourceAutoRefresh();
     this.stopUiClock();
   },
   watch: {
+    async saveError(message) {
+      if (!message) return;
+      await this.$nextTick();
+      document.querySelector(this.showUnsavedModal ? '#unsaved-changes-dialog [role="alert"]' : '#phase-save-error')?.focus();
+    },
+    'aceCandidateJob.status'(status, previous) {
+      if (status === 'completed' && ['pending','running','cancelling'].includes(previous)
+        && this.activeTab === 'production' && this.builderStepId === 'generate' && !this.dirty
+        && this.aceCandidateJob?.payload?.song_id === this.productionProjectId) {
+        this.navigateBuilderStep(builderSteps.find(step => step.id === 'studio'));
+      }
+    },
+    showUnsavedModal(open) { return syncDialog(this, 'unsaved-changes-dialog', open); },
+    'deleteDialog.open'(open) { return syncDialog(this, 'delete-project-dialog', open); },
+    pendingLyricDeletion(value) { return syncDialog(this, 'remove-section-dialog', Boolean(value)); },
     dirty(value) {
       if (value) window.addEventListener("beforeunload", this.beforeUnloadHandler);
       else window.removeEventListener("beforeunload", this.beforeUnloadHandler);
     },
   },
   methods: {
+    lyricProposalContext() {
+      return JSON.stringify({baseline:this.projectBaselinePayloads, intent:this.intent, lyrics:this.lyrics, voice:this.voice});
+    },
+    canApplyLyricProposal(section) {
+      return canApplySectionProposal(this.lyricSectionProposals[section.id], section, this.activeProjectId, this.lyricProposalContext());
+    },
+    discardLyricProposal(sectionId) {
+      const proposals = {...this.lyricSectionProposals};
+      delete proposals[sectionId];
+      this.lyricSectionProposals = proposals;
+    },
+    applyLyricProposal(section) {
+      if (!this.canApplyLyricProposal(section)) {
+        this.addMessage('La propuesta ya no corresponde al proyecto o a sus decisiones actuales. Descártala y solicita otra.');
+        return;
+      }
+      section.text = this.lyricSectionProposals[section.id].text;
+      this.discardLyricProposal(section.id);
+      this.markDirty('lyrics');
+      this.addMessage('Propuesta aplicada al borrador de esta sección. Revisa y guarda para conservarla.');
+    },
+    toggleLyricDirectionLock(section) {
+      section.direction_locked = !section.direction_locked;
+      const baseline = this.projectBaselinePayloads?.lyrics?.lyricSections?.find(item => item.id === section.id);
+      this.unlockedLyricDirectionIds = this.unlockedLyricDirectionIds.filter(id => id !== section.id);
+      if (!section.direction_locked && baseline?.direction_locked) this.unlockedLyricDirectionIds.push(section.id);
+      this.markDirty('lyrics');
+    },
+    editLyricSection(section, event) {
+      if (!protectedLinesUnchanged(section, event.target.value)) {
+        event.target.value = section.text;
+        this.addMessage('La edición cambia una línea protegida o su posición. Desbloquéala primero.');
+        return;
+      }
+      section.text = event.target.value;
+      this.markDirty('lyrics');
+    },
+    toggleLyricLineLock(section, index) {
+      if (section.locked) return;
+      const indexes = section.protected_lines || [];
+      section.protected_lines = indexes.includes(index) ? indexes.filter(i => i !== index) : [...indexes, index];
+      const key = `${section.id}:${index}`;
+      const baseline = this.projectBaselinePayloads?.lyrics?.lyricSections?.find(item => item.id === section.id);
+      this.unlockedLyricLineIds = this.unlockedLyricLineIds.filter(id => id !== key);
+      if (!section.protected_lines.includes(index) && baseline?.protected_lines?.includes(index)) this.unlockedLyricLineIds.push(key);
+      this.markDirty('lyrics');
+    },
+    toggleLyricSectionLock(section) {
+      const baseline = this.projectBaselinePayloads?.lyrics?.lyricSections?.find(item => item.id === section.id);
+      section.locked = !section.locked;
+      this.unlockedLyricSectionIds = this.unlockedLyricSectionIds.filter(id => id !== section.id);
+      if (!section.locked && baseline?.locked) this.unlockedLyricSectionIds.push(section.id);
+      this.markDirty('lyrics');
+    },
+    selectLyricSection(id) {
+      const card = document.getElementById(`lyric-section-${id}`);
+      card?.scrollIntoView({block:'center'});
+      card?.querySelector('textarea')?.focus();
+    },
+    syncLyricStructure() {
+      this.lyrics.structure = this.lyricSections.map(section => section.type.toLowerCase()).join(', ');
+      this.markDirty('lyrics');
+    },
+    confirmRemoveLyricSection() {
+      const index = this.lyricSections.findIndex(section => section.id === this.pendingLyricDeletion?.id);
+      if (index >= 0 && !this.lyricSections[index].locked && !this.lyricSections[index].protected_lines?.length && !this.lyricSections[index].direction_locked && this.lyricSections.length > 1) {
+        this.lyricSections.splice(index, 1);
+        this.syncLyricStructure();
+      }
+      this.pendingLyricDeletion = null;
+    },
+    panelOpen(key) { return this.uiPanelsProjectId === this.activeProjectId && this.uiPanels[key] === true; },
+    rememberPanel(event) {
+      const key = event.target?.dataset?.uiPanel;
+      if (!key || !this.activeProjectId || this.uiPanelsProjectId !== this.activeProjectId) return;
+      const open = event.target.open;
+      if (Boolean(this.uiPanels[key]) === open) return;
+      this.uiPanels = { ...this.uiPanels, [key]:open };
+      this.persistActivePhase();
+    },
+    navigateStudioDelivery(destination) {
+      if (destination === 'library') return this.requestNavigation('library');
+      const selectors={sample:'.sample-checkpoint-panel',candidate:'.studio-panel',review:'.specification-panel',final:'.final-delivery-panel'};
+      this.focusBuilderTarget({selector:selectors[destination] || '.specification-panel'});
+    },
+    containDialogTab,
+    focusBuilderTarget(step) {
+      const target = document.querySelector(step?.selector || '.topbar');
+      if (!target) return;
+      target.setAttribute('tabindex', '-1');
+      target.focus({preventScroll:true});
+      target.scrollIntoView({block:'start',behavior:'auto'});
+    },
+    async navigateBuilderStep(step) {
+      if (!step) return;
+      if (this.dirty && this.activeProjectId && step.tab !== this.activeTab) {
+        this.requestNavigation(step.tab);
+        this.pendingBuilderStep = step;
+        return;
+      }
+      this.requestNavigation(step.tab);
+      if (this.activeTab !== step.tab) return;
+      this.builderStepId = step.id;
+      this.persistActivePhase();
+      await this.$nextTick();
+      this.focusBuilderTarget(step);
+    },
     ...productionActions,
     addMessage(text) {
       this.messages.unshift({
@@ -963,6 +1187,13 @@ createApp({
       this.activateFromPath(ROUTE_BY_TAB[tab], true);
     },
     discardAndContinue() {
+      this.fullLyricsProposal = null;
+      this.appliedFullLyricsProposal = null;
+      this.lyricSectionProposals = {};
+      this.unlockedLyricSectionIds = [];
+      this.unlockedLyricLineIds = [];
+      this.unlockedLyricDirectionIds = [];
+      this.assistantAppliedPatches = [];
       this.restorePhase(this.dirtyPhase);
       this.outdatedPhases = [...this.dirtyOutdatedSnapshot];
       this.dirty = false;
@@ -973,6 +1204,7 @@ createApp({
       this.saveError = "";
     },
     cancelNavigation() {
+      this.pendingBuilderStep = null;
       this.pendingTab = "";
       this.pendingHistoryDelta = 0;
       this.saveError = "";
@@ -988,12 +1220,19 @@ createApp({
       this.pendingTab = "";
     },
     completePendingNavigation() {
+      const builderStep = this.pendingBuilderStep;
+      this.pendingBuilderStep = null;
       if (this.pendingHistoryDelta) {
         const delta = this.pendingHistoryDelta;
         this.pendingHistoryDelta = 0;
         window.history.go(delta);
       } else if (this.pendingTab) {
         this.activateFromPath(ROUTE_BY_TAB[this.pendingTab], true);
+        if (builderStep && this.activeTab === builderStep.tab) {
+          this.builderStepId = builderStep.id;
+          this.persistActivePhase();
+          this.$nextTick(() => this.focusBuilderTarget(builderStep));
+        }
       }
     },
     handlePopstate(event) {
@@ -1202,6 +1441,10 @@ createApp({
       return readApiPayload(response, fallbackData);
     },
     async loadProject(setId, options = {}) {
+      this.assistantPendingPatch = null;
+      this.assistantAppliedPatches = [];
+      this.specProposal = null;
+      this.specProposalError = "";
       const response = await fetch(apiUrl(`/api/projects/${setId}`));
       const payload = await this.readApiPayload(response, {});
       if (!payload.ok) {
@@ -1210,7 +1453,12 @@ createApp({
       }
       this.productionProjectId = "";
       this.exportManifest = { artifacts: [] };
+      this.uiPanels = { ...(payload.data.ui_state?.open_panels || {}) };
+      this.uiPanelsProjectId = setId;
       this.activeProject = payload.data;
+      this.sampleFeedbackDecision = "";
+      this.sampleFeedbackNotes = "";
+      this.sampleListeningConfirmation = "";
       this.selectedSet = payload.data.set;
       localStorage.setItem("song-ai:active-project-id", payload.data.set.set_id);
       this.projectSet.project_name = payload.data.project.project_name;
@@ -1249,31 +1497,38 @@ createApp({
         const melodyIntent = payload.data.assets.melody.intent || {};
         this.voice = { ...this.voice, mainVoice: melodyIntent.vocal_style || this.voice.mainVoice };
       }
-      this.projectBaselinePayloads = Object.fromEntries(this.phaseDefinitions.map(({ id }) => [id, cloneJson(this.phasePayload(id))]));
+      this.captureProjectBaselines();
       this.projectEvents = payload.data.events;
       if (!options.quiet) this.addMessage(`Proyecto cargado con datos guardados: ${payload.data.project.project_name}`);
       await this.loadProviders();
       const productionId = await this.ensureProductionProjectForActiveSet();
       if (productionId) await this.loadProfessionalExport(productionId);
       const targetPhase = this.phaseToOpenAfterLoad(payload.data);
+      const savedStep = builderSteps.find(step => step.id === payload.data?.ui_state?.builder_step);
+      this.builderStepId = savedStep && savedStep.tab === targetPhase ? savedStep.id : '';
       if (!options.preserveRoute) {
         this.activateFromPath(ROUTE_BY_TAB[targetPhase] || ROUTE_BY_TAB.intent, true);
       }
+      await this.$nextTick();
+      if (savedStep?.tab === this.activeTab && savedStep.selector) {
+        this.focusBuilderTarget(savedStep);
+      }
     },
     phaseToOpenAfterLoad(projectData) {
-      const savedLast = String(projectData?.ui_state?.last_active_phase || "").trim();
-      if (savedLast && ROUTE_BY_TAB[savedLast]) return savedLast;
-      const phaseData = projectData?.phase_data || {};
-      const firstIncomplete = this.phaseDefinitions.find((phase) => !phaseData?.[phase.id]?.status);
-      return firstIncomplete?.id || "production";
+      return phaseToOpenAfterLoad(projectData, Object.keys(ROUTE_BY_TAB));
     },
     async persistActivePhase(phase = this.activeTab) {
       if (!this.activeProjectId || !ROUTE_BY_TAB[phase]) return;
-      fetch(apiUrl(`/api/projects/${this.activeProjectId}/ui-state`), {
+      const projectId = this.activeProjectId;
+      const builder_step = builderSteps.find(step => step.id === this.builderStepId && step.tab === phase)?.id || '';
+      const open_panels = this.uiPanelsProjectId === projectId ? { ...this.uiPanels } : undefined;
+      // Serialize writes so older navigation cannot overwrite the latest step.
+      this.uiStateSaveQueue = this.uiStateSaveQueue.catch(() => {}).then(() => fetch(apiUrl(`/api/projects/${projectId}/ui-state`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phase }),
-      }).catch(() => {});
+        body: JSON.stringify({ phase, builder_step, open_panels }),
+      }));
+      await this.uiStateSaveQueue.catch(() => {});
     },
     async createSet() {
       if (!this.canCreateSet || this.creatingSet) return;
@@ -1343,6 +1598,39 @@ createApp({
       if (created?.id) this.selectedDrafts.melody = created.id;
       return Boolean(created);
     },
+    async requestFullLyricsProposal() {
+      const songId = this.activeProject?.music_spec_song_id;
+      if (!songId || this.fullLyricsBusy || this.dirty || this.lyricsReplacementBlocked) return;
+      const revision = this.activeProject.music_spec_revision_id;
+      this.fullLyricsProposal = null;
+      this.fullLyricsBusy = true;
+      try {
+        const response = await fetch(apiUrl(`/api/pro/projects/${songId}/lyrics`), { method: 'POST' });
+        const payload = await this.readApiPayload(response, {});
+        if (!payload.ok) throw new Error(payload.detail || 'No se pudo proponer la letra.');
+        if (this.activeProject?.music_spec_song_id !== songId || this.activeProject.music_spec_revision_id !== revision || this.dirty) {
+          this.addMessage('La ficha o el borrador cambió durante la solicitud. No se cargó la propuesta.');
+          return;
+        }
+        const proposal = payload.data.lyrics_proposal;
+        this.fullLyricsProposal = proposal ? { ...proposal, task_id: payload.data.handoff.task.task_id } : null;
+        this.addMessage(payload.data.handoff.summary);
+      } catch (error) { this.addMessage(error.message || 'No se pudo proponer la letra.'); }
+      finally { this.fullLyricsBusy = false; }
+    },
+    applyFullLyricsProposal() {
+      const proposal = this.fullLyricsProposal;
+      if (!proposal || proposal.source_project_id !== this.activeProject?.music_spec_song_id ||
+          proposal.source_revision_id !== this.activeProject.music_spec_revision_id || this.lyricsReplacementBlocked || this.dirty) {
+        return this.addMessage('La ficha cambió o hay cambios pendientes. Revisa y solicita una nueva propuesta.');
+      }
+      this.lyricsEditor.content = proposal.markdown;
+      this.parseLyricsToSections();
+      this.syncLyricStructure();
+      this.appliedFullLyricsProposal = { task_id: proposal.task_id };
+      this.fullLyricsProposal = null;
+      this.addMessage('Propuesta cargada como borrador. Revísala y pulsa Guardar letra para confirmarla.');
+    },
     async createLyrics() {
       const hasEditedSections = JSON.stringify(this.lyricSections) !== JSON.stringify(this.defaultPhasePayloads.lyrics?.lyricSections || []);
       const created = await this.createDraft("/api/lyrics", {
@@ -1389,6 +1677,9 @@ createApp({
       }
     },
     async loadLyricsDraft(assetId = this.lyricsEditor.selectedAssetId) {
+      if (this.lyricsReplacementBlocked) return this.addMessage(this.lyricsReplacementBlocked);
+      const projectId = this.activeProjectId;
+      const originalSections = JSON.stringify(this.lyricSections);
       if (!assetId) {
         this.addMessage("Selecciona una letra para editar.");
         return;
@@ -1399,10 +1690,12 @@ createApp({
         this.addMessage(payload.detail || "No se pudo cargar la letra.");
         return;
       }
+      if (this.activeProjectId !== projectId || this.lyricsReplacementBlocked || JSON.stringify(this.lyricSections) !== originalSections) {
+        return this.addMessage('La letra cambió durante la carga. No se sustituyó el borrador.');
+      }
       this.lyricsEditor = { selectedAssetId: payload.data.asset_id, content: payload.data.content, path: payload.data.path };
       this.parseLyricsToSections();
-      this.dirty = false;
-      this.dirtyPhase = "";
+      this.syncLyricStructure();
     },
     async saveLyricsDraft() {
       this.lyricsEditor.content = this.sectionsToMarkdown();
@@ -1435,7 +1728,7 @@ createApp({
     },
     addLyricSection(type = "VERSO") {
       this.lyricSections.push({ id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, type, text: this.sectionStarter(type) });
-      this.markDirty("lyrics");
+      this.syncLyricStructure();
     },
     moveSection(index, direction) {
       const target = index + direction;
@@ -1443,20 +1736,26 @@ createApp({
       const sections = [...this.lyricSections];
       [sections[index], sections[target]] = [sections[target], sections[index]];
       this.lyricSections = sections;
-      this.markDirty("lyrics");
+      this.syncLyricStructure();
     },
     duplicateSection(index) {
       const original = this.lyricSections[index];
+      if (!original) return;
       this.lyricSections.splice(index + 1, 0, { ...original, id: `${Date.now()}-${Math.random().toString(16).slice(2)}` });
-      this.markDirty("lyrics");
+      this.syncLyricStructure();
     },
     removeSection(index) {
-      this.lyricSections.splice(index, 1);
-      this.markDirty("lyrics");
+      const section = this.lyricSections[index];
+      if (!section || section.locked || section.protected_lines?.length || section.direction_locked || this.lyricSections.length <= 1) return;
+      this.pendingLyricDeletion = {id:section.id, label:this.sectionDisplayName(section,index)};
     },
     async transformSection(index, mode) {
       const section = this.lyricSections[index];
-      if (!section || this.transformingSections[section.id]) return;
+      if (!section || section.locked || this.transformingSections[section.id]) return;
+      const originalText = section.text;
+      const projectId = this.activeProjectId;
+      const context = this.lyricProposalContext();
+      const sectionSnapshot = JSON.stringify(section);
       this.transformingSections = { ...this.transformingSections, [section.id]: mode };
       try {
         const response = await fetch(apiUrl("/api/lyrics/section-transform"), {
@@ -1467,6 +1766,9 @@ createApp({
             section_type: section.type,
             text: section.text,
             set_id: this.activeProjectId,
+            section_id: section.id,
+            section_draft: {...section},
+            spec_revision_id: this.activeProject?.music_spec_revision_id,
             project_name: this.activeProjectTitle,
             description: this.activeProjectDescription,
             lyrics: { ...this.lyrics },
@@ -1483,10 +1785,15 @@ createApp({
           this.addMessage("Gemma no devolvio texto para esta seccion.");
           return;
         }
-        section.text = transformed;
-        this.markDirty("lyrics");
-        const modeLabel = payload.data?.mode === "llama_cpp" ? "Gemma" : "guia local";
-        this.addMessage(`Lyrics ${mode}: seccion actualizada con ${modeLabel}.`);
+        const proposal = {projectId, context, sectionSnapshot, text:transformed, originalText, mode,
+          technicalReview:payload.data?.technical_handoff,
+          source:payload.data?.mode === 'llama_cpp' ? 'Gemma' : 'Guía local (fallback o ejemplo)'};
+        if (!this.lyricSections.includes(section) || !canApplySectionProposal(proposal, section, this.activeProjectId, this.lyricProposalContext())) {
+          this.addMessage('La sección cambió durante la consulta. No se reemplazó el texto; puedes consultar de nuevo.');
+          return;
+        }
+        this.lyricSectionProposals = {...this.lyricSectionProposals, [section.id]:proposal};
+        this.addMessage(`Propuesta de ${proposal.source} lista para revisar. La letra no cambió.`);
       } finally {
         const next = { ...this.transformingSections };
         delete next[section.id];
@@ -1517,7 +1824,9 @@ createApp({
         {
           id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
           name,
-          sections: this.lyricSections.map((section) => ({ type: section.type, text: section.text })),
+          sections: this.lyricSections.map((section) => ({ type: section.type, text: section.text,
+            direction: section.direction || '', energy: section.energy || '',
+            vocal_direction: section.vocal_direction || '', instrument_direction: section.instrument_direction || '' })),
           placeholders: { ...this.lyrics.placeholders },
           created_at: nowLabel(),
         },
@@ -1640,6 +1949,7 @@ createApp({
       this.markDirty("voice");
     },
     loadLyricTemplate(templateId) {
+      if (this.lyricsReplacementBlocked) return this.addMessage(this.lyricsReplacementBlocked);
       const template = this.lyricTemplates.find((item) => item.id === templateId);
       if (!template) return;
       this.lyricSections = template.sections.map((section) => ({
@@ -1647,8 +1957,8 @@ createApp({
         id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       }));
       this.lyrics.placeholders = { ...template.placeholders };
-      this.markDirty("lyrics");
-      this.addMessage(`Plantilla cargada: ${template.name}`);
+      this.syncLyricStructure();
+      this.addMessage(`Plantilla cargada en borrador: ${template.name}. Revisa y guarda para conservarla.`);
     },
     toggleFavorite(setId) {
       if (this.favoriteProjects[setId]) {
@@ -1845,6 +2155,15 @@ createApp({
       };
       return payloads[phase] || {};
     },
+    captureProjectBaselines() {
+      this.fullLyricsProposal = null;
+      this.appliedFullLyricsProposal = null;
+      this.lyricSectionProposals = {};
+      this.unlockedLyricSectionIds = [];
+      this.unlockedLyricLineIds = [];
+      this.unlockedLyricDirectionIds = [];
+      this.projectBaselinePayloads = Object.fromEntries(this.phaseDefinitions.map(({ id }) => [id, cloneJson(this.phasePayload(id))]));
+    },
     async savePhaseData(phase = this.activeTab, options = {}) {
       if (!this.activeProjectId) {
         this.saveError = "Carga un proyecto desde Biblioteca antes de guardar esta fase.";
@@ -1852,15 +2171,31 @@ createApp({
         return false;
       }
       if (this.savingPhase) return false;
+      if (phase === "intent" && !validEmotionalValues(this.intent)) {
+        this.saveError = "Revisa los valores emocionales: deben ser números entre 0 y 100.";
+        this.addMessage(this.saveError);
+        return false;
+      }
+      if (!validPhaseRanges(phase, this.phasePayload(phase))) {
+        this.saveError = "Revisa los valores numéricos: deben estar dentro del rango indicado junto al control.";
+        this.addMessage(this.saveError);
+        return false;
+      }
       this.saveError = "";
       this.savingPhase = phase;
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 20000);
       try {
-        const response = await fetch(apiUrl(`/api/projects/${this.activeProjectId}/phases/${phase}`), {
+        const requestedSetId = this.activeProjectId;
+        const response = await fetch(apiUrl(`/api/projects/${requestedSetId}/phases/${phase}`), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data: this.phasePayload(phase) }),
+          body: JSON.stringify({ data: this.phasePayload(phase), spec_revision_id: this.activeProject?.music_spec_revision_id,
+            reviewed_assistant_proposals: this.assistantAppliedPatches.filter((proposal) => proposal.phase === phase),
+            reviewed_full_lyrics_proposal: phase === 'lyrics' ? this.appliedFullLyricsProposal : undefined,
+            unlocked_section_ids: phase === 'lyrics' ? this.unlockedLyricSectionIds : undefined,
+            unlocked_line_ids: phase === 'lyrics' ? this.unlockedLyricLineIds : undefined,
+            unlocked_direction_ids: phase === 'lyrics' ? this.unlockedLyricDirectionIds : undefined }),
           signal: controller.signal,
         });
         const payload = await this.readApiPayload(response, {});
@@ -1870,14 +2205,19 @@ createApp({
           this.addMessage(message);
           return false;
         }
+        if (this.activeProjectId !== requestedSetId) return false;
         this.activeProject = payload.data.project;
+        this.assistantAppliedPatches = [];
         this.selectedSet = payload.data.project.set;
         this.savedPhaseData = payload.data.project.phase_data || {};
+        this.applySavedPhaseData(this.savedPhaseData);
         this.outdatedPhases = this.outdatedPhases.filter((item) => item !== phase);
         this.dirty = false;
         this.dirtyPhase = "";
         this.dirtyOutdatedSnapshot = [...this.outdatedPhases];
-        this.projectBaselinePayloads[phase] = cloneJson(this.phasePayload(phase));
+        this.captureProjectBaselines();
+        if (payload.data.export_warning) this.addMessage(payload.data.export_warning);
+        if (payload.data.project.music_spec_song_id) await this.loadProfessionalSpecification(payload.data.project.music_spec_song_id);
         if (!options.quiet) this.addMessage(`${this.phaseLabel(phase)} guardado`);
         return true;
       } catch (error) {
@@ -1974,8 +2314,10 @@ createApp({
       this.gemmaAssistant.error = "";
       const projectId = this.activeProjectId;
       const phase = this.activeTab;
+      const sourceContext = proposalContext(projectId, this.activeProject?.music_spec_revision_id, phase, this.phasePayload(phase));
       const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 30000);
+      const modelTimeout = Number(this.modelStatus?.local?.llama_cpp_timeout_seconds) || 240;
+      const timeoutId = window.setTimeout(() => controller.abort(), (2 * modelTimeout + 30) * 1000);
       try {
       const response = await fetch(apiUrl("/api/assistant/gemma"), {
         method: "POST",
@@ -1983,6 +2325,7 @@ createApp({
         signal: controller.signal,
         body: JSON.stringify({
           set_id: this.activeProjectId,
+          spec_revision_id: sourceContext.revisionId,
           song_id: this.activeProfessionalProject?.id || "",
           question: this.gemmaAssistant.question,
           active_phase: this.activeTab,
@@ -1993,21 +2336,26 @@ createApp({
       });
       const payload = await this.readApiPayload(response, {});
       if (!payload.ok) throw new Error(payload.detail || "Gemma no pudo revisar el proyecto.");
-      if (projectId !== this.activeProjectId || phase !== this.activeTab) {
-        this.addMessage("La respuesta del asistente pertenece a otro proyecto o fase; no se aplicaron cambios.");
+      if (payload.data.phase_patch?.source_revision_id != null && payload.data.phase_patch.source_revision_id !== sourceContext.revisionId) {
+        this.assistantPendingPatch = null;
+        throw new Error("La propuesta usa otra revisión. Recarga el proyecto y consulta de nuevo.");
+      }
+      if (!proposalContextMatches(sourceContext, proposalContext(this.activeProjectId, this.activeProject?.music_spec_revision_id, this.activeTab, this.phasePayload(this.activeTab)))) {
+        this.assistantPendingPatch = null;
+        this.addMessage("El proyecto cambió durante la consulta. Consulta de nuevo al asistente para revisar los datos actuales.");
         return;
       }
       this.gemmaAssistant.response = {
         ...payload.data,
         message: this.hideTechnicalDirectorName(String(payload.data.message || "")),
-        technical_handoff_note: "Gemma coordino internamente la revision tecnica.",
+        technical_handoff_note: payload.data.technical_handoff_note,
       };
-      this.applyAssistantPhasePatch(payload.data.phase_patch);
+      this.assistantPendingPatch = payload.data.phase_patch?.available ? { ...payload.data.phase_patch, source_project_id: projectId, source_context: sourceContext } : null;
       await this.loadOrchestration();
       this.addMessage(`Gemma: ${this.gemmaAssistant.response.status}`);
       } catch (error) {
         this.gemmaAssistant.error = error?.name === "AbortError"
-          ? "Gemma no respondio en 30 segundos. Puedes reintentar."
+          ? "La consulta supero el tiempo disponible. Puedes reintentar con una peticion mas breve."
           : `No se pudo consultar a Gemma: ${error?.message || "error de red"}`;
         this.addMessage(this.gemmaAssistant.error);
       } finally {
@@ -2017,12 +2365,24 @@ createApp({
     },
     applyAssistantPhasePatch(phasePatch) {
       if (!phasePatch?.available || !phasePatch?.phase || !phasePatch?.changes) return;
+      if (phasePatch.source_project_id && phasePatch.source_project_id !== this.activeProjectId) return;
+      if (!proposalContextMatches(phasePatch.source_context, proposalContext(this.activeProjectId, this.activeProject?.music_spec_revision_id, this.activeTab, this.phasePayload(this.activeTab)))) {
+        this.addMessage("La propuesta corresponde a datos anteriores. Consulta de nuevo al asistente antes de aplicarla.");
+        return;
+      }
       const phase = String(phasePatch.phase);
       if (phase !== this.activeTab) {
         this.addMessage(`Gemma preparo cambios para ${phase}, pero no los aplique porque estas en ${this.activeTab}.`);
         return;
       }
       const changes = { ...phasePatch.changes };
+      let appliedProposals;
+      try {
+        appliedProposals = appendAppliedProposal(this.assistantAppliedPatches, phasePatch);
+      } catch (error) {
+        this.addMessage(error.message);
+        return;
+      }
       const phaseTargets = {
         intent: this.intent,
         lyrics: this.lyrics,
@@ -2042,6 +2402,7 @@ createApp({
         target[key] = value;
       });
       this.markDirty(phase);
+      this.assistantAppliedPatches = appliedProposals;
       this.addMessage(`Gemma ajusto ${Object.keys(changes).length} campo(s) en ${phase}. Revisa y guarda si te gusta.`);
     },
     hideTechnicalDirectorName(text) {

@@ -1,6 +1,26 @@
 # ACE-Step 1.5 — Contrato de capacidades para Song-AI
 
+## Decisiones vigentes del usuario — 2026-10-07
+
+[Contrato de decisiones](SONG_BUILDER_APPROVED_DECISIONS_20261007.md): **sample previo opcional, sin bloqueo de generación completa**; instrumental como intención soportada con ejecución condicionada a validación; dirección por sección en MusicSpec aunque su traducción tenga límites; referencia audio opcional/avanzada, sin clonación; perfil ACE-Step automático por defecto y manual disponible para cualquiera. Esta decisión sustituye requisitos anteriores incompatibles en este documento. Las descripciones de pruebas/gates del árbol anterior son históricas; el bloqueo de sample se retiró de las rutas de producción, mastering y exportación el 2026-10-09; evidencia en `S01_OPTIONAL_SAMPLE_ALIGNMENT_20261009.md`. Mantener set válido, request confirmado y evaluación/aceptación de audio separadas.
+
 Estado: guía de integración basada en documentación oficial consultada el 2026-10-04. **Verificar contra la versión y los modelos instalados antes de ejecutar.**
+
+## Evidencia local posterior — 2026-10-09
+
+Esta actualización sustituye las afirmaciones históricas de ausencia de UI, fuente importada o ejecución real para los casos siguientes. No declara disponibilidad universal ni calidad musical por generar archivos; las observaciones actuales del registry siguen siendo necesarias en cada solicitud.
+
+| Ruta/modo probado | Evidencia actual | Pendiente |
+|---|---|---|
+| text2music/direct | Isabella completa generada y aceptada por el usuario | Mejora vocal diferida; no generalizar fidelidad |
+| text2music/high_level sin LM | Audio15s,18campos reportados por motor coincidentes; `REAL_HIGH_LEVEL_AUDIO_20261009.md` | Beneficio/fidelidad audible; LM es prueba separada |
+| cover/direct Turbo XPU | Audio15s e integridad; `REAL_COVER_AUDIO_20261009.md` | Conservación musical y estilo por escucha |
+| repaint/direct Turbo XPU | Audio15s, intervalo5–10s modificado; PCM idéntico fuera de márgenes50ms; `REAL_REPAINT_AUDIO_20261009.md` | Escucha de transiciones e intención |
+| lego/direct Base CPU | Audio15s/32pasos, integridad y configuración; `REAL_LEGO_AUDIO_20261009.md` | Guitarra, contexto y transiciones por escucha |
+| extract/direct Base CPU | Audio15s/32pasos e integridad; `REAL_EXTRACT_AUDIO_20261009.md` | Voz aislada, nivel bajo y fugas por escucha |
+| complete/direct Base CPU | Audio15s/32pasos e integridad; `REAL_COMPLETE_AUDIO_20261009.md` | Batería solicitada y coherencia por escucha |
+
+La UI ya permite seleccionar seis modos y configurar sus inputs; fuentes se importan con autorización y checksum. La pista objetivo aprobada se transmite como `--tracks` y se registra en `wrapper_task_constraints` (`BASE_TRACKS_EXECUTION_FIX_20261009.md`). Es una restricción de validación del wrapper; la instrucción condiciona el motor. No añadir `target_tracks` como argumento nativo inexistente. La traza direct acredita observación del wrapper, no observación independiente del motor. La ruta con LM opcional no queda verificada por la prueba sin LM. Los resultados QA no modifican proyectos originales ni registran aceptación creativa.
 
 ## 0. Propósito y autoridad
 
@@ -246,9 +266,16 @@ Hay tres APIs distintas: alto nivel GenerationParams usa caption/keyscale/timesi
 
 Etiquetas Verse/Chorus/Bridge/Intro/Outro orientan letra/estructura; no fijan tiempos o notas exactas. BPM, tonalidad, duración, letra y voz son objetivos condicionados, no resultados garantizados. Midi no es audio_codes ni partitura ejecutable por ACE-Step. Para fidelidad exacta de notas o cambios deterministas, declarar motor/síntesis/DSP externos pendientes. source audio y reference audio tienen funciones distintas; referencia no garantiza clonar una voz.
 
-Turbo y Base tienen distintas tareas/pasos/CFG. No inferir modelo efectivo por defaults. La documentación presenta diferencias sobre shift entre interfaces: no recomendarlo como control ejecutable sin validación local. LM 5 Hz interno y Qwen director son distintos; create_sample del LM produce texto/metadatos, no el sample de audio obligatorio de Song AI.
+Turbo y Base tienen distintas tareas/pasos/CFG. No inferir modelo efectivo por defaults. La documentación presenta diferencias sobre shift entre interfaces: no recomendarlo como control ejecutable sin validación local. LM 5 Hz interno y Qwen director son distintos; create_sample del LM produce texto/metadatos, no el sample de audio opcional de Song AI.
 
-Antes de final: set válido, ficha confirmada y sample vigente representativo del provider/voz/config, escuchado y aprobado con checksum. Mock o WAV técnicamente íntegro no acredita calidad ni habilita cierre real. Después: integridad, duración, escucha, fidelidad frente a requisitos y aprobación del usuario. No declarar calidad profesional ni voz humana grabada por finalizar una task. Cambios relevantes exigen nueva revisión; conservar conflictos y presentar un siguiente paso concreto en la UI y conversación.
+Antes de generar completo: set válido y ficha/request confirmados. Sample previo opcional; su ausencia o desactualización no bloquea generar. Si se usa como evidencia, revisar vigencia, representatividad de provider/voz/config y aprobación con checksum. Mock o WAV técnicamente íntegro no acredita calidad ni habilita cierre real. Después: integridad, duración, escucha, fidelidad frente a requisitos y aprobación del usuario. No declarar calidad profesional ni voz humana grabada por finalizar una task. Cambios relevantes exigen nueva revisión; conservar conflictos y presentar un siguiente paso concreto en la UI y conversación.
+Si el contexto contiene candidate_listening, usa la decision, notas y criterios como opinion subjetiva del usuario sobre ese audio. inputs_current=false identifica una version anterior: no atribuyas esa opinion al plan vigente. listening_pending no significa aceptacion. Orienta los cambios solicitados como propuestas revisables, conservando las tres intenciones y deseos confirmados; no guardes cambios automaticamente ni conviertas esta opinion en aprobacion del sample o calidad final.
+
+Si candidate_listening.status=audio_unavailable o review.audio_current=false, el archivo revisado cambio o no esta disponible: conserva la opinion como historial, informa la limitacion y orienta a obtener un nuevo candidato. No atribuyas esa opinion al archivo actual ni afirmes aprobacion de audio.
+
+Usa sample_evaluation como contexto SQLite del sample del proyecto seleccionado. Distingue falta de set/sample/evaluacion, aprobacion de escucha, coincidencia de configuracion y evidencia de runtime. historical_evaluation requiere repetir la comprobacion; no atribuyas sus coincidencias al estado vigente. Explica las diferencias y pendientes con una accion concreta. Un sample approved o una ejecucion reportada no acreditan voz/calidad/representatividad ni permiten anunciar final_generation_ready. Las correcciones son propuestas revisables; no guardes por silencio ni alteres deseos confirmados.
+
+Si candidate_listening.correction existe, distingue propuesta vigente e historica. Una propuesta vigente conserva notas, criterios, alcance, fuente y parametros; orienta a revisarla en controles y ficha, guardar y confirmar antes de preparar/aprobar otro plan. No apliques notas automaticamente ni anuncies ejecucion por registrar una propuesta. Las tareas lego/extract/complete requieren Base, pistas admitidas e instruccion coherente.
 <!-- MODEL_STEERING_END -->
 
 ## 14. Configuración objetivo para los seis modos — investigación 2026-10-04
@@ -430,3 +457,160 @@ Registry adquiere `exclusive_planning` durante toda llamada al provider/steering
 Tempo, tonalidad, letra cantada, voz, estructura, instrumentos, frases obligatorias y exclusiones mantienen esperado pero observado desconocido, pendientes de analisis/escucha. UI muestra informe, persistido en artefacto/task SQLite. No hay porcentaje global, aceptacion musical ni aprobacion del sample. 12 pruebas aprobadas; pendientes controles completos de criterios/evaluadores y evidencia musical real.
 
 El editor incorpora `duration_tolerance_seconds` con guardado explicito en ficha versionada, rango 0–600 y opcion vacia (`null` elimina el criterio). No se asigna valor por silencio. El backend exige numero finito y rechaza booleanos; guardar vuelve a dejar pendiente confirmacion e invalida planes previos por revision. No es parametro de generacion ni garantia de duracion exacta. 12 pruebas y build aprobados; sin medicion de musica real ni prueba visual.
+
+### Opinión de escucha persistida
+
+POST `ace-candidates/{task_id}/review` requiere `listened=true`, checksum del audio y decision `accepted` o `changes_requested`; esta ultima exige notas. Verifica archivo y propiedad usando el mismo contrato de reproducción. Guarda evento SQLite con usuario, fecha, candidato/task, plan/revision, checksum y opinion. GET de la misma ruta recupera la opinion mas reciente del trabajo. UI ofrece declaracion de escucha, decision y notas; no infiere aceptacion por silencio.
+
+La opinion corresponde al candidato/revision historicos y no autoriza sample/final ni cambia assets. Puede mantenerse como evidencia de un borrador anterior; no equivale a aprobación de la ficha actual. 21 pruebas específicas y build aprobados, sin voz/audio ACE-Step real escuchado ni UX validada con personas.
+
+### Vigencia de la opinion de escucha
+
+GET/POST de revision devuelve inputs_current y context_message derivados del plan mas reciente, su revision y validacion de inputs. Un plan distinto, inputs modificados o ausencia de plan marca la opinion como historica sin cambiar el evento SQLite. La UI muestra las notas originales y orienta a revisar el plan vigente y generar un candidato nuevo. No equivale a aprobacion del sample ni evidencia de calidad final.
+
+### Revision musical por aspectos — S06-D
+
+El formulario de escucha permite respuestas opcionales por criterio del informe del candidato: acorde a mi idea, necesita cambios o no estoy seguro. No hay respuestas por defecto. Backend acepta solo criterios no medidos presentes en ese candidato; no permite sustituir mediciones objetivas ni inventar criterios. Marcar un cambio exige decision changes_requested y notas. Respuestas se guardan en el mismo evento SQLite con criteria_method=user_listening, vinculadas al audio/revision; no modifican el informe tecnico ni aprueban sample/final. La UI muestra las respuestas guardadas.
+
+25 pruebas específicas aprobadas y build frontend correcto. Avance local; S06-D sigue en progreso. Pendientes validacion visual/amateur, evaluadores musicales, audio ACE-Step real escuchado y sample representativo.
+
+### Contexto de escucha para asistencia — S06-D
+
+Gemma recibe candidate_listening desde SQLite para el ultimo candidato completado del proyecto activo: decision, notas, criterios y vigencia. El mismo contexto acompaña handoffs del orquestador hacia revision tecnica. Si no hay proyecto/candidato o revision de escucha, queda pendiente sin aceptacion implicita. Steering Gemma/Qwen identifica evidencia subjetiva/historica y exige propuestas revisables, sin cambios automaticos ni aprobacion de sample/final. No acredita inferencia ni obediencia real de modelos. Avance local; sprint sigue en progreso.
+
+### Integridad del audio revisado — S06-D
+
+Al recuperar la opinion se verifica el archivo contra el checksum y evidencia del candidato. audio_current=false indica archivo cambiado/ausente; el assistant recibe audio_unavailable y la UI orienta a generar otro candidato. El evento original permanece intacto. Prueba de integracion con SQLite temporal y WAV sintetico verifica recarga, notas, identidad de audio, sustitucion e aislamiento entre proyectos. 29 pruebas específicas aprobadas, build frontend correcto. No se ejecuto ACE-Step real ni se valido la escucha o UX; sprint abierto y cambios locales.
+
+### Vinculo del candidato al set — S06-D
+
+Los nuevos candidatos de proyectos vinculados a set registran set_id y set_fingerprint calculada antes de generar audio. El runner comprueba el mismo vinculo y huella antes de ejecutar y tras inspeccionar la salida; cambios bloquean el registro del candidato. Proyectos sin set siguen permitiendo exploracion con vinculo nulo; no habilitan sample/final. No se asigna una huella retrospectiva a candidatos historicos. Esta trazabilidad prepara el sample representativo, sin promover ni aprobar candidatos automaticamente.
+
+33 pruebas específicas aprobadas, incluyendo cambio del set tras salida y revinculacion del proyecto; compilacion y diff correctos. No hubo ejecucion ACE-Step real. Pendientes: crear sample desde un candidato vigente, verificar representatividad de plan/provider/voz, escucha/aprobacion separada y validacion UX. Sprint abierto; avance local.
+
+### Sample desde candidato vigente — S06-D
+
+POST /api/pro/projects/{song_id}/ace-candidates/{task_id}/sample y accion visible crean una copia WAV independiente del candidato, con confirmacion explicita, set vinculado, huella de generacion, plan aprobado vigente y checksum verificados. Revalida despues de copiar; conserva origen task/artefacto/revision/configuracion. Guarda sample/audio en SQLite y snapshot regenerable. Candidatos historicos sin huella no se promueven. El nuevo sample tiene approval_status=pending y representativity_verified=false: exige escucha/aprobacion propias y no habilita produccion real. Se copia el audio completo, sin recorte ni inferencia nueva; no promete que represente la configuracion del final.
+
+37 pruebas específicas aprobadas con SQLite temporal y WAV sintetico; build frontend correcto. Incluye cambio del set durante copia, aislamiento, checksum, persistencia y aprobacion separada con gate real cerrado. Sin audio ACE-Step real ni validacion visual/amateur. Avance local; S06-D permanece abierto. Pendientes: contrato/validacion de representatividad y configuracion final, audio real y UX.
+
+### Informe de correspondencia del sample — S06-D
+
+Accion UI y POST /api/pro/projects/{song_id}/samples/{sample_id}/representativity verifican propiedad y audio del sample, comparan set/plan aprobado vigente/revision/configuracion/modo/checksum y guardan informe como evento SQLite. Una coincidencia de configuracion no verifica representatividad audible: ejecucion efectiva, voz/canto y calidad/fidelidad por escucha quedan pendientes. No altera aprobacion ni abre gate real. La UI presenta el informe como comprobacion registrada y pide repetirla tras cambios.
+
+40 pruebas específicas aprobadas, incluida persistencia/propiedad del informe y aprobacion intacta; build frontend correcto. Avance local sin inferencia ni audio ACE-Step real ni validacion visual. S06-D sigue abierto.
+
+### Evidencia de ejecucion del candidato — S06-D
+
+El adapter del runner lee diagnostico del wrapper limitado a 2 MB dentro del directorio del candidato. Conserva hashes de diagnostico/WAV, estado reportado, configuracion solicitada/reportada, dispositivo activo, fallback, pasos y tarea. Solo reported_completion si el diagnostico indica completed, inicializacion habilitada y salida con ruta/tamano coincidentes. Ausencia, formato invalido o check-only dejan evidencia pendiente. Se persiste en metadata SQLite del candidato y se conserva en la copia sample. El informe solo muestra ejecucion reportada si el hash corresponde al sample; sigue sin verificar voz, fidelidad audible ni representatividad y no habilita final real.
+
+42 pruebas específicas aprobadas, build frontend/compilacion/diff correctos. Diagnosticos y WAV de pruebas son sinteticos; no se cargo ACE-Step ni se genero/escucho audio real. S06-D abierto; cambios locales.
+
+### Comparacion del runtime reportado — S06-D
+
+El informe compara hash WAV, configuracion inicializada, modo y pasos reportados contra el plan/perfil actuales. execution_configuration_matches solo se cumple cuando los cuatro datos estan presentes y coinciden desde wrapper_diagnostics con reported_completion. Ausencia/perfil desconocido queda pendiente; diferencia queda mismatch. No reutiliza coincidencia de datos guardados como evidencia de ejecucion. La UI muestra diferencias y fallback. Voz, calidad/fidelidad por escucha y representatividad siguen pendientes; no abre gate final.
+
+45 pruebas específicas aprobadas, build frontend/compilacion/diff correctos. Incluye diferencias por campo y rechazo de booleano como pasos. Diagnosticos sinteticos; sin ejecucion de motor ni escucha real ni validacion visual. Cambios locales, S06-D abierto.
+
+### Recuperacion y vigencia del informe — S06-D
+
+GET /api/pro/projects/{song_id}/samples/{sample_id}/representativity recupera la ultima evaluacion desde eventos SQLite y compara con los datos/evidencias actuales. No registra una nueva evaluacion ni reescribe el historial. assessment_current=false e invalid_reason identifican cambio del plan/aprobacion/audio o evidencia no verificable; desactiva las coincidencias derivadas vigentes conservando el resultado historico. La UI recupera informe al cargar Production y muestra su vigencia. POST sigue siendo la accion explicita para evaluar y guardar de nuevo.
+
+45 pruebas específicas aprobadas, incluyendo recuperacion, plan desactualizado, audio sustituido y ausencia de eventos adicionales; build/compilacion/diff correctos. Cambios locales, sprint abierto; pendientes audio real y validacion visual/amateur.
+
+### Contexto del sample para asistencia — S06-D
+
+SampleEvaluationContext entrega desde SQLite el sample del proyecto seleccionado, estado de aprobacion, ultimo informe y vigencia al readiness de Gemma y handoffs tecnicos del orquestador. Distingue set/sample/evaluacion pendientes e informe historico; no utiliza samples de otro proyecto del mismo set. No crea evaluaciones al consultar ni autoriza final real. Steering Gemma/Qwen exige explicar diferencias/pendientes y proponer correcciones revisables sin alterar deseos aprobados. Cambios locales; pendiente obediencia/inferencia real de modelos y validacion de audio/UX.
+
+### Siguiente accion desde evidencia — S06-D
+
+NextAudioAction selecciona una accion desde contextos SQLite de candidato/sample: completar set, escuchar, revisar opinion historica/cambios, crear sample, repetir/completar evaluacion o resolver evidencias pendientes. Gemma devuelve esa accion en guia determinista y la prioriza en recomendaciones/fallback, evitando consejo tecnico antiguo que sugiera final antes de revisar sample. No ejecuta ni guarda decisiones del usuario; ninguna rama autoriza final real.
+
+52 pruebas específicas aprobadas, incluida prioridad de escucha ante consejo de mastering/export; compilacion/diff correctos. Cambios locales; pendiente validacion real de modelos, audio y UX. S06-D sigue abierto.
+
+### Opinion propia del sample — S06-D
+
+POST /api/pro/projects/{song_id}/samples/{sample_id}/review y formulario visible guardan opinion accepted/changes_requested, notas, declaracion de escucha, checksum y huella del set. Contrato comun de validacion con la opinion del candidato; datos persistidos en sample SQLite y eventos historicos propios. Verifica propietario, audio y vigencia. Solicitar cambios retira aprobacion previa y bloquea aprobar hasta registrar otra opinion; accepted no aprueba automaticamente. Gemma recibe notas y prioriza revisar cambios del sample. Ninguna opinion verifica representatividad ni calidad final.
+
+54 pruebas específicas aprobadas, build/compilacion/diff correctos; prueba SQLite comprueba persistencia, retiro de aprobacion y bloqueo ante cambios. El evento de fase distingue SAMPLE_LISTENING_REVIEWED de creacion. Sin audio ACE-Step real ni validacion visual/amateur. S06-D abierto; cambios locales.
+
+### Vigencia de la opinion del sample — S06-D
+
+GET de review del sample verifica huella del set y audio; devuelve review_current/invalid_reason sin modificar decisiones ni eventos. UI muestra opiniones historicas y Gemma las distingue al elegir siguiente accion. SampleGate rechaza cambios solicitados incluso ante un registro inconsistentemente approved. La opinion permanece vinculada al audio original.
+
+55 pruebas específicas aprobadas y prueba adicional del gate aprobada en su modulo (10 pruebas); build frontend/compilacion/diff correctos. Sin audio real ni validacion visual/amateur. Cambios locales; S06-D sigue abierto.
+
+### Mediciones tecnicas PCM del sample — S06-D
+
+El informe incluye signal_metrics vinculadas al checksum: pico/RMS dBFS, silencio digital, numero/proporcion de valores en limites de amplitud. Adapter procesa bloques PCM enteros de 8/16/24/32 bits, reconoce offset unsigned de 8 bits y revalida archivo tras medir. No son LUFS, true peak, deteccion de canto ni calificacion musical. Silencio digital vigente orienta a regenerar; tocar amplitud limite solo es indicio para escuchar, no confirma clipping audible. UI separa indicaciones comunes y niveles avanzados; medidas se guardan en la evaluacion SQLite y conservan vigencia del informe.
+
+58 pruebas específicas aprobadas, build/compilacion/diff correctos. Audio de pruebas sintetico; no se ejecuto ACE-Step ni se valido escucha o UX reales. Cambios locales; S06-D abierto.
+
+### Bloqueo de silencio digital — S06-D
+
+La aprobacion de samples con audio requiere medicion PCM vigente y rechaza silencio digital. SampleGate revalida señal al revisar un sample aprobado, bloqueando tambien aprobaciones antiguas de WAV silencioso. Comparacion/checksum evita usar medidas de otro audio. La aprobacion guarda signal_metrics; señal presente no verifica musica/canto, calidad o representatividad. Checkpoints mock sin audio conservan su ruta de prueba y no autorizan produccion real.
+
+61 pruebas específicas aprobadas, compilacion/diff correctos. Integracion SQLite verifica rechazo sin cambiar pending y rechazo de registro historico aprobado con silencio. Fixtures de aprobacion usan señal sintetica no nula; no acreditan voz ni musica. Cambios locales, sprint abierto; sin ejecucion ACE-Step, escucha ni validacion UX reales.
+
+### Diagnostico local y bloqueo de RAM — S06-C/D
+
+2026-10-04: wrapper ejecutado offline con --check-only. Base/CPU y Turbo/XPU terminaron con exit 0 y check_only_completed; handler ACE-Step 1.5 importado, torch 2.9.1+xpu, Intel Graphics detectada. Turbo selecciono xpu con --require-device true; Base selecciono cpu. Evidencia local en data/diagnostics/runtime-check/base-cpu.json y turbo-xpu.json (datos ignorados por Git). No se cargaron pesos, no se generaron WAV ni se probaron los seis modos por inferencia. La presencia del backend no acredita memoria para el modelo ni calidad audible.
+
+El diagnostico Base observo RAM libre 2281,77 MB antes y 1640,27 MB tras imports. ResourceMonitor ahora devuelve ready=false/blocked_ram por debajo del minimo configurado (3500 MB por defecto); se debe liberar memoria y repetir comprobacion. El runner ya respeta este bloqueo y restaura modelos al cerrar. Minimo configurado no demuestra suficiencia por perfil; esa medicion sigue pendiente. Se retiro el consejo de sustituir ACE-Step por RVC, porque conversion vocal no sustituye generacion musical.
+
+5 pruebas específicas aprobadas de recursos/runner, compilacion/diff correctos. Cambios locales; sprint abierto y pendientes carga efectiva, generacion/escucha real y validacion UX.
+
+### Presupuesto conservador por perfil — S06-C/D
+
+Preflight y runner ACE-Step estiman memoria por bytes locales de DiT seleccionado, VAE y Qwen3-Embedding, mas 1024 MB de reserva. Antes del proceso, tras liberar modelos de texto, ResourceMonitor exige el mayor entre ese presupuesto y el minimo configurado. Pesos ausentes impiden calcular presupuesto; psutil ausente bloquea verificacion. No es working set medido ni garantia de carga: activaciones, temporales, offload y memoria compartida pueden necesitar mas; LM interno no se incluye porque esta ruta no lo inicializa. Otros providers conservan chequeo generico.
+
+Lectura local 2026-10-04: Base y Turbo suman 6025 MB de archivos y presupuesto 7049 MB. RAM del diagnostico previo (~1,6 GB tras imports) queda por debajo; no se inicio inferencia. Evidencia de presupuesto se conserva en payload preflight de task y evento del runner. 17 pruebas específicas aprobadas, compilacion/diff correctos. Cambios locales; pendientes medir carga/generacion real, escuchar y validar UX.
+
+### Propuestas de correccion desde escucha — S06-D
+
+Verificacion final de la continuacion: 186 pruebas backend en suite completa aprobadas, cuatro pruebas nuevas adicionales aprobadas por separado y 8 pruebas frontend; build/compilacion correctos. Incluye comprobacion SQLite: cambiar el contenido del asset elegido invalida el plan efectivo sin borrar su aprobacion historica. Se corrigio fixture de export con recursos simulados, sin relajar guardas reales. Estas pruebas no acreditan carga, inferencia, fidelidad audible ni usabilidad.
+
+La revision tecnica opcional usa ModelOrchestrator con propuesta vigente, tres intenciones, assets, set y ficha de SQLite. Solicitud explicita, respuesta persistida y estado historico si los inputs cambian durante el handoff. UI distingue ejecución reportada de ejemplo/respaldo; el output no cambia ficha, plan o audio. Tres pruebas específicas de handoff aprobadas y build correcto; obediencia e inferencia real pendientes.
+
+Estado actual: tambien Lego/Extract/Complete como propuestas Base con pistas/instruccion verificadas mediante politica compartida. Lego propone contexto completo (0 a final); no promete stems ni aislamiento perfecto. El informe conserva criterios especificos por tarea sin inventar mediciones musicales. Propuestas en contexto persistido de Gemma/Qwen; revision explicita de controles/ficha antes del plan. Planes vinculados incluyen huella del set. Se deduplicaron reglas comunes de escucha/sample/correccion en la seccion inyectada: 5476 caracteres, roles debajo de 2500, sin truncar instrucciones ni aumentar presupuesto. 55 pruebas backend específicas y 7 frontend aprobadas, build/compilacion correctos. Sin ejecucion musical real; RAM observada ~1124 MB frente a presupuesto estimado 7049 MB.
+
+Continuacion: propuestas recuperables por candidato con vigencia derivada de opinion/plan/revision/checksum. La accion explicita de UI carga modo, fuente e intervalo en el editor existente; guardar crea revision pendiente y el compilador existente verifica fuente e intervalo despues de confirmar. No encadena modelos, no traduce notas libres automaticamente a parametros ni omite revision/aprobacion del nuevo plan. 16 pruebas backend específicas, 7 frontend y build aprobados; pendiente edicion audible, pistas Base y validacion visual.
+
+El usuario declara el alcance: fragmento sugiere repaint con intervalo dentro de la duracion medida; estilo/timbre general sugiere cover; otra interpretacion sugiere text2music sin fuente. Son propuestas en eventos SQLite vinculadas a la opinion vigente y al checksum verificado, sin modificar la especificacion aprobada ni habilitar ejecucion. No se agrega una mascara explicit si el wrapper no la traduce. Faltan handoff al compilador, recuperacion visible, pistas Base y verificacion audible de la edicion. 14 pruebas backend específicas y build frontend aprobados; cambios locales.
+
+### Comparacion A/B de candidatos — S06-D
+
+Song AI compara los requisitos de ambos informes: objetivos, cambios de plan/revision y duracion medida mediante frames/sample rate. Un informe ausente no acredita coincidencia; letra, voz e instrumentos sin analisis quedan pendientes de escucha. Esta comparacion no es una capacidad de evaluacion musical de ACE-Step ni produce ganador o aprobacion. Continuacion: 5 pruebas frontend y build aprobados; sin validacion visual ni escucha real. S06-D permanece abierto y los cambios son locales.
+
+API de candidatos devuelve historial limitado a 20 trabajos del proyecto. UI permite comparar el candidato A con una version completada anterior B; reproduce por task/checksum bajo validacion backend existente. Al iniciar un reproductor pausa el otro. B conserva contexto historico: no cambia opinions, assets, set, sample ni aprobaciones. No alinea tiempos ni normaliza volumen; comparacion subjetiva por escucha.
+
+37 pruebas backend específicas y 2 pruebas frontend aprobadas; build/compilacion/diff correctos. No se hizo prueba visual, escucha real ni validacion amateur. Cambios locales, S06-D sigue abierto.
+
+## Entradas adicionales conectadas — 2026-10-06
+
+El handler generate_music instalado admite reference_audio, seed, inference_steps, guidance_scale y shift. Ficha/plan/traductor conectan estos campos con selección de referencia propia y evidencia WAV; el usuario guarda/confirma revisiones. El handler directo no admite instrumental ni thinking/use_cot como argumentos: política direct_handler_no_lm_rewrite, sin ejecución del LM alto nivel. Shift delegado usa Turbo 3/Base 1 y batch_size=1; rangos UI son política Song-AI. Plan no equivale a ejecución verificada; audio real pendiente. Tareas y límites IN-01..IN-06 en el plan S06-F.
+
+## Evaluación API de alto nivel y LM interno — 2026-10-06
+
+Conclusión técnica: aporta un camino opcional de condicionamiento mediante códigos musicales 5 Hz, especialmente evaluable en text2music. Gemma/Qwen producen especificación/plan; el LM interno puede convertir esas entradas en códigos consumidos por DiT, una función distinta. La API también unifica GenerationParams/GenerationConfig y resultados/tiempos/metadatos; usarla sin LM no exige cargar sus pesos. No hay evidencia local de mejora audible: revisión de código y dos comprobaciones del helper instalado, sin cargar modelos ni generar audio.
+
+Fuentes oficiales revisadas: [inferencia](https://github.com/ace-step/ACE-Step-1.5/blob/main/docs/en/INFERENCE.md), [recursos](https://github.com/ace-step/ACE-Step-1.5/blob/main/docs/en/GPU_COMPATIBILITY.md). Contraste local: `acestep/inference.py`, `_update_metadata_from_lm`, `generate_music`, `gpu_config.py` y pesos locales. Evidencia fechada en `ACE_STEP_HIGH_LEVEL_EVALUATION.json` con SHA del código analizado.
+
+- text2music: thinking puede generar códigos semánticos de audio; probar su efecto sobre coherencia/fidelidad mediante A/B, sin prometer mejora universal.
+- cover/repaint/extract: la instalación omite el LM automáticamente. Activar thinking no añade esta etapa; mantener la ejecución directa válida. Lego/Complete no aparecen en ese skip, pero su utilidad con LM requiere casos propios, no extrapolar text2music.
+- Antes de confirmación: format_sample/create_sample pueden proponer caption/letra/metadatos; se solapan con roles Gemma/Qwen y solo serían propuestas revisables. create_sample no genera el sample de audio obligatorio.
+- Ficha confirmada: proponer perfil de prueba `thinking=true`, `use_cot_caption=false`, `use_cot_language=false`, `use_cot_metas=false`, `use_cot_lyrics=false`, campos musicales completos y letra exacta. El helper conserva metadatos no vacíos (comprobado), pero las opciones de caption/idioma pueden sobrescribirlos después si se activan. Comprobar entradas efectivas antes de DiT; cualquier cambio creativo requiere propuesta/revisión, no persistencia silenciosa.
+- `instrumental` figura en la dataclass/documentación, pero no se lee dentro de generate_music instalado según AST. No considerar resuelta la generación sin voz por migrar a esa API: verificar traducción [Instrumental] y resultado audible. `use_cot_lyrics` está reservado/no consumido por inference.
+- Seeds: enviar explícitamente `GenerationConfig(seeds=[seed], use_random_seed=false, batch_size=1)`; la ruta instalada prepara seeds desde config, por lo que no basta confiar en `params.seed`. Registrar seed efectivo.
+- Recursos: RAM libre observada 4297,12 MB; pesos LM 1.7B locales 3536,72 MB, adicionales al pipeline DiT/VAE/text encoder y caches/activaciones. Tamaño de archivos no mide memoria en ejecución ni VRAM. Presupuesto conservador DiT previo 7049 MB tampoco queda satisfecho con esa RAM. No iniciar ensayo musical bajo estas condiciones; medir RAM/VRAM/backend/offload y presupuesto conjunto antes. No se comprobó carga del LM ni disponibilidad del 0.6B.
+- La API puede continuar sin LM inicializado aunque thinking esté solicitado; registrar requested/used/skipped/error y bloquear éxito atribuido al LM sin evidencia. LM fallido en esta ruta puede devolver error antes de DiT. Orquestador debe suspender Gemma/Qwen y restaurarlos; una segunda inferencia en medio de generación no es aceptable.
+
+Decisión propuesta: integrar adaptador opcional de alto nivel para experimento controlado text2music, conservar ruta directa y seis modos. La activación por defecto queda condicionada a fidelidad/escucha, recursos y tiempos mejores para los casos probados. Evaluación A/B: mismas entradas musicales/perfil/pasos/duración y seeds configuradas, varias variaciones, letra/idioma/restricciones revisados, calidad vocal/estructura escuchadas, tiempos y pico RAM/VRAM registrados. Igual seed no implica mismo audio entre rutas; no elegir ganador automáticamente. Sample y final comparten política LM/modelo/configuración relevantes y cualquier cambio invalida aprobación.
+
+### Estado posterior autorizado: API opcional conectada — 2026-10-06
+
+Song AI conserva direct por defecto; high_level y high_level_lm son elecciones persistidas/aprobadas. Esta última solo text2music, modelos locales 0.6B/1.7B, backend pt/CPU, sin reescritura de caption/idioma/metadatos. El adaptador usa config.seeds, exige audio/códigos y verifica inputs devueltos; fallo sin fallback. Presupuesto suma pesos LM y reserva, preflight valida archivos. Runtime registra solicitud/uso/estado y compara ruta/LM al evaluar sample. No se verificó carga ni beneficio audible. La evaluación anterior describe la decisión inicial; la conexión actual la implementa tras autorización explícita. Rutas de alto nivel sin LM no inicializan LLMHandler.
+
+## Comprobación del contrato instalado — 2026-10-08
+
+Ejecutar `.venv/Scripts/python.exe tools/check_acestep_contract.py` tras actualizar ACE-Step. Inspección AST con hashes de fuentes: comprueba nombres de argumentos explícitos e instruction y catálogos de tareas; no importa el motor ni carga modelos. Resultado local compatible para Base (seis modos) y Turbo (text2music, cover, repaint). No demuestra semántica de argumentos, generación por modo ni calidad de audio; esas evidencias siguen pendientes en S06-04/S10.

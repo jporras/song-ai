@@ -1,9 +1,12 @@
 param(
-    [switch]$Force
+    [switch]$Force,
+    [ValidateSet('all', 'gemma', 'qwen')][string]$Role = 'all'
 )
 
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
+. (Join-Path $PSScriptRoot 'llm-environment.ps1')
+Import-SongAiEnvironment (Join-Path $Root '.env')
 $RuntimeDir = Join-Path $Root "data\runtime\llm"
 $LogDir = Join-Path $Root "data\logs\llm"
 New-Item -ItemType Directory -Force -Path $RuntimeDir, $LogDir | Out-Null
@@ -71,11 +74,24 @@ function Start-LlmServer(
     }
 
     $gpuArgs = if ($env:SONG_AI_LLAMA_CPP_GPU_ARGS) { $env:SONG_AI_LLAMA_CPP_GPU_ARGS } else { "--n-gpu-layers 999" }
-    $ctxSize = if ($env:SONG_AI_LLAMA_CPP_CTX_SIZE) { $env:SONG_AI_LLAMA_CPP_CTX_SIZE } else { "4096" }
-    $args = @("-m", $ModelPath, "--port", "$Port", "--ctx-size", "$ctxSize")
+    $roleGpuArgs = [Environment]::GetEnvironmentVariable("SONG_AI_$($Role.ToUpper())_GPU_ARGS")
+    if ($roleGpuArgs) { $gpuArgs = $roleGpuArgs }
+    $ctxSize = if ($env:SONG_AI_LLAMA_CPP_CTX_SIZE) { $env:SONG_AI_LLAMA_CPP_CTX_SIZE } else { "8192" }
+    $args = @("-m", $ModelPath, "--port", "$Port", "--ctx-size", "$ctxSize", "--parallel", "1", "-lv", "4")
+    $cacheRam = if ($env:SONG_AI_LLAMA_CPP_CACHE_RAM_MB) { $env:SONG_AI_LLAMA_CPP_CACHE_RAM_MB } else { '256' }
+    $args += @('--cache-ram', "$cacheRam")
     $args += Split-Args $gpuArgs
     $args += Split-Args $ExtraArgs
 
+    # Preserve the previous run, especially crash diagnostics, before redirecting new logs.
+    $historyStamp = Get-Date -Format 'yyyyMMdd-HHmmssfff'
+    foreach ($previousLog in @($logFile, $errorLogFile)) {
+        if (Test-Path -LiteralPath $previousLog) {
+            $archiveDir = Join-Path $LogDir 'archive'
+            New-Item -ItemType Directory -Force -Path $archiveDir | Out-Null
+            Copy-Item -LiteralPath $previousLog -Destination (Join-Path $archiveDir "$historyStamp-$([IO.Path]::GetFileName($previousLog))")
+        }
+    }
     Write-Host "[LLM] Iniciando $Role en puerto $Port con GPU args: $gpuArgs"
     $process = Start-Process -FilePath $server.Source -ArgumentList $args -WorkingDirectory $Root -WindowStyle Hidden -RedirectStandardOutput $logFile -RedirectStandardError $errorLogFile -PassThru
     Set-Content -Path $pidFile -Value $process.Id -Encoding ascii
@@ -86,5 +102,5 @@ $qwenUrl = if ($env:SONG_AI_LLAMA_CPP_TECHNICAL_BASE_URL) { $env:SONG_AI_LLAMA_C
 $gemmaModel = if ($env:SONG_AI_GEMMA_GGUF_PATH) { $env:SONG_AI_GEMMA_GGUF_PATH } else { Join-Path $Root "data\models\llm\gemma\gemma.gguf" }
 $qwenModel = if ($env:SONG_AI_QWEN_GGUF_PATH) { $env:SONG_AI_QWEN_GGUF_PATH } else { Join-Path $Root "data\models\llm\qwen\qwen.gguf" }
 
-Start-LlmServer -Role "gemma" -ModelPath $gemmaModel -Port (Get-PortFromUrl $gemmaUrl 8081) -ExtraArgs $env:SONG_AI_GEMMA_LLAMA_ARGS
-Start-LlmServer -Role "qwen" -ModelPath $qwenModel -Port (Get-PortFromUrl $qwenUrl 8082) -ExtraArgs $env:SONG_AI_QWEN_LLAMA_ARGS
+if ($Role -in @('all', 'gemma')) { Start-LlmServer -Role "gemma" -ModelPath $gemmaModel -Port (Get-PortFromUrl $gemmaUrl 8081) -ExtraArgs $env:SONG_AI_GEMMA_LLAMA_ARGS }
+if ($Role -in @('all', 'qwen')) { Start-LlmServer -Role "qwen" -ModelPath $qwenModel -Port (Get-PortFromUrl $qwenUrl 8082) -ExtraArgs $env:SONG_AI_QWEN_LLAMA_ARGS }

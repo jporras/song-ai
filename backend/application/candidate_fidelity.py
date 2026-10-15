@@ -33,6 +33,26 @@ class CandidateFidelityReport:
                            ("excluded_content", "Contenido excluido")):
             checks.append({"id": key, "label": label, "expected": plan.get("retained_spec", {}).get(key),
                            "observed": None, "status": "analysis_or_listening_pending", "method": "not_measured"})
-        return {"schema_version": "1.0", "spec_revision_id": plan["spec_revision_id"],
+        task = payload.get("task_type")
+        mode_checks = []
+        if task == "cover":
+            mode_checks = [("source_preservation", "Conservacion de la composicion fuente",
+                            {"source_artifact_id": plan.get("retained_spec", {}).get("source_artifact_id"),
+                             "requested_strength": payload.get("audio_cover_strength")})]
+        elif task == "repaint":
+            mode_checks = [("edited_interval", "Correccion del fragmento solicitado",
+                            {"start": payload.get("repainting_start"), "end": payload.get("repainting_end")}),
+                           ("exterior_preservation", "Conservacion del audio fuera del fragmento", "Revisar contra la fuente")]
+        elif task in {"lego", "extract", "complete"}:
+            mode_checks = [("target_tracks", "Pistas solicitadas", plan.get("retained_spec", {}).get("target_tracks", [])),
+                           ("task_instruction", "Operacion solicitada", payload.get("instruction"))]
+            if task == "extract":
+                mode_checks.append(("extraction_leakage", "Fugas de otras pistas", "Revisar aislamiento contra la mezcla fuente"))
+            else:
+                mode_checks.append(("context_coherence", "Coherencia con el audio de contexto", "Revisar sincronizacion y arreglo con la fuente"))
+        for key, label, expected in mode_checks:
+            checks.append({"id": key, "label": label, "expected": expected, "observed": None,
+                           "status": "analysis_or_listening_pending", "method": "not_measured"})
+        return {"schema_version": "1.1", "task_type": task, "spec_revision_id": plan["spec_revision_id"],
                 "plan_sha256": plan["plan_sha256"], "audio_sha256": evidence.get("sha256"),
                 "checks": checks, "musical_acceptance": "pending_user_review", "final_quality_verified": False}

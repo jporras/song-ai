@@ -5,12 +5,12 @@ from typing import Protocol
 from core.storage import StorageManager
 
 
-class ProfessionalArtifactSource(Protocol):
-    def artifact_download_file(self, song_id: str, artifact_type: str) -> tuple[Path, str, str]: ...
+class ProjectArtifactSource(Protocol):
+    def download_file(self, song_id: str, artifact_type: str) -> tuple[Path, str, str]: ...
 
 
 class AudioDownloadService:
-    def __init__(self, storage: StorageManager, professional_songs: ProfessionalArtifactSource) -> None:
+    def __init__(self, storage: StorageManager, professional_songs: ProjectArtifactSource) -> None:
         self.storage = storage
         self.professional_songs = professional_songs
 
@@ -29,7 +29,7 @@ class AudioDownloadService:
         artifact_type = f"final_song_{safe_extension}"
         for project in self.storage.list_song_projects():
             try:
-                path, filename, _media_type = self.professional_songs.artifact_download_file(
+                path, filename, _media_type = self.professional_songs.download_file(
                     str(project["id"]), artifact_type
                 )
                 return path, filename

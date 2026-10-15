@@ -52,17 +52,17 @@ class LocalModelSettings:
             ),
             gemma_gguf_path=Path(os.getenv("SONG_AI_GEMMA_GGUF_PATH", str(project_root / "data" / "models" / "llm" / "gemma" / "gemma.gguf"))),
             qwen_gguf_path=Path(os.getenv("SONG_AI_QWEN_GGUF_PATH", str(project_root / "data" / "models" / "llm" / "qwen" / "qwen.gguf"))),
-            llama_cpp_timeout_seconds=int(os.getenv("SONG_AI_LLAMA_CPP_TIMEOUT_SECONDS", "240")),
+            llama_cpp_timeout_seconds=int(os.getenv("SONG_AI_LLAMA_CPP_TIMEOUT_SECONDS", "480")),
             llama_cpp_n_predict=int(os.getenv("SONG_AI_LLAMA_CPP_N_PREDICT", "512")),
             llama_cpp_interpreter_n_predict=int(
-                os.getenv("SONG_AI_LLAMA_CPP_INTERPRETER_N_PREDICT", os.getenv("SONG_AI_LLAMA_CPP_N_PREDICT", "160"))
+                os.getenv("SONG_AI_LLAMA_CPP_INTERPRETER_N_PREDICT", os.getenv("SONG_AI_LLAMA_CPP_N_PREDICT", "512"))
             ),
             llama_cpp_technical_n_predict=int(
-                os.getenv("SONG_AI_LLAMA_CPP_TECHNICAL_N_PREDICT", os.getenv("SONG_AI_LLAMA_CPP_N_PREDICT", "96"))
+                os.getenv("SONG_AI_LLAMA_CPP_TECHNICAL_N_PREDICT", os.getenv("SONG_AI_LLAMA_CPP_N_PREDICT", "768"))
             ),
             llama_cpp_temperature=float(os.getenv("SONG_AI_LLAMA_CPP_TEMPERATURE", "0.35")),
             llama_server_command=os.getenv("SONG_AI_LLAMA_SERVER_COMMAND", "llama-server"),
-            llama_cpp_ctx_size=int(os.getenv("SONG_AI_LLAMA_CPP_CTX_SIZE", "4096")),
+            llama_cpp_ctx_size=int(os.getenv("SONG_AI_LLAMA_CPP_CTX_SIZE", "8192")),
             llama_cpp_gpu_args=os.getenv("SONG_AI_LLAMA_CPP_GPU_ARGS", "--n-gpu-layers 999"),
             interpreter_model=os.getenv("SONG_AI_INTERPRETER_MODEL", "Gemma 2 2B IT GGUF"),
             lyrics_model=os.getenv("SONG_AI_LYRICS_MODEL", "Gemma 2 2B IT GGUF"),

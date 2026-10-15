@@ -1,4 +1,4 @@
-"""Shared final-generation checks against the active persisted set and sample."""
+"""Validate optional sample evidence; retain the historical project entry point."""
 from typing import Protocol
 
 
@@ -8,6 +8,7 @@ class SampleGateStore(Protocol):
     def set_generation_fingerprint(self, set_id: str) -> str: ...
     def list_samples_for_set(self, set_id: str) -> list[dict]: ...
     def verify_sample_audio(self, sample: dict) -> dict: ...
+    def verify_sample_signal(self, sample: dict) -> dict: ...
 
 
 class SampleGate:
@@ -15,10 +16,9 @@ class SampleGate:
         self.store = store
 
     def require_for_project(self, project: dict, *, real_output: bool = True) -> dict:
-        owner = str(project.get("user_id", ""))
-        if not owner.startswith("set:") or not owner[4:].strip():
-            raise ValueError("Vincula el proyecto a un set valido y genera su sample antes de producir la cancion completa.")
-        return self.require_for_set(owner[4:].strip(), real_output=real_output)
+        # Compatibility entry point: samples no longer gate full production.
+        from application.final_production_gate import FinalProductionGate
+        return FinalProductionGate(self.store).require_for_project(project)
 
     def require_for_set(self, set_id: str, *, real_output: bool, sample_id: str | None = None) -> dict:
         song_set = self.store.get_indexed_set(set_id)
@@ -34,6 +34,9 @@ class SampleGate:
                 continue
             if sample.get("set_id") != set_id:
                 continue
+            if sample.get("listening_review", {}).get("decision") == "changes_requested":
+                failure = "El sample tiene cambios solicitados. Revisa su audio y registra una nueva opinion antes de aprobarlo."
+                continue
             if sample.get("approval_status") != "approved":
                 failure = "Primero escucha y aprueba el sample del set activo."
                 continue
@@ -45,6 +48,7 @@ class SampleGate:
                     evidence = self.store.verify_sample_audio(sample)
                     if sample.get("approved_audio_sha256") != evidence.get("sha256"):
                         raise ValueError("El audio actual no coincide con el sample aprobado; vuelve a aprobarlo.")
+                    self.store.verify_sample_signal(sample)
                 except ValueError as error:
                     failure = str(error)
                     continue

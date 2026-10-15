@@ -21,15 +21,53 @@ class SampleGateTest(unittest.TestCase):
                            approved_set_fingerprint="current", provider="mock-local")
         self.store.list_samples_for_set.return_value = [self.sample]
         self.gate = SampleGate(self.store)
+        self.project = {"user_id": "set:set1", "spec": {"missing_fields": [],
+                        "revision": {"user_confirmation_status": "confirmed", "deterministic_valid": True}}}
 
     def test_unlinked_project_cannot_skip_gate(self):
         with self.assertRaisesRegex(ValueError, "Vincula"):
             self.gate.require_for_project({"user_id": "user"})
 
-    def test_mock_approval_only_allows_mock_output(self):
+    def test_change_request_blocks_even_inconsistent_approved_record(self):
+        self.sample["listening_review"] = {"decision": "changes_requested"}
+        with self.assertRaisesRegex(ValueError, "cambios solicitados"):
+            self.gate.require_for_set("set1", real_output=False)
+        self.store.verify_sample_audio.assert_not_called()
+
+    def test_mock_approval_does_not_accredit_real_sample_evidence(self):
         self.assertEqual(self.gate.require_for_set("set1", real_output=False), self.sample)
         with self.assertRaisesRegex(ValueError, "audio real"):
-            self.gate.require_for_project({"user_id": "set:set1"})
+            self.gate.require_for_set("set1", real_output=True)
+
+    def test_full_production_does_not_depend_on_optional_sample(self):
+        for sample in ([], [self.sample], [{**self.sample, "approved_set_fingerprint": "old"}],
+                       [{**self.sample, "listening_review": {"decision": "changes_requested"}}]):
+            with self.subTest(sample=sample):
+                self.store.list_samples_for_set.return_value = sample
+                self.assertEqual(self.gate.require_for_project(self.project), self.store.get_indexed_set.return_value)
+        self.store.list_samples_for_set.assert_not_called()
+        self.store.verify_sample_audio.assert_not_called()
+
+    def test_full_production_requires_confirmed_valid_spec_and_valid_assets(self):
+        for revision in ({"user_confirmation_status": "pending", "deterministic_valid": True},
+                         {"user_confirmation_status": "confirmed", "deterministic_valid": False}):
+            with self.subTest(revision=revision), self.assertRaises(ValueError):
+                self.gate.require_for_project({**self.project, "spec": {"revision": revision}})
+        self.store.validate_song_set_assets.side_effect = ValueError("Falta melodia")
+        with self.assertRaisesRegex(ValueError, "melodia"):
+            self.gate.require_for_project(self.project)
+
+    def test_master_and_download_without_sample_keep_file_checks(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
+            self.store.data_dir = Path(folder)
+            self.store.get_song_project.return_value = {**self.project, "artifacts": []}
+            self.store.list_samples_for_set.return_value = []
+            with self.assertRaisesRegex(ValueError, "mix.wav"):
+                MasteringService(self.store).master("song1")
+            with self.assertRaisesRegex(ValueError, "vocals.wav"):
+                ProfessionalExportService(self.store).download_file("song1", "final_song_wav")
+            self.store.list_samples_for_set.assert_not_called()
+            self.store.create_song_artifact.assert_not_called()
 
     def test_absent_foreign_stale_and_unapproved_samples_are_rejected(self):
         for changes in ({"set_id": "other"}, {"approved_set_fingerprint": "old"},
@@ -53,11 +91,11 @@ class SampleGateTest(unittest.TestCase):
         service.command_template = "configured"
         service.storage = self.store
         self.store.get_song_project.return_value = {"user_id": "set:set1"}
-        with self.assertRaisesRegex(ValueError, "audio real"):
+        with self.assertRaisesRegex(ValueError, "ficha"):
             service.generate("song1")
         self.store.create_song_artifact.assert_not_called()
 
-    def test_direct_master_and_export_reject_mock_and_unlinked_projects(self):
+    def test_direct_master_and_export_reject_unconfirmed_and_unlinked_projects(self):
         for owner in ("set:set1", "user"):
             for service_type, action in ((MasteringService, "master"),
                                          (ProfessionalExportService, "export")):
@@ -76,15 +114,15 @@ class SampleGateTest(unittest.TestCase):
             with self.subTest(action=action), self.assertRaisesRegex(ValueError, "no encontrado"):
                 getattr(service_type(self.store), action)("missing")
 
-    def test_final_downloads_cannot_bypass_sample_gate(self):
+    def test_final_downloads_cannot_bypass_spec_confirmation(self):
         self.store.get_song_project.return_value = {"user_id": "set:set1"}
         service = ProfessionalExportService(self.store)
         for kind in ("final_song_mp3", "final_song_wav", "final_song_flac", "project_zip"):
-            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, "audio real"):
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, "ficha"):
                 service.download_file("song1", kind)
         self.store.verify_song_artifact.assert_not_called()
 
-    def test_old_manifest_does_not_override_current_sample_readiness(self):
+    def test_old_manifest_does_not_override_current_input_readiness(self):
         with tempfile.TemporaryDirectory() as folder:
             self.store.data_dir = Path(folder)
             directory = Path(folder) / "projects" / "song1"
@@ -95,5 +133,5 @@ class SampleGateTest(unittest.TestCase):
             self.store.get_song_project.return_value = {"user_id": "set:set1", "artifacts": []}
             result = ProfessionalExportService(self.store).get("song1")
             self.assertFalse(result["quality"]["export_ready"])
-            self.assertIn("audio real", result["quality"]["message"])
+            self.assertIn("ficha", result["quality"]["message"])
             self.assertEqual(manifest.read_text(encoding="utf-8"), original)

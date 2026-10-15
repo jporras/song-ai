@@ -91,6 +91,11 @@ class SetRepository:
                 )
                 """
             )
+            columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(project_ui_state)")}
+            if "builder_step" not in columns:
+                connection.execute("ALTER TABLE project_ui_state ADD COLUMN builder_step TEXT NOT NULL DEFAULT ''")
+            if "open_panels_json" not in columns:
+                connection.execute("ALTER TABLE project_ui_state ADD COLUMN open_panels_json TEXT NOT NULL DEFAULT '{}'")
 
     def _ensure_phase_data_columns(self, connection: sqlite3.Connection) -> None:
         columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(project_phase_data)").fetchall()}
@@ -414,20 +419,23 @@ class SetRepository:
             for row in rows
         ]
 
-    def save_ui_state(self, set_id: str, last_active_phase: str) -> dict[str, object] | None:
+    def save_ui_state(self, set_id: str, last_active_phase: str, builder_step: str = "", open_panels: dict[str, bool] | None = None) -> dict[str, object] | None:
         if self.get_set(set_id) is None:
             return None
         updated_at = datetime.now(timezone.utc).isoformat()
+        panels = self.get_ui_state(set_id).get("open_panels", {}) if open_panels is None else open_panels
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO project_ui_state (set_id, last_active_phase, updated_at)
-                VALUES (?, ?, ?)
+                INSERT INTO project_ui_state (set_id, last_active_phase, builder_step, open_panels_json, updated_at)
+                VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(set_id) DO UPDATE SET
                     last_active_phase = excluded.last_active_phase,
+                    builder_step = excluded.builder_step,
+                    open_panels_json = excluded.open_panels_json,
                     updated_at = excluded.updated_at
                 """,
-                (set_id, last_active_phase, updated_at),
+                (set_id, last_active_phase, builder_step, json.dumps(panels), updated_at),
             )
         return self.get_ui_state(set_id)
 
@@ -436,17 +444,19 @@ class SetRepository:
             connection.row_factory = sqlite3.Row
             row = connection.execute(
                 """
-                SELECT set_id, last_active_phase, updated_at
+                SELECT set_id, last_active_phase, builder_step, open_panels_json, updated_at
                 FROM project_ui_state
                 WHERE set_id = ?
                 """,
                 (set_id,),
             ).fetchone()
         if row is None:
-            return {"set_id": set_id, "last_active_phase": "", "updated_at": ""}
+            return {"set_id": set_id, "last_active_phase": "", "builder_step": "", "open_panels": {}, "updated_at": ""}
         return {
             "set_id": str(row["set_id"]),
             "last_active_phase": str(row["last_active_phase"]),
+            "builder_step": str(row["builder_step"]),
+            "open_panels": json.loads(row["open_panels_json"]),
             "updated_at": str(row["updated_at"]),
         }
 

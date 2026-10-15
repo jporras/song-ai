@@ -1,5 +1,7 @@
 # Song-AI Design System
 
+> Esta página describe reglas de la interfaz. La [arquitectura visual de 2026-10-07](SONG_AI_DESIGN_SYSTEM_PROPOSAL_20261007.md) complementa el Song Builder: tokens oscuros, controles y shell se han aplicado con autorización posterior. Consultar README y evidencia de cada lote para distinguir componentes implementados, verificación parcial y aceptación pendiente; no asumir que toda la propuesta está entregada.
+
 ## Filosofia
 
 Song-AI debe sentirse como un estudio musical cinematografico asistido por IA: oscuro, moderno, calmado y profesional. No debe parecer dashboard administrativo, CRUD, chatbot generico ni panel gamer.
@@ -54,6 +56,10 @@ No mostrar codigos tecnicos como texto principal. Si se necesitan, deben ir en t
 Actividad, logs, recursos y diagnosticos solo viven en Production. En fases creativas el usuario guarda configuracion, no ejecuta procesos pesados.
 
 ## Reglas UX
+
+### Una interfaz común con aprendizaje contextual
+
+Usar los mismos controles para todas las personas; no separar por experiencia. Controles aplicables visibles por etapa, con etiquetas claras y ayuda de significado, efecto y ejemplo. Tooltip por foco/hover y ayuda por toque/teclado; límites y errores importantes visibles. Ajustes adicionales accesibles a cualquiera por tarea/relevancia. IA propone y explica sin sustituir decisiones USER. Contrato vigente: [decisiones del Builder](SONG_BUILDER_APPROVED_DECISIONS_20261007.md).
 
 ### Controles de configuración asistida
 

@@ -24,6 +24,10 @@ if str(BACKEND_ROOT) not in sys.path:
 # Import local sin interferencias
 from audio.accelerator_detection import choose_ace_device
 from models.ace_step_tasks import validate_task_inputs
+if __package__:
+    from .acestep_runtime_options import runtime_options, runtime_trace, runtime_input_trace, load_execution_context
+else:
+    from acestep_runtime_options import runtime_options, runtime_trace, runtime_input_trace, load_execution_context
 
 
 def patch_transformers_dtype_kwarg_for_acestep() -> bool:
@@ -99,10 +103,13 @@ def main() -> int:
         default="16, 96, 172, 200",
         help="Pasos OSS usados por ACE-Step. En CPU conviene usar pocos pasos para validar flujo.",
     )
-    parser.add_argument("--guidance-scale", type=float, default=15.0)
+    parser.add_argument("--guidance-scale", type=float, default=None)
+    parser.add_argument("--execution-context", default="")
     parser.add_argument("--scheduler-type", default="euler")
     parser.add_argument("--cfg-type", default="apg")
     parser.add_argument("--omega-scale", type=float, default=10.0)
+    parser.add_argument("--generation-api", choices=("direct", "high_level", "high_level_lm"), default="direct")
+    parser.add_argument("--shift", type=float, default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--config-path",
@@ -165,6 +172,9 @@ def main() -> int:
 
     prompt = Path(args.prompt).read_text(encoding="utf-8")
     lyrics = Path(args.lyrics).read_text(encoding="utf-8")
+    input_context = load_execution_context(args.execution_context)
+    runtime_trace(args, input_context)
+    runtime_input_trace(args, prompt, lyrics, input_context)
     output_path = Path(args.output)
     checkpoint_path = Path(args.checkpoint_path)
     diagnostics_path = Path(args.diagnostics) if args.diagnostics.strip() else output_path.with_suffix(".ace_diagnostics.json")
@@ -311,33 +321,39 @@ def main() -> int:
 
         print_check("generation", True, f"iniciando {args.duration}s infer_step={args.infer_step} oss_steps={args.oss_steps}")
         task_instruction = {"instruction": args.instruction} if args.instruction else {}
-        result = handler.generate_music(
-            captions=prompt,
-            bpm=args.bpm,
-            key_scale=args.key_scale,
-            time_signature=args.time_signature,
-            vocal_language=args.vocal_language,
-            global_caption="",
-            lyrics=lyrics,
-            inference_steps=args.infer_step,
-            guidance_scale=args.guidance_scale,
-            use_random_seed=False,
-            seed=args.seed,
-            audio_duration=args.duration,
-            task_type=args.task_type,
-            src_audio=args.src_audio or None,
-            reference_audio=args.reference_audio or None,
-            repainting_start=args.repainting_start,
-            repainting_end=args.repainting_end,
-            audio_cover_strength=args.audio_cover_strength,
-            chunk_mask_mode=args.chunk_mask_mode,
-            infer_method="ode",
-            sampler_mode=args.scheduler_type,
-            cfg_interval_start=0.0,
-            cfg_interval_end=1.0,
-            use_tiled_decode=truthy(args.overlapped_decode),
-            **task_instruction,
-        )
+        if args.generation_api != "direct":
+            from acestep_high_level import generate
+            result = generate(handler, args, prompt, lyrics, diagnostics, output_path.parent / "high_level")
+        else:
+            result = handler.generate_music(
+                captions=prompt,
+                bpm=args.bpm,
+                key_scale=args.key_scale,
+                time_signature=args.time_signature,
+                vocal_language=args.vocal_language,
+                global_caption="",
+                lyrics=lyrics,
+                inference_steps=args.infer_step,
+                guidance_scale=runtime_options(args)['guidance_scale'],
+                use_random_seed=False,
+                seed=args.seed,
+                audio_duration=args.duration,
+                task_type=args.task_type,
+                src_audio=args.src_audio or None,
+                reference_audio=args.reference_audio or None,
+                repainting_start=args.repainting_start,
+                repainting_end=args.repainting_end,
+                audio_cover_strength=args.audio_cover_strength,
+                chunk_mask_mode=args.chunk_mask_mode,
+                shift=runtime_options(args)['shift'],
+                batch_size=1,
+                infer_method="ode",
+                sampler_mode=args.scheduler_type,
+                cfg_interval_start=0.0,
+                cfg_interval_end=1.0,
+                use_tiled_decode=truthy(args.overlapped_decode),
+                **task_instruction,
+            )
         save_acestep_v15_audio(result, output_path)
     except Exception as error:
         diagnostics["status"] = "failed"
@@ -459,22 +475,22 @@ def load_acestep_api() -> dict[str, object]:
             "handler_class": None,
         }
     try:
-        module = importlib.import_module("acestep.acestep_v15_pipeline")
+        module = importlib.import_module("acestep.handler")
     except ModuleNotFoundError as error:
         missing_name = str(getattr(error, "name", "")) or str(error)
         if missing_name.startswith("acestep"):
             return {
                 "available": False,
                 "kind": "old_api_or_missing_v15_module",
-                "message": "ACE-Step instalado, pero no expone acestep.acestep_v15_pipeline.",
-                "import_path": "acestep.acestep_v15_pipeline",
+                "message": "ACE-Step instalado, pero no expone acestep.handler.",
+                "import_path": "acestep.handler",
                 "handler_class": None,
             }
         return {
             "available": False,
             "kind": "missing_dependency",
             "message": f"Dependencia faltante al importar ACE-Step: {missing_name}",
-            "import_path": "acestep.acestep_v15_pipeline",
+            "import_path": "acestep.handler",
             "handler_class": None,
         }
     except ImportError as error:
@@ -482,7 +498,7 @@ def load_acestep_api() -> dict[str, object]:
             "available": False,
             "kind": "dependency_or_api_error",
             "message": f"ACE-Step instalado, pero fallo una importacion: {error}",
-            "import_path": "acestep.acestep_v15_pipeline",
+            "import_path": "acestep.handler",
             "handler_class": None,
         }
     except Exception as error:
@@ -490,7 +506,7 @@ def load_acestep_api() -> dict[str, object]:
             "available": False,
             "kind": "dependency_or_runtime_error",
             "message": f"ACE-Step instalado, pero fallo al importar su API real: {error}",
-            "import_path": "acestep.acestep_v15_pipeline",
+            "import_path": "acestep.handler",
             "handler_class": None,
         }
     handler_class = getattr(module, "AceStepHandler", None)
@@ -508,14 +524,14 @@ def load_acestep_api() -> dict[str, object]:
                 "ACE-Step instalado, pero la API real no expone AceStepHandler. "
                 f"API antigua ACEStepPipeline disponible={legacy_available}."
             ),
-            "import_path": "acestep.acestep_v15_pipeline",
+            "import_path": "acestep.handler",
             "handler_class": None,
         }
     return {
         "available": True,
         "kind": "v15_handler",
-        "message": "API real detectada: acestep.acestep_v15_pipeline.AceStepHandler",
-        "import_path": "acestep.acestep_v15_pipeline.AceStepHandler",
+        "message": "API real detectada: acestep.handler.AceStepHandler",
+        "import_path": "acestep.handler.AceStepHandler",
         "handler_class": handler_class,
     }
 
@@ -734,6 +750,8 @@ def torch_runtime_snapshot(torch_module: object) -> dict[str, object]:
 
 
 def build_diagnostics(args: argparse.Namespace, prompt: str, lyrics: str, output_path: Path, checkpoint_path: Path) -> dict[str, object]:
+    context_path = getattr(args, 'execution_context', '')
+    context = load_execution_context(context_path)
     device = getattr(args, "device", "auto")
     return {
         "schema": "song-ai-ace-step-diagnostics-v1",
@@ -763,6 +781,8 @@ def build_diagnostics(args: argparse.Namespace, prompt: str, lyrics: str, output
             "checkpoint_path": str(checkpoint_path),
             "checkpoint_path_exists": checkpoint_path.exists(),
         },
+        "runtime_options_trace": runtime_trace(args, context),
+        "runtime_input_trace": runtime_input_trace(args, prompt, lyrics, context),
         "parameters": {
             "audio_duration": args.duration,
             "task_type": getattr(args, "task_type", "text2music"),
@@ -777,7 +797,12 @@ def build_diagnostics(args: argparse.Namespace, prompt: str, lyrics: str, output
             "time_signature": getattr(args, "time_signature", ""),
             "vocal_language": getattr(args, "vocal_language", "en"),
             "infer_step": args.infer_step,
-            "guidance_scale": args.guidance_scale,
+            "shift": runtime_options(args)['shift'],
+            "seed": args.seed,
+            "batch_size": 1,
+            "generation_api": args.generation_api,
+            "lm_policy": "approved_inputs_no_rewrite",
+            "guidance_scale": runtime_options(args)['guidance_scale'],
             "scheduler_type": args.scheduler_type,
             "cfg_type": args.cfg_type,
             "omega_scale": args.omega_scale,

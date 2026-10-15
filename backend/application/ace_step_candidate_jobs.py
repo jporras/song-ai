@@ -3,6 +3,8 @@ from copy import deepcopy
 from threading import Lock, Event
 from application.audio_cancellation import AudioCancelled
 from uuid import uuid4
+import re
+import hashlib
 from typing import Protocol
 
 
@@ -32,16 +34,28 @@ class AceStepCandidateJobs:
                 self.store.complete_model_run(run["run_id"], "failed", {"interrupted": True})
 
     def start(self, song_id: str, request: dict) -> dict:
+        if not isinstance(request, dict) or set(request) - {'request_id', 'plan_sha256', 'exploratory_audio_authorized'}:
+            raise ValueError('Revisa los parametros de la solicitud de audio.')
         if request.get("exploratory_audio_authorized") is not True:
             raise ValueError("Autoriza el borrador exploratorio antes de iniciar.")
+        request_id = request.get('request_id')
+        if request_id is not None and (not isinstance(request_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', request_id)):
+            raise ValueError('El identificador de solicitud de audio no es valido.')
+        existing = self._existing_request(song_id, request)
+        if existing:
+            return existing
         item = self.review.latest(song_id)
         if not item or item["effective_status"] != "approved" or request.get("plan_sha256") != item["plan"]["plan_sha256"]:
             raise ValueError("Aprueba el plan vigente antes de iniciar el borrador.")
         evidence = self.preflight(item) if self.preflight is not None else {"status": "not_checked"}
         with self.lock:
+            existing = self._existing_request(song_id, request)
+            if existing:
+                return existing
             if any(task["task_type"] == self.TASK_TYPE and task["status"] in {"pending", "running", "cancelling"} for task in self.store.list_tasks()):
                 raise ValueError("Ya hay un borrador en curso; espera a que termine.")
-            task_id = "ace_job_" + uuid4().hex
+            task_id = ("ace_job_" + hashlib.sha256((song_id + '\0' + request_id).encode()).hexdigest()
+                       if request_id else "ace_job_" + uuid4().hex)
             payload = {"song_id": song_id, "plan_id": item["plan_id"], "request": deepcopy(request)}
             payload["preflight"] = evidence
             payload["request"]["plan_id"] = item["plan_id"]
@@ -50,9 +64,23 @@ class AceStepCandidateJobs:
             try:
                 self.dispatcher.submit(lambda: self._run(task_id, payload))
             except Exception:
+                self.cancellations.pop(task_id, None)
                 self.store.update_task(task_id, "failed", 0, "No se pudo iniciar el trabajo; vuelve a intentarlo.")
                 raise
             return task
+
+    def _existing_request(self, song_id, request):
+        if not request.get('request_id'):
+            return None
+        for task in self.store.list_tasks():
+            payload = task.get('payload', {})
+            original = payload.get('request', {})
+            if (task.get('task_type') == self.TASK_TYPE and payload.get('song_id') == song_id
+                    and original.get('request_id') == request['request_id']):
+                if {key: value for key, value in original.items() if key != 'plan_id'} != request:
+                    raise ValueError('Esta solicitud ya existe con otros parametros. Inicia una nueva accion.')
+                return task
+        return None
 
     def cancel(self, song_id: str, task_id: str) -> dict:
         with self.lock:
@@ -77,6 +105,10 @@ class AceStepCandidateJobs:
     def latest(self, song_id: str) -> dict | None:
         return next((task for task in self.store.list_tasks() if task["task_type"] == self.TASK_TYPE
                      and task["payload"].get("song_id") == song_id), None)
+
+    def history(self, song_id: str, limit: int = 20) -> list[dict]:
+        return [task for task in self.store.list_tasks() if task["task_type"] == self.TASK_TYPE
+                and task["payload"].get("song_id") == song_id][:limit]
 
     def _run(self, task_id: str, payload: dict):
         run_id = "ace_run_" + uuid4().hex

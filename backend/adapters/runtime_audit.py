@@ -15,6 +15,7 @@ from adapters.acestep_api_audit import audit_acestep_api
 from adapters.parameter_audit import audit_parameters
 from adapters.acestep_configuration_audit import audit_acestep_configuration
 from adapters.acestep_task_audit import wrapper_tasks
+from adapters.acestep_checkpoint_inventory import observe_checkpoint_root
 
 
 class RuntimeAudit:
@@ -91,6 +92,7 @@ class RuntimeAudit:
                     configs.append({"path": str(config.relative_to(self.root)),
                                     "sha256": hashlib.sha256(config.read_bytes()).hexdigest()})
                 checkpoints.append({"path": str(directory.relative_to(self.root)), "configs": configs,
+                                    "prerequisites": observe_checkpoint_root(directory),
                                     "loaded_verified": False})
         historical_runs = []
         for directory_name in ("projects", "diagnostics"):

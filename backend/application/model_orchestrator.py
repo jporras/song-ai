@@ -1,4 +1,5 @@
 from uuid import uuid4
+from application.assistant_context_projection import assistant_context
 
 from core.storage import StorageManager
 from providers.registry import ProviderRegistry
@@ -81,6 +82,13 @@ class ModelOrchestrator:
 
     def run_handoff(self, payload: dict[str, object]) -> dict[str, object]:
         self.require_planning_available()
+        from application.song_spec_proposal import engine_input_check
+        context = dict(payload.get('context') or {})
+        plan = context.get('candidate_plan') or context.get('current_spec')
+        if isinstance(plan, dict):
+            engine_check = engine_input_check(plan)
+            if engine_check:
+                payload = {**payload, 'context': {**context, 'engine_input_validation': engine_check}}
         model_role = str(payload.get("model_role", "intent_extractor"))
         task_type = str(payload.get("task_type", "extract_intent"))
         if model_role not in self.ROLE_PROVIDER_KEYS:
@@ -153,16 +161,25 @@ class ModelOrchestrator:
         )
         result.setdefault("mode", "mock_handoff")
         result.setdefault("provider_executed", False)
+        compilation_failed = task_type == 'compile_song_spec' and (
+            result['mode'] != 'provider_handoff' or not result.get('spec_proposal'))
+        compilation_failed = compilation_failed or (task_type == 'propose_full_lyrics' and not result.get('lyrics_proposal'))
+        compilation_failed = compilation_failed or (task_type == 'collect_song_intent' and not result.get('intent_guidance'))
+        outcome = 'failed' if compilation_failed else 'completed'
         completed_task = self.storage.update_task(
             task_id=task_id,
-            status="completed",
+            status=outcome,
             progress=100,
-            message="Handoff completado. Resultado persistido y assistant reactivado.",
+            message=(("No se pudo preparar la propuesta de letra; ficha conservada y assistant reactivado."
+                      if task_type == 'propose_full_lyrics' else
+                      "No se pudo revisar la intención; ficha conservada y assistant reactivado."
+                      if task_type == 'collect_song_intent' else "La compilacion fallo; ficha conservada y assistant reactivado.") if compilation_failed
+                     else "Handoff completado. Resultado persistido y assistant reactivado."),
             result=result,
         )
         completed_run = self.storage.complete_model_run(
             run_id=run_id,
-            status="completed",
+            status=outcome,
             metadata={
                 "mode": result.get("mode", "mock_handoff"),
                 "capabilities": provider["capabilities"],
@@ -215,6 +232,12 @@ class ModelOrchestrator:
         task_type: str,
         payload: dict[str, object],
     ) -> dict[str, object] | None:
+        if task_type == 'collect_song_intent':
+            from application.local_intent_assistance import provider_intent_guidance
+            return provider_intent_guidance(self.provider_registry, payload)
+        if task_type == 'propose_full_lyrics':
+            from application.full_lyrics_proposal import provider_lyrics_proposal
+            return provider_lyrics_proposal(self.provider_registry, payload)
         if task_type == "sqlite_project_technical_review":
             return None
         if not self._can_run_provider_handoff(model_role):
@@ -230,6 +253,16 @@ class ModelOrchestrator:
                 "provider_error": str(error),
             }
         summary = str(response.get("summary", "")).strip()
+        proposal = None
+        if task_type == "compile_song_spec":
+            from application.song_spec_proposal import specification_proposal
+            try:
+                proposal = specification_proposal(summary, payload["context"])
+            except ValueError as error:
+                return {"mode": "provider_invalid_output", "provider_executed": True,
+                        "provider_error": str(error), "summary": "La ficha activa se conserva; revisa el error de la propuesta.",
+                        "engine_steering": response.get("engine_steering", {})}
+            summary = proposal["summary"]
         if not summary:
             return None
         response_mode = str(response.get("mode", "unknown"))
@@ -242,17 +275,19 @@ class ModelOrchestrator:
             "provider_name": response.get("model", self.DEFAULT_MODELS.get(model_role, "unknown")),
             "summary": summary,
             "engine_steering": response.get("engine_steering", {}),
+            "engine_input_validation": payload.get('context', {}).get('engine_input_validation'),
             "missing_fields": [],
             "validation_results": {
-                "status": "provider_validated",
+                "status": "provider_review_unverified",
                 "source_of_truth": "sqlite_payload",
                 "provider_mode": response_mode,
             },
             "song_blueprint": {
                 "goal": "complete_song_with_local_pipeline",
-                "audio_pipeline": ["planning", "midi", "full_song_or_stems", "mastering", "export"],
+                "audio_pipeline": ["confirmed_spec", "approved_ace_plan", "exploratory_audio", "approved_representative_sample", "full_song", "export"],
             },
             "next_action": summary,
+            "spec_proposal": proposal,
         }
 
     def _can_run_provider_handoff(self, model_role: str) -> bool:
@@ -261,14 +296,21 @@ class ModelOrchestrator:
     def _technical_prompt(self, task_type: str, payload: dict[str, object]) -> str:
         project_name = str(payload.get("project_name", "Proyecto activo"))
         question = str(payload.get("question", "Revisa el siguiente paso tecnico."))
-        context = payload.get("context", {})
+        context = assistant_context(payload.get("context", {}))
+        if task_type == "compile_song_spec":
+            import json
+            context = {**context,
+                "current_spec": {key: value for key, value in context['current_spec'].items() if not key.startswith('_')},
+                "fields": {key: {name: value for name, value in field.items() if name in {'help', 'control', 'required_for_spec', 'options', 'applicable'}}
+                           for key, field in context['fields'].items()}}
+            return json.dumps({"task": task_type, "question": question, "context": context}, ensure_ascii=False, separators=(',', ':'))
         return (
             "Responde en espanol, maximo 5 bullets, sin mostrar razonamiento interno. "
             "Eres el director tecnico invisible de Song AI. Valida el pipeline y di solo el siguiente paso util.\n\n"
             f"Tarea: {task_type}\n"
             f"Proyecto: {project_name}\n"
-            f"Pregunta de Gemma: {question}\n"
-            f"Contexto SQLite/pipeline: {context}"
+            f"Contexto SQLite/pipeline: {context}\n"
+            f"Pregunta: {question}"
         )
 
     def record_project_event(
@@ -376,7 +418,10 @@ class ModelOrchestrator:
             if not str(set_data.get(key, "")).strip():
                 missing.append(key)
 
-        required_phases = ("intent", "lyrics", "music-plan", "midi", "instrumental", "voice")
+        active_spec = dict(dict(professional_project.get("spec") or {}).get("json_spec") or {})
+        from models.ace_step_tasks import TASKS
+        ace_route = active_spec.get("task_type") in TASKS
+        required_phases = ("intent",) if ace_route else ("intent", "lyrics", "music-plan", "midi", "instrumental", "voice")
         for phase in required_phases:
             is_saved = bool(dict(phase_data.get(phase, {})).get("status")) or bool(saved_editor_phases.get(phase))
             ui_ready = bool(ui_ready_phases.get(phase)) or str(ui_statuses.get(phase, "")).upper() == "READY"

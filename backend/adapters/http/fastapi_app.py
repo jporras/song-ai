@@ -4,7 +4,8 @@ import subprocess
 from threading import Lock, Thread
 from typing import Any
 
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -314,6 +315,16 @@ def get_professional_phases() -> dict[str, Any]:
     return ok(service.professional_phases())
 
 
+@app.get("/api/music-tools")
+def get_music_tools() -> dict[str, Any]:
+    return ok(service.music_tool_catalog())
+
+
+@app.post("/api/pro/projects/{song_id}/music-actions")
+def execute_music_action(song_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.execute_music_action(song_id, payload))
+
+
 @app.get("/api/pro/projects")
 def get_professional_projects() -> dict[str, Any]:
     return ok(service.list_professional_projects())
@@ -349,14 +360,56 @@ def get_professional_specification(song_id: str) -> dict[str, Any]:
     return run_action(lambda: service.get_professional_specification(song_id))
 
 
+@app.post("/api/pro/projects/{song_id}/spec/proposal")
+def propose_song_specification(song_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.propose_song_specification(song_id))
+
+
 @app.post("/api/pro/projects/{song_id}/ace-plan/preview")
 def preview_ace_step_plan(song_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     return run_action(lambda: service.preview_ace_step_plan(song_id, payload))
 
 
+@app.post("/api/pro/projects/{song_id}/source-audio")
+async def import_source_audio(song_id: str, request: Request, filename: str, authorized: bool = False) -> dict[str, Any]:
+    from application.source_audio_import import MAX_SOURCE_BYTES
+    content = bytearray()
+    async for chunk in request.stream():
+        if len(content) + len(chunk) > MAX_SOURCE_BYTES:
+            raise HTTPException(status_code=413, detail="El archivo supera 64 MiB.")
+        content.extend(chunk)
+    return await run_in_threadpool(lambda: run_action(lambda: service.import_source_audio(song_id, filename, bytes(content), authorized)))
+
+
 @app.put("/api/pro/projects/{song_id}/ace-configuration")
 def edit_ace_step_configuration(song_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     return run_action(lambda: service.edit_ace_step_configuration(song_id, payload))
+
+
+@app.patch("/api/pro/projects/{song_id}/spec")
+def edit_music_specification(song_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.execute_music_action(song_id, {
+        "tool_id": "spec.edit", "revision_id": payload.get("revision_id"),
+        "user_authorized": True, "parameters": {key: value for key, value in payload.items() if key != "revision_id"},
+    })["result"])
+
+
+@app.post("/api/pro/projects/{song_id}/spec/restore")
+def restore_music_specification(song_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.execute_music_action(song_id, {
+        "tool_id": "spec.restore", "revision_id": payload.get("revision_id"),
+        "user_authorized": True, "parameters": {key: value for key, value in payload.items() if key != "revision_id"},
+    })["result"])
+
+
+@app.post("/api/pro/projects/{song_id}/spec/legacy-migration")
+def preview_legacy_migration(song_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.preview_legacy_intent_migration(song_id))
+
+
+@app.post("/api/pro/projects/{song_id}/spec/legacy-migration/apply")
+def apply_legacy_migration(song_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.apply_legacy_intent_migration(song_id, payload))
 
 
 @app.post("/api/pro/projects/{song_id}/ace-plan")
@@ -376,7 +429,7 @@ def generate_ace_step_candidate(song_id: str, payload: dict[str, Any]) -> dict[s
 
 @app.get("/api/pro/projects/{song_id}/ace-candidates")
 def latest_ace_step_candidate(song_id: str) -> dict[str, Any]:
-    return run_action(lambda: {"job": service.ace_candidate_jobs.latest(song_id)})
+    return run_action(lambda: {"job": service.ace_candidate_jobs.latest(song_id), "history": service.ace_candidate_jobs.history(song_id)})
 
 
 @app.get("/api/pro/projects/{song_id}/ace-candidates/{task_id}")
@@ -389,13 +442,64 @@ def cancel_ace_step_candidate(song_id: str, task_id: str) -> dict[str, Any]:
     return run_action(lambda: service.ace_candidate_jobs.cancel(song_id, task_id))
 
 
+@app.post("/api/pro/projects/{song_id}/ace-candidates/{task_id}/review")
+def review_candidate_listening(song_id: str, task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.review_candidate_listening(song_id, task_id, payload))
+
+
+@app.post("/api/pro/projects/{song_id}/ace-candidates/{task_id}/sample")
+def create_candidate_sample(song_id: str, task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.create_candidate_sample(song_id, task_id, payload))
+
+
+@app.post("/api/pro/projects/{song_id}/ace-candidates/{task_id}/correction")
+def propose_candidate_correction(song_id: str, task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.propose_candidate_correction(song_id, task_id, payload))
+
+
+@app.get("/api/pro/projects/{song_id}/ace-candidates/{task_id}/correction")
+def latest_candidate_correction(song_id: str, task_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.latest_candidate_correction(song_id, task_id))
+
+
+@app.post("/api/pro/projects/{song_id}/ace-candidates/{task_id}/correction/review")
+def review_candidate_correction(song_id: str, task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.review_candidate_correction(song_id, task_id, payload))
+
+
+@app.post("/api/pro/projects/{song_id}/samples/{sample_id}/representativity")
+def evaluate_sample_representativity(song_id: str, sample_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.evaluate_sample_representativity(song_id, sample_id))
+
+
+@app.get("/api/pro/projects/{song_id}/samples/{sample_id}/representativity")
+def latest_sample_representativity(song_id: str, sample_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.latest_sample_representativity(song_id, sample_id))
+
+
+@app.post("/api/pro/projects/{song_id}/samples/{sample_id}/review")
+def review_sample_listening(song_id: str, sample_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_action(lambda: service.review_sample_listening(song_id, sample_id, payload))
+
+
+@app.get("/api/pro/projects/{song_id}/samples/{sample_id}/review")
+def latest_sample_listening_review(song_id: str, sample_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.latest_sample_listening_review(song_id, sample_id))
+
+
+@app.get("/api/pro/projects/{song_id}/ace-candidates/{task_id}/review")
+def latest_candidate_listening_review(song_id: str, task_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.latest_candidate_listening_review(song_id, task_id))
+
+
 @app.get("/api/pro/projects/{song_id}/ace-candidates/{task_id}/audio")
-def ace_step_candidate_audio(song_id: str, task_id: str, audio_sha256: str):
+def ace_step_candidate_audio(song_id: str, task_id: str, audio_sha256: str, download: bool = False):
     try:
         path = service.ace_candidate_audio_file(song_id, task_id, audio_sha256)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    return FileResponse(path, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+    return FileResponse(path, media_type="audio/wav", headers={"Cache-Control": "no-store"},
+                        filename=f"song-ai-{path.parent.name}.wav" if download else None)
 
 
 @app.post("/api/pro/projects/{song_id}/ace-plan/{plan_id}/approve")
@@ -405,7 +509,10 @@ def approve_ace_step_plan(song_id: str, plan_id: str, payload: dict[str, Any]) -
 
 @app.post("/api/pro/projects/{song_id}/spec/confirm")
 def confirm_professional_specification(song_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    return run_action(lambda: service.confirm_professional_specification(song_id, payload))
+    return run_action(lambda: service.execute_music_action(song_id, {
+        "tool_id": "spec.confirm", "revision_id": payload.get("revision_id"),
+        "user_authorized": True, "parameters": {key: value for key, value in payload.items() if key != "revision_id"},
+    })["result"])
 
 
 @app.post("/api/pro/projects/{song_id}/lyrics")

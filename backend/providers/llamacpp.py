@@ -19,14 +19,19 @@ class LlamaCppClient:
         self.base_url = (base_url or settings.llama_cpp_base_url).rstrip("/")
         self.template = template
 
-    def complete(self, prompt: str, system_prompt: str = "", n_predict: int | None = None) -> str:
+    def complete(self, prompt: str, system_prompt: str = "", n_predict: int | None = None, json_schema: dict | None = None) -> str:
         payload = {
             "prompt": self._format_prompt(prompt, system_prompt),
             "n_predict": n_predict or self.settings.llama_cpp_n_predict,
             "temperature": self.settings.llama_cpp_temperature,
+            "cache_prompt": True,
             "stop": ["</s>", "<end_of_turn>", "<|im_end|>"],
         }
+        if json_schema is not None:
+            payload['json_schema'] = json_schema
         data = self._post_json("/completion", payload)
+        if data.get("truncated") or data.get("stopped_limit") or data.get("stop_type") == "limit":
+            raise LlamaCppError("El modelo alcanzo su limite de salida: la respuesta esta incompleta. Aumenta el limite de salida o divide la solicitud.")
         content = self._clean_content(str(data.get("content") or data.get("response") or ""))
         if not str(content).strip():
             raise LlamaCppError("llama.cpp respondio sin contenido.")
@@ -153,7 +158,12 @@ class LlamaCppTechnicalProvider(InterpreterProvider):
         ]
 
     def interpret(self, text: str, target: str) -> dict[str, object]:
-        content = self.client.complete(text, n_predict=self.settings.llama_cpp_technical_n_predict)
+        limit = max(self.settings.llama_cpp_technical_n_predict, 3072) if target == "compile_song_spec" else self.settings.llama_cpp_technical_n_predict
+        if target == 'compile_song_spec':
+            from providers.song_spec_schema import proposal_schema
+            content = self.client.complete(text, n_predict=limit, json_schema=proposal_schema(text))
+        else:
+            content = self.client.complete(text, n_predict=limit)
         return {
             "target": target,
             "input": text,

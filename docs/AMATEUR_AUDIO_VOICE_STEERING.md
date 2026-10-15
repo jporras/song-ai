@@ -1,5 +1,9 @@
 # Dirección de producto: creación amateur, calidad y voz personalizada
 
+## Decisiones vigentes del usuario — 2026-10-07
+
+[Contrato de decisiones](SONG_BUILDER_APPROVED_DECISIONS_20261007.md): **sample previo opcional, sin bloqueo de generación completa**; instrumental como intención soportada con ejecución condicionada a validación; dirección por sección en MusicSpec aunque su traducción tenga límites; referencia audio opcional/avanzada, sin clonación; perfil ACE-Step automático por defecto y manual disponible para cualquiera. Esta decisión sustituye requisitos anteriores incompatibles en este documento. Las descripciones de pruebas/gates del árbol anterior son históricas; retirar el bloqueo de sample sigue pendiente de implementación y regresión. Mantener set válido, request confirmado y evaluación/aceptación de audio separadas.
+
 Fecha: 2026-10-03. Estado: **contrato de desarrollo pendiente**. Esta definición no acredita audio real, clonación de voz implementada ni una experiencia validada con usuarios. Complementa [AMATEUR_USER_FLOW_REVIEW.md](AMATEUR_USER_FLOW_REVIEW.md): ese documento gobierna el recorrido; este gobierna calidad, voz y aceptación del resultado. El orden de entrega está en [ROADMAPP.md](ROADMAPP.md).
 
 ## Resultado que debe ofrecer el producto

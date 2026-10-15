@@ -99,14 +99,8 @@ class InstrumentalGenerationService:
         }
 
     def get(self, song_id: str) -> dict[str, object]:
-        path = self.storage.data_dir / "projects" / song_id / "instrumental.wav"
-        if not path.exists():
-            raise ValueError("Este proyecto aun no tiene instrumental.wav.")
-        return {
-            "song_id": song_id,
-            "instrumental": str(path),
-            "size_bytes": path.stat().st_size,
-        }
+        from application.local_production_artifact_queries import LocalProductionArtifactQueries
+        return LocalProductionArtifactQueries(self.storage).get(song_id, 'instrumental')
 
     def _run_command(
         self,

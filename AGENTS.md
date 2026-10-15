@@ -51,11 +51,9 @@ Nunca fusionarlos prematuramente.
 
 ---
 
-## 5. El sample es obligatorio
+## 5. El sample previo es opcional
 
-Antes de generar canción completa:
-- debe existir sample,
-- debe existir set válido.
+Antes de generar canción completa debe existir set válido y configuración/request confirmados. No exigir sample previo ni bloquear por su ausencia. Si el usuario elige sample, registrar vigencia y evaluación sin convertirlo en requisito de generación completa. Decisión vigente: `docs/SONG_BUILDER_APPROVED_DECISIONS_20261007.md`; el código legado puede requerir migración.
 
 ---
 
@@ -240,10 +238,10 @@ El recorrido guiado debe seguir:
 1. Definir la idea.
 2. Preparar y elegir instrumental, melodía vocal y letra.
 3. Confirmar un set válido.
-4. Generar y revisar un sample de ese set.
+4. Ofrecer generar y revisar un sample opcional de ese set, o continuar a generación completa.
 5. Generar la canción completa y descargar los archivos verificados.
 
-La preparación inicial de la idea y los drafts no debe crear un set incompleto. El sample debe corresponder al set activo y a sus datos vigentes; los cambios que afecten su resultado requieren revisarlo o regenerarlo antes de producir la canción completa. Estas validaciones deben aplicarse tanto a la ruta guiada como a la avanzada, en UI y backend.
+La preparación inicial de la idea y los drafts no debe crear un set incompleto. Si existe sample, vincularlo al set y revisión; cambios invalidan su evidencia, sin bloquear generación completa por sample ausente/antiguo. Validar set y request en rutas guiada/avanzada, UI/backend.
 
 Gemma acompaña el recorrido desde el contexto persistido del proyecto activo. Antes de que exista un set, debe identificar claramente la preparación inicial y las piezas pendientes. Las propuestas de ejemplo o mock deben identificarse como tales y nunca presentarse como una canción final generada.
 
@@ -256,8 +254,8 @@ El contrato detallado del recorrido, las prioridades y los criterios de aceptaci
 El contrato de desarrollo y aceptación se mantiene en `docs/AMATEUR_AUDIO_VOICE_STEERING.md`; el orden de entrega está en `docs/ROADMAPP.md`.
 
 - No anunciar calidad final por completar una task o generar un archivo: verificar integridad técnica, revisar el audio completo por escucha y registrar la aceptación del usuario.
-- Vincular aprobación del sample a set, revisión de inputs y artefacto escuchado. Cambios creativos invalidan esa aprobación; todas las rutas finales verifican vigencia en backend.
-- Para producción real, el sample debe representar voz, provider y configuración relevantes del final. Una guía o mock no acredita esa calidad.
+- Vincular aprobación del sample opcional a set, revisión de inputs y artefacto escuchado. Cambios creativos invalidan esa evidencia; no exigirla para generar completo. Validar inputs y aceptación del resultado por separado.
+- Si se usa sample como evidencia de producción real, debe representar voz, provider y configuración relevantes del final. Una guía o mock no acredita esa calidad; el sample previo sigue siendo opcional.
 - Una voz generada natural, una voz personalizada por referencia y una grabación humana son opciones distintas. Declarar capacidades reales de los providers; TTS hablado no demuestra canto.
 - La voz personalizada es opcional y pendiente de implementación; no bloquear la ruta de voz generada por su ausencia. Registrar referencia autorizada, perfil/versiones y dependencias antes de integrarla.
 - Mantener las tres piezas musicales obligatorias y separadas; un perfil vocal no crea una cuarta pieza ni reemplaza la intención vocal.
@@ -290,4 +288,14 @@ El contrato de roles, documento técnico y trazabilidad se mantiene en `docs/SON
 - Mantener distinción entre API de alto nivel, handler y HTTP. Probar traducción de cada campo; parámetros omitidos del wrapper no se consideran controles ejecutables.
 - Qwen compila/revisa especificación musical y viabilidad, Gemma recoge/explica deseos, usuario aprueba y ACE-Step genera. Tasks/SQLite coordinan los handoffs; no encadenar modelos directamente.
 - Preservar revisión/hashes del steering en resultados y eventos; evaluar obediencia real por separado de pruebas de inyección.
-- `create_sample` del LM interno no sustituye el sample de audio obligatorio. Referencia de timbre no acredita identidad vocal; notas MIDI ni comandos DSP se ejecutan por incluirlos en un caption.
+- `create_sample` del LM interno no equivale al sample de audio opcional. Referencia de timbre no acredita identidad vocal; notas MIDI ni comandos DSP se ejecutan por incluirlos en un caption.
+
+## 20. Decisiones vigentes del Song Builder
+
+La UI es común y asistida para todos, sin segmentación por experiencia ni selector principiante/profesional. Mostrar controles musicales aplicables con tooltip de significado/efecto/ejemplo y ayuda accesible por teclado/toque. Ajustes adicionales se agrupan por tarea, accesibles para cualquiera; perfil automático admite edición manual. Las recomendaciones IA no reemplazan decisiones USER ni se guardan sin revisión explícita.
+
+Aplicar `docs/SONG_BUILDER_APPROVED_DECISIONS_20261007.md`: sample previo opcional, instrumental como intención con ejecución condicionada a validación, dirección por sección persistida aunque tenga límites de traducción, referencia audio opcional/avanzada y perfil ACE-Step automático por defecto con edición manual disponible para cualquiera. Preservar decisiones USER y probar trazabilidad hasta request conforme a `docs/ACE_STEP_USER_INPUT_ACCEPTANCE.md`.
+
+## 21. Verificación por costo y criticidad
+
+Aplicar `docs/VERIFICATION_STRATEGY.md` independientemente de la fase del sprint: primero componentes/contratos ligeros priorizados por criticidad y flujo UI/backend end to end; después Gemma/Qwen reales; ACE-Step y generación real de audio al final de verificación. Agrupar pendientes y reutilizar evidencia vigente; repetir por impacto, defecto o gate pendiente. Resolver fallos antes de ejecutar pruebas costosas dependientes. Registrar cobertura y resultados exactos, diferenciando mocks e inferencia/audio reales. La aceptación se evalúa después de desarrollo/verificación al 100%, conservando evidencia previa.

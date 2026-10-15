@@ -133,15 +133,8 @@ class VocalSynthesisService:
         }
 
     def get(self, song_id: str) -> dict[str, object]:
-        path = self.storage.data_dir / "projects" / song_id / "vocals.wav"
-        if not path.exists():
-            raise ValueError("Este proyecto aun no tiene vocals.wav.")
-        return {
-            "song_id": song_id,
-            "vocals": str(path),
-            "size_bytes": path.stat().st_size,
-            "quality": self._quality_metadata(song_id),
-        }
+        from application.local_production_artifact_queries import LocalProductionArtifactQueries
+        return LocalProductionArtifactQueries(self.storage).get(song_id, 'vocals')
 
     def _quality_metadata(self, song_id: str) -> dict[str, object]:
         project = self.storage.get_song_project(song_id) or {}

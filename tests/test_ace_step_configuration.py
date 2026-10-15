@@ -11,6 +11,36 @@ from tests.test_sample_audio_evidence import write_audio
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_delegation_of_missing_override_is_recorded_and_old_revision_rejected(self):
+        editor = EditAceStepConfiguration(self.store)
+        before = editor.execute(self.song_id, self.request)
+        saved = editor.execute(self.song_id, {'revision_id':before['revision']['revision_id'], 'values':{'guidance_scale':None}})
+        self.assertNotIn('guidance_scale', saved['json_spec'])
+        self.assertEqual(saved['json_spec']['_provenance']['guidance_scale']['source'], 'explicit_user_delegation')
+        self.assertEqual(saved['revision']['user_confirmation_status'], 'pending')
+        with self.assertRaises(ValueError):
+            editor.execute(self.song_id, {'revision_id':before['revision']['revision_id'], 'values':{'shift':None}})
+        self.assertEqual(self.store.get_song_project(self.song_id)['spec'], saved)
+
+    def test_generation_controls_persist_pending_and_can_be_delegated_again(self):
+        editor = EditAceStepConfiguration(self.store)
+        saved = editor.execute(self.song_id, {**self.request, "values": {
+            **self.request["values"], "seed": 0, "inference_steps": 12, "shift": 3}})
+        self.assertEqual(saved["json_spec"]["seed"], 0)
+        self.assertEqual(saved["revision"]["user_confirmation_status"], "pending")
+        self.assertEqual(saved["json_spec"]["_provenance"]["seed"]["source"], "explicit_user_control")
+        cleared = editor.execute(self.song_id, {"revision_id": saved["revision"]["revision_id"],
+                                                "values": {"seed": "", "inference_steps": None, "shift": None}})
+        self.assertNotIn("seed", cleared["json_spec"])
+        self.assertNotIn("inference_steps", cleared["json_spec"])
+        self.assertNotIn("shift", cleared["json_spec"])
+        self.assertEqual(cleared['json_spec']['_provenance']['seed']['source'], 'explicit_user_delegation')
+        self.assertEqual(cleared['json_spec']['_provenance']['seed']['previous_value'], 0)
+        self.assertEqual(cleared['json_spec']['_field_disposition']['seed'], 'delegated_to_profile')
+        manual = editor.execute(self.song_id, {'revision_id':cleared['revision']['revision_id'], 'values':{'seed':7}})
+        self.assertEqual(manual['json_spec']['seed'], 7)
+        self.assertNotIn('seed', manual['json_spec']['_field_disposition'])
+
     def test_duration_criterion_requires_explicit_save_and_new_confirmation(self):
         editor = EditAceStepConfiguration(self.store)
         for value in (-1, True, float("nan"), 601):

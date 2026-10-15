@@ -43,7 +43,7 @@ class SampleAudioEvidenceTest(unittest.TestCase):
             set_id = test_set_validation.SetValidationTest().create_valid_set(service).name
             sample_dir = service.sample_builder.create_for_set(set_id)
             audio = sample_dir / "preview.wav"
-            write_audio(audio)
+            write_audio(audio, 1)
             storage.register_sample_audio(set_id, sample_dir.name, audio)
             checksum = storage.legacy_song_repository.get_sample(sample_dir.name)["audio_evidence"]["sha256"]
             with self.assertRaisesRegex(ValueError, "Escucha"):
@@ -70,3 +70,24 @@ class SampleAudioEvidenceTest(unittest.TestCase):
             restarted = StorageManager(Path(folder))
             persisted = restarted.legacy_song_repository.get_sample(sample_dir.name)
             self.assertEqual(persisted["audio_evidence"], replaced["audio_evidence"])
+
+    def test_silent_audio_cannot_be_approved_or_pass_gate_with_old_approval(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
+            storage = StorageManager(Path(folder))
+            service = SongService(storage)
+            service.bootstrap()
+            set_id = test_set_validation.SetValidationTest().create_valid_set(service).name
+            sample_dir = service.sample_builder.create_for_set(set_id)
+            audio = sample_dir / "preview.wav"
+            write_audio(audio)
+            storage.register_sample_audio(set_id, sample_dir.name, audio)
+            sample = storage.legacy_song_repository.get_sample(sample_dir.name)
+            checksum = sample["audio_evidence"]["sha256"]
+            with self.assertRaisesRegex(ValueError, "silencio digital"):
+                storage.approve_sample(set_id, sample_dir.name, listened=True, audio_sha256=checksum)
+            self.assertEqual(storage.legacy_song_repository.get_sample(sample_dir.name)["approval_status"], "pending")
+            sample.update(approval_status="approved", approved_audio_sha256=checksum,
+                          approved_set_fingerprint=storage.set_generation_fingerprint(set_id))
+            storage.legacy_song_repository.save_sample(sample, sample_dir / "sample.json")
+            with self.assertRaisesRegex(ValueError, "silencio digital"):
+                SampleGate(storage).require_for_set(set_id, real_output=False)

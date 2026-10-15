@@ -88,7 +88,7 @@ class MidiGenerationService:
             status=SongPhaseStatus.COMPLETED.value,
             progress=100,
             message="El director tecnico coordino la creacion del MIDI base con acordes, melodia vocal guia y marcadores de seccion.",
-            active_model="qwen",
+            active_model="deterministic-compatibility-planning",
             payload={"midi": str(midi_path), "metadata": str(metadata_path)},
             artifact_id=str(midi_artifact["artifact_id"]),
         )
@@ -105,16 +105,8 @@ class MidiGenerationService:
         }
 
     def get(self, song_id: str) -> dict[str, object]:
-        project_dir = self.storage.data_dir / "projects" / song_id
-        midi_path = project_dir / "song_base.mid"
-        metadata_path = project_dir / "midi_metadata.json"
-        if not midi_path.exists() or not metadata_path.exists():
-            raise ValueError("Este proyecto aun no tiene song_base.mid y midi_metadata.json.")
-        return {
-            "song_id": song_id,
-            "midi": str(midi_path),
-            "metadata": self.storage.read_json(metadata_path),
-        }
+        from application.local_production_artifact_queries import LocalProductionArtifactQueries
+        return LocalProductionArtifactQueries(self.storage).get(song_id, 'midi')
 
     def _metadata(self, song_id: str, music_plan: dict[str, object]) -> dict[str, object]:
         bpm = int(music_plan.get("bpm", 80))

@@ -72,3 +72,17 @@ class AceStepPlanCompilerTest(unittest.TestCase):
         self.assertEqual(result["spec_revision_id"], "r1")
         store.update_song_project_phase.assert_not_called()
         store.create_song_artifact.assert_not_called()
+
+    def test_set_changes_change_plan_hash_and_missing_set_is_rejected(self):
+        store = Mock()
+        store.get_song_project.return_value = {"spec": self.record, "user_id": "set:active"}
+        store.get_indexed_set.return_value = {"set_id": "active"}
+        store.set_generation_fingerprint.return_value = "first"
+        preview = PreviewAceStepPlan(store)
+        original = preview.execute("song", "Letra")
+        self.assertEqual(original["set_context"], {"set_id": "active", "fingerprint": "first"})
+        store.set_generation_fingerprint.return_value = "changed"
+        self.assertNotEqual(original["plan_sha256"], preview.execute("song", "Letra")["plan_sha256"])
+        store.get_indexed_set.return_value = None
+        with self.assertRaises(ValueError):
+            preview.execute("song", "Letra")

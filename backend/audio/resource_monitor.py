@@ -62,25 +62,44 @@ class ResourceMonitor:
         readiness = self.evaluate(snapshot)
         return {"snapshot": snapshot, "readiness": self._readiness_dict(readiness)}
 
-    def prepare_for_audio(self, phase: str, event_callback=None) -> dict[str, object]:
+    def prepare_for_audio(self, phase: str, event_callback=None, required_ram_mb: int | None = None) -> dict[str, object]:
         if not self.settings.enabled:
             snapshot = self.capture(phase=phase, persist=True, decision="skipped", message="ResourceMonitor desactivado.")
-            return {"snapshot": snapshot, "readiness": self._readiness_dict(self.evaluate(snapshot)), "released_llm": False}
+            return {"snapshot": snapshot, "readiness": self._readiness_dict(self.evaluate(snapshot, required_ram_mb)), "released_llm": False}
         if psutil is None:
-            snapshot = self.capture(phase=phase, persist=True, decision="skipped", message="ResourceMonitor omitido: psutil no esta instalado.")
-            return {"snapshot": snapshot, "readiness": {"ready": True, "decision": "skipped_missing_psutil", "message": str(snapshot["message"]), "recommendations": []}, "released_llm": False}
+            snapshot = self.capture(phase=phase, persist=True, decision="blocked_missing_psutil", message="No se pueden verificar recursos: instala psutil antes de iniciar audio.")
+            return {"snapshot": snapshot, "readiness": {"ready": False, "decision": "blocked_missing_psutil", "message": str(snapshot["message"]), "recommendations": []}, "released_llm": False}
 
         before = self.capture(phase="before_audio", persist=True)
+        released_llm = False
         if self.settings.release_llm_before_audio:
             if event_callback is not None:
                 event_callback("Liberando memoria: pausando modelos de texto antes de iniciar la generacion de audio.")
-            if self.settings.stop_llm_command:
-                subprocess.run(self.settings.stop_llm_command, shell=True, timeout=60, check=False)
+            failure = ""
+            if not self.settings.stop_llm_command:
+                failure = "Configura el comando de cierre de Gemma y Qwen antes de generar audio."
+            else:
+                try:
+                    stopped = subprocess.run(self.settings.stop_llm_command, shell=True, timeout=60, check=False)
+                    if stopped.returncode != 0:
+                        failure = "No se pudo verificar el cierre de Gemma y Qwen. Revisa el comando de cierre y vuelve a intentarlo."
+                except subprocess.TimeoutExpired:
+                    failure = "El cierre de Gemma y Qwen superó 60 segundos. Comprueba que estén detenidos y vuelve a intentarlo."
+                except OSError:
+                    failure = "No se pudo ejecutar el cierre de Gemma y Qwen. Revisa la ruta y los permisos del comando de cierre."
+            if failure:
+                snapshot = self.capture(phase="llm_release_failed", persist=True,
+                    decision="blocked_llm_release", message=failure)
+                return {"snapshot": snapshot, "before": before,
+                    "readiness": {"ready": False, "decision": "blocked_llm_release",
+                                  "message": failure, "recommendations": [failure]},
+                    "released_llm": False}
+            released_llm = True
             if self.settings.audio_start_delay_seconds > 0:
                 time.sleep(self.settings.audio_start_delay_seconds)
         after = self.capture(phase="after_llm_release", persist=True)
-        readiness = self.evaluate(after)
-        return {"snapshot": after, "before": before, "readiness": self._readiness_dict(readiness), "released_llm": True}
+        readiness = self.evaluate(after, required_ram_mb)
+        return {"snapshot": after, "before": before, "readiness": self._readiness_dict(readiness), "released_llm": released_llm}
 
     def restore_text_models(self, event_callback=None) -> None:
         if not self.settings.enabled or not self.settings.start_llm_command:
@@ -151,7 +170,7 @@ class ResourceMonitor:
             return stored
         return snapshot
 
-    def evaluate(self, snapshot: dict[str, object]) -> AudioReadiness:
+    def evaluate(self, snapshot: dict[str, object], required_ram_mb: int | None = None) -> AudioReadiness:
         recommendations = self.recommendations(snapshot)
         if snapshot.get("decision") == "blocked_missing_psutil":
             return AudioReadiness(False, "blocked_missing_psutil", str(snapshot.get("message", "")), snapshot, recommendations)
@@ -162,13 +181,14 @@ class ResourceMonitor:
             float(snapshot["disk_models_free_mb"]),
             float(snapshot["disk_cache_free_mb"]),
         ]
-        if ram_available < self.settings.min_free_ram_mb_for_audio:
+        minimum_ram = max(self.settings.min_free_ram_mb_for_audio, required_ram_mb or 0)
+        if ram_available < minimum_ram:
             message = (
-                "Advertencia: RAM disponible baja para voz cantada. "
-                f"Disponible {ram_available:.0f} MB, referencia {self.settings.min_free_ram_mb_for_audio} MB. "
-                "Puedes continuar; si ACE-Step falla, revisa este diagnostico."
+                "RAM disponible insuficiente para iniciar audio segun el minimo configurado. "
+                f"Disponible {ram_available:.0f} MB, presupuesto requerido {minimum_ram} MB. "
+                "Libera memoria y vuelve a comprobar los recursos antes de generar."
             )
-            return AudioReadiness(True, "warning_ram", message, snapshot, recommendations)
+            return AudioReadiness(False, "blocked_ram", message, snapshot, recommendations)
         if min(disk_values) < self.settings.min_free_disk_mb_for_audio:
             message = (
                 "Advertencia: disco libre bajo para audio pesado. "
@@ -190,7 +210,6 @@ class ResourceMonitor:
             recommendations.append("Cerrar Gemma/Qwen")
         if float(snapshot["ram_available_mb"]) < self.settings.min_free_ram_mb_for_audio * 1.25:
             recommendations.append("Bajar duracion a 15s")
-            recommendations.append("Usar RVC en vez de ACE-Step")
             recommendations.append("Cerrar apps pesadas o aumentar memoria virtual")
         if float(snapshot.get("swap_total_mb", 0)) < 4096:
             recommendations.append("Se recomienda disponer de al menos 4 GB de swap para mejorar la estabilidad durante la generacion de audio")

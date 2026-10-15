@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from typing import Any
+from models.ace_step_capability_profile import CONNECTED_PROFILE
+from application.music_spec_control_help import MUSICAL_HELP
 
 
 class SongSpecificationService:
@@ -10,11 +12,12 @@ class SongSpecificationService:
     QUALITY_FIELDS = {"duration_tolerance_seconds"}
 
     ENGINE_FIELDS = {
-        "task_type": ("text2music", "cover", "repaint", "lego", "extract", "complete"),
-        "ace_step_config": ("acestep-v15-base", "acestep-v15-turbo"),
+        **CONNECTED_PROFILE.engine_choices(),
         "source_artifact_id": (), "src_audio": (), "instruction": (),
-        "target_tracks": (), "repainting_start": (), "repainting_end": (),
+        "repainting_start": (), "repainting_end": (),
         "audio_cover_strength": (),
+        "reference_artifact_id": (), "reference_audio": (),
+        "seed": (), "inference_steps": (), "guidance_scale": (), "shift": (),
     }
 
     CATALOG: tuple[dict[str, Any], ...] = (
@@ -23,6 +26,14 @@ class SongSpecificationService:
             "label": "Que quieres hacer con el audio",
             "description": "Entradas de ACE-Step; un plan preparado no demuestra generacion verificada.",
             "fields": (
+                ("generation_api", "Ruta del motor", "choice", False, "Directa por defecto; API alto nivel opcional, con LM solo al crear desde texto."),
+                ("lm_model_path", "Modelo musical interno", "choice", False, "Solo se carga cuando eliges la ruta LM; requiere pesos y memoria adicionales."),
+                ("reference_artifact_id", "Referencia musical", "artifact", False, "Audio propio registrado; orienta la musica, no clona una voz."),
+                ("reference_audio", "Archivo de referencia", "informational", False, "Ruta derivada del artefacto verificado."),
+                ("seed", "Semilla de variacion", "number", False, "Conserva el numero para comparar cambios; no garantiza audio identico."),
+                ("inference_steps", "Pasos de generacion", "number", False, "Delega al perfil dejando vacio; Turbo hasta 20, Base hasta 200."),
+                ("guidance_scale", "Intensidad de condicionamiento", "number", False, "Base: 1 a 15; Turbo solo 1. No acredita fidelidad."),
+                ("shift", "Distribucion de pasos", "number", False, "Ajuste avanzado; vacio usa el perfil del wrapper."),
                 ("task_type", "Accion musical", "choice", False, "Crear, transformar, corregir, añadir, separar o completar audio."),
                 ("ace_step_config", "Modelo de generacion", "choice", False, "Base admite las seis tareas; su carga y audio aun requieren verificacion."),
                 ("source_artifact_id", "Audio del proyecto", "artifact", False, "Selecciona un audio registrado en este proyecto para editarlo."),
@@ -104,25 +115,23 @@ class SongSpecificationService:
     )
 
     def catalog(self, spec: dict[str, object] | None = None) -> dict[str, object]:
+        from application.music_spec_edit import EditMusicSpec
+        from application.spec_field_review import field_review
         values = dict(spec or {})
+        detailed_help = {**MUSICAL_HELP, **CONNECTED_PROFILE.public_contract()['control_help']}
         provenance = dict(values.get("_provenance", {}))
         groups: list[dict[str, object]] = []
         totals = {"total": 0, "required": 0, "decided": 0, "required_decided": 0}
+        review_counts = {}
         for group in self.CATALOG:
             fields = []
             for key, label, control, required, help_text in group["fields"]:
                 value = values.get(key)
-                task = values.get("task_type", "text2music")
-                applicable = True
-                if key in {"source_artifact_id", "src_audio"}:
-                    applicable = task != "text2music"
-                elif key in {"instruction", "target_tracks"}:
-                    applicable = task in {"lego", "extract", "complete"}
-                elif key in {"repainting_start", "repainting_end"}:
-                    applicable = task in {"repaint", "lego"}
-                elif key == "audio_cover_strength":
-                    applicable = task == "cover"
+                policy = CONNECTED_PROFILE.field_policy(key, values)
+                applicable = policy["applicable"]
                 decided = value not in (None, "", [])
+                review = field_review(value, dict(provenance.get(key, {})), values.get('_field_disposition', {}).get(key), applicable, key)
+                review_counts[review['decision_status']] = review_counts.get(review['decision_status'], 0) + 1
                 totals["total"] += 1
                 totals["decided"] += int(decided)
                 totals["required"] += int(required)
@@ -130,17 +139,21 @@ class SongSpecificationService:
                 fields.append(
                     {
                         "id": key,
+                        **review,
+                        "can_delegate_to_profile": key in {'seed','inference_steps','guidance_scale','shift'} and applicable,
                         "label": label,
                         "control": control,
+                        "editable_in_spec": key in (EditMusicSpec.MUSICAL_FIELDS | EditMusicSpec.CREATIVE_FIELDS),
                         "required_for_spec": required,
                         "help": help_text,
+                        "detailed_help": detailed_help.get(key),
                         "value": value,
                         "coverage_status": "decided" if decided else "to_review",
                         "source": str(dict(provenance.get(key, {})).get("source", "saved_spec" if decided else "not_set")),
                         "source_note": str(dict(provenance.get(key, {})).get("note", "")),
                         "applicable": applicable,
-                        "required_for_task": applicable and key in {
-                            "source_artifact_id", "src_audio", "instruction", "target_tracks"},
+                        "required_for_task": policy["required_for_task"],
+                        "capability_policy": policy,
                         "options": list(self.ENGINE_FIELDS.get(key, ())),
                         "execution_status": "candidate_plan_only" if key in self.ENGINE_FIELDS else "specification_requirement",
                     }
@@ -155,7 +168,8 @@ class SongSpecificationService:
                     "total": len(fields),
                 }
             )
-        return {"schema_version": self.SCHEMA_VERSION, "groups": groups, "summary": totals}
+        return {"schema_version": self.SCHEMA_VERSION, "groups": groups, "summary": {**totals, 'review_counts':review_counts},
+                "capability_profile": CONNECTED_PROFILE.public_contract()}
 
     def compilation_status(self, missing_fields: list[str]) -> str:
         return "needs_information" if missing_fields else "complete_for_stage"

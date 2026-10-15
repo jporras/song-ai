@@ -76,6 +76,10 @@ class ExecutionArgumentsTest(unittest.TestCase):
                     "payload": {"task_type": "cover", "captions": 'idea & echo secret', "lyrics": 'texto $(command)',
                                 "bpm": 72, "src_audio": "source & name.wav", "audio_cover_strength": .5}}}
             argv = AceStepExecutionArguments().build(item, resolve_ace_step_profile("base"), "python", root, root / "out.wav")
+            import json
+            context = json.loads(Path(argv[argv.index('--execution-context')+1]).read_text(encoding='utf-8'))
+            self.assertEqual(context['requested_options'], {})
+            self.assertEqual(context['execution_profile']['config_path'], 'acestep-v15-base')
             self.assertEqual(argv[argv.index("--src-audio") + 1], "source & name.wav")
             self.assertEqual((root / "ace_plan_caption.txt").read_text(), 'idea & echo secret')
             self.assertEqual((root / "ace_plan_lyrics.md").read_text(), 'texto $(command)')

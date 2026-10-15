@@ -8,7 +8,7 @@ import wave
 
 from core.storage import StorageManager
 from models.song_workflow import SongPhase, SongPhaseStatus
-from application.sample_gate import SampleGate
+from application.final_production_gate import FinalProductionGate
 
 
 class MasteringService:
@@ -21,7 +21,7 @@ class MasteringService:
         project = self.storage.get_song_project(song_id)
         if project is None:
             raise ValueError("Proyecto no encontrado para masterizar.")
-        SampleGate(self.storage).require_for_project(project)
+        FinalProductionGate(self.storage).require_for_project(project)
         project_dir = self.storage.data_dir / "projects" / song_id
         mix_path = project_dir / "mix.wav"
         final_wav_path = project_dir / "final_song.wav"
@@ -91,21 +91,8 @@ class MasteringService:
         }
 
     def get(self, song_id: str) -> dict[str, object]:
-        project_dir = self.storage.data_dir / "projects" / song_id
-        final_wav_path = project_dir / "final_song.wav"
-        final_mp3_path = project_dir / "final_song.mp3"
-        final_flac_path = project_dir / "final_song.flac"
-        if not final_wav_path.exists() or not final_mp3_path.exists() or not final_flac_path.exists():
-            raise ValueError("Este proyecto aun no tiene final_song.wav, final_song.mp3 y final_song.flac.")
-        return {
-            "song_id": song_id,
-            "final_wav": str(final_wav_path),
-            "final_mp3": str(final_mp3_path),
-            "final_flac": str(final_flac_path),
-            "wav_size_bytes": final_wav_path.stat().st_size,
-            "mp3_size_bytes": final_mp3_path.stat().st_size,
-            "flac_size_bytes": final_flac_path.stat().st_size,
-        }
+        from application.local_production_artifact_queries import LocalProductionArtifactQueries
+        return LocalProductionArtifactQueries(self.storage).get(song_id, 'master')
 
     def _read_wav(self, path: Path) -> list[int]:
         with wave.open(str(path), "rb") as wav_file:

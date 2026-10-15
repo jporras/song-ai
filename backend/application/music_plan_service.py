@@ -58,8 +58,8 @@ class MusicPlanService:
             phase=SongPhase.MUSIC_PLAN_GENERATION.value,
             status=SongPhaseStatus.COMPLETED.value,
             progress=100,
-            message="El director tecnico genero el plan musical tecnico: tempo, tonalidad, acordes, estructura por segundos e intensidad.",
-            active_model="qwen",
+            message="Plan musical derivado generado mediante reglas; no acredita inferencia Qwen.",
+            active_model="deterministic-compatibility-planning",
             payload={"music_plan": str(path), "section_count": len(timeline)},
             artifact_id=str(artifact["artifact_id"]),
         )
@@ -75,14 +75,8 @@ class MusicPlanService:
         }
 
     def get(self, song_id: str) -> dict[str, object]:
-        path = self.storage.data_dir / "projects" / song_id / "music_plan.json"
-        if not path.exists():
-            raise ValueError("Este proyecto aun no tiene music_plan.json.")
-        return {
-            "song_id": song_id,
-            "music_plan": self.storage.read_json(path),
-            "path": str(path),
-        }
+        from application.local_production_artifact_queries import LocalProductionArtifactQueries
+        return LocalProductionArtifactQueries(self.storage).get(song_id, 'music_plan')
 
     def _structure(self, spec: dict[str, object], lyrics_approved: dict[str, object]) -> list[str]:
         lyrics = dict(lyrics_approved.get("lyrics") or {})
