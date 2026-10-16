@@ -14,10 +14,15 @@
           <p>Estudio musical modular asistido por IA.</p>
         </section>
 
-        <details open><summary>Herramientas del proyecto</summary><nav class="main-nav" aria-label="Herramientas del proyecto">
-          <button v-for="tab in tabs" :key="tab.id" :class="{ active: activeTab === tab.id }" :aria-current="activeTab === tab.id ? 'page' : undefined" @click="requestNavigation(tab.id)">
-            {{ tab.label }}
+        <details open><summary>Pasos de la canción</summary><nav class="main-nav" aria-label="Pasos de la canción">
+          <button :class="{ active: activeTab === 'library' }" :aria-current="activeTab === 'library' ? 'page' : undefined" @click="requestNavigation('library')">Mis proyectos</button>
+          <button v-for="(step, index) in builderSteps" :key="step.id" :class="{ active: activeTab !== 'library' && currentBuilderStep?.id === step.id }" :aria-current="activeTab !== 'library' && currentBuilderStep?.id === step.id ? 'step' : undefined" @click="navigateBuilderStep(step)">
+            {{ index + 1 }}. {{ step.label }}
           </button>
+        </nav></details>
+        <details><summary>Herramientas adicionales</summary><nav class="main-nav" aria-label="Herramientas adicionales">
+          <button :class="{ active: activeTab === 'midi' }" @click="requestNavigation('midi')">Editor MIDI</button>
+          <button :class="{ active: activeTab === 'voice' }" @click="requestNavigation('voice')">Melodía y voz</button>
         </nav></details>
 
         <section class="side-card active-project-card">
@@ -27,7 +32,7 @@
 
         <section class="side-card">
           <div class="side-title">
-            <span class="eyebrow">Fases</span>
+            <span class="eyebrow">Estado de herramientas</span>
             <button class="icon-button" aria-label="Actualizar estado" title="Actualizar estado" @click="refreshSystemStatus">⟳</button>
           </div>
           <div class="phase-list">
