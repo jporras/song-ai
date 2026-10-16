@@ -1280,6 +1280,7 @@
             <details class="panel" data-ui-panel="activity" :open="panelOpen('activity')">
               <summary>Actividad</summary>
               <div class="activity-log compact-activity">
+                <button type="button" @click="refreshProductionActivity">Actualizar actividad</button>
                 <p v-for="item in productionActivityLog" :key="item.id"><time>{{ item.time }}</time><span>{{ item.text }}</span></p>
               </div>
             </details>

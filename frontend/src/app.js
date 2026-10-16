@@ -369,6 +369,8 @@ createApp({
       resourceAutoRefresh: true,
       resourceLastUpdated: "",
       resourceRefreshTimer: null,
+      productionEventsSongId: "",
+      productionEvents: [],
       uiClockNow: Date.now(),
       uiClockTimer: null,
       localFinalJob: { status: "idle", message: "Generacion final local no iniciada.", result: {} },
@@ -575,7 +577,9 @@ createApp({
       };
     },
     productionActivityLog() {
-      const projectEvents = (this.activeProfessionalProject?.events || []).map((event) => ({
+      const currentEvents = this.productionEventsSongId === this.productionProjectId
+        ? this.productionEvents : (this.activeProfessionalProject?.events || []);
+      const projectEvents = currentEvents.map((event) => ({
         id: event.event_id || event.id || `${event.created_at}-${event.phase}`,
         time: this.formatResourceTime(event.created_at),
         text: `${event.phase || "Production"}: ${event.message || event.status || ""}`,
@@ -1046,13 +1050,6 @@ createApp({
       await this.$nextTick();
       document.querySelector(this.showUnsavedModal ? '#unsaved-changes-dialog [role="alert"]' : '#phase-save-error')?.focus();
     },
-    'aceCandidateJob.status'(status, previous) {
-      if (status === 'completed' && ['pending','running','cancelling'].includes(previous)
-        && this.activeTab === 'production' && this.builderStepId === 'generate' && !this.dirty
-        && this.aceCandidateJob?.payload?.song_id === this.productionProjectId) {
-        this.navigateBuilderStep(builderSteps.find(step => step.id === 'studio'));
-      }
-    },
     showUnsavedModal(open) { return syncDialog(this, 'unsaved-changes-dialog', open); },
     'deleteDialog.open'(open) { return syncDialog(this, 'delete-project-dialog', open); },
     pendingLyricDeletion(value) { return syncDialog(this, 'remove-section-dialog', Boolean(value)); },
@@ -1423,13 +1420,25 @@ createApp({
       await this.loadResources({ force: true });
       this.addMessage(payload.data.readiness?.message || "Recursos revisados.");
     },
+    async refreshProductionActivity() {
+      const songId = this.productionProjectId;
+      if (!songId) return;
+      try {
+        const response = await fetch(apiUrl(`/api/pro/projects/${encodeURIComponent(songId)}/events`));
+        const payload = await this.readApiPayload(response, { events: [] });
+        if (songId !== this.productionProjectId || !payload.ok) return;
+        this.productionEventsSongId = songId;
+        this.productionEvents = payload.data.events || [];
+      } catch (_) {
+        // La actividad conserva la última lectura si falla una actualización automática.
+      }
+    },
     startResourceAutoRefresh() {
       this.stopResourceAutoRefresh();
       this.resourceRefreshTimer = setInterval(() => {
-        if (!this.resourceAutoRefresh || this.activeTab !== "production" || document.hidden) return;
+        if (!this.resourceAutoRefresh || this.activeTab !== "production" || this.builderStepId !== "generate" || document.hidden) return;
         this.loadResources({ silent: true });
-        this.loadProfessionalProjects();
-        if (this.productionProjectId) this.loadProfessionalExport(this.productionProjectId);
+        this.refreshProductionActivity();
       }, 10000);
     },
     stopResourceAutoRefresh() {
@@ -1441,7 +1450,7 @@ createApp({
       this.resourceAutoRefresh = !this.resourceAutoRefresh;
       if (this.resourceAutoRefresh) {
         this.loadResources({ silent: true });
-        this.loadProfessionalProjects();
+        this.refreshProductionActivity();
         this.startResourceAutoRefresh();
       }
     },

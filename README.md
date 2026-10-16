@@ -1,5 +1,7 @@
 # Estado de publicación del sprint — 2026-10-15
 
+El refresco automático de 10 s en Generar consulta únicamente actividad y diagnóstico de recursos; ya no vuelve a cargar proyectos, ficha, plan ni exportaciones mientras se navega o edita. La actividad también puede actualizarse con su botón. Al finalizar un candidato, la app conserva la vista actual y deja Studio como paso explícito del usuario. Esto evita saltos de navegación y cambios visuales de la ficha durante el polling.
+
 Los pasos 5, 6 y 7 tienen ahora vistas y rutas separadas: `/review` muestra la ficha y sus decisiones; `/generate` muestra el plan, la generación y el diagnóstico; `/studio` muestra escucha, sample opcional y descargas. Los tres conservan el proyecto activo y los controles de revisión/plan vigentes. `/production` abre la revisión para enlaces antiguos. Se verificaron navegación directa y contenido visible de las tres rutas en navegador; la aceptación amateur sigue pendiente.
 
 Production presenta el estado de la revisión y el siguiente paso en lenguaje común. El contador de campos del catálogo ya explica que los vacíos no son necesariamente pendientes; una ficha confirmada dirige al plan. El título de archivos disponibles exige canción final verificada del plan y revisión activos, evitando que exportaciones históricas se anuncien como listas para la canción actual. Verificación y aceptación del audio siguen separadas.
