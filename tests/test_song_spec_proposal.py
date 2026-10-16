@@ -5,10 +5,41 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from application.song_spec_proposal import specification_proposal, latest_current_proposal, engine_input_check
 from application.model_orchestrator import ModelOrchestrator
+from application.song_service import SongService
 from unittest.mock import Mock
 
 
 class SongSpecProposalTest(unittest.TestCase):
+    def test_status_tracks_only_the_current_project_request_and_recorded_stage(self):
+        service = SongService.__new__(SongService)
+        service.storage = Mock()
+        service.storage.get_song_project.return_value = {'id': 'song'}
+        other = {'task_id': 'old', 'task_type': 'compile_song_spec', 'status': 'completed', 'progress': 100,
+                 'payload': {'project_id': 'song', 'client_request_id': 'old-request'}}
+        service.storage.list_tasks.return_value = [other]
+        self.assertEqual(service.song_specification_proposal_status('song', 'current')['step'], 1)
+        current = {'task_id': 'current-task', 'task_type': 'compile_song_spec', 'status': 'running',
+                   'progress': 40, 'payload': {'project_id': 'song', 'client_request_id': 'current'}}
+        service.storage.list_tasks.return_value = [other, current]
+        self.assertEqual(service.song_specification_proposal_status('song', 'current')['step'], 2)
+        current['progress'] = 75
+        self.assertEqual(service.song_specification_proposal_status('song', 'current')['step'], 3)
+        self.assertEqual(service.song_specification_proposal_status('song', 'current')['task_id'], 'current-task')
+
+    def test_model_response_marks_validation_stage_before_compiling(self):
+        orchestrator = ModelOrchestrator.__new__(ModelOrchestrator)
+        orchestrator.storage = Mock()
+        orchestrator.provider_registry = Mock()
+        orchestrator._can_run_provider_handoff = Mock(return_value=True)
+        orchestrator._technical_prompt = Mock(return_value='prompt')
+        orchestrator.provider_registry.technical_with_active_provider.return_value = {
+            'summary': json.dumps({'spec': {'bpm': 72, 'voice_style': 'suave'},
+                                   'conflicts': [], 'missing_fields': []}), 'mode': 'real'}
+        result = orchestrator.build_provider_result('technical', 'compile_song_spec',
+            {'_task_id': 'task-current', 'context': self.context()})
+        self.assertEqual(result['mode'], 'provider_handoff')
+        self.assertEqual(orchestrator.storage.update_task.call_args.kwargs['progress'], 75)
+
     def test_input_check_reports_structural_conflict_without_claiming_audio_verification(self):
         result = engine_input_check({'task_type': 'lego', 'ace_step_config': 'acestep-v15-turbo'})
         self.assertEqual(result['status'], 'conflict')

@@ -82,10 +82,15 @@ export const productionActions = {
     if (!songId || this.specProposalBusy) return;
     this.specProposalBusy = true;
     this.specProposalStartedAt = Date.now();
+    this.specProposalRequestId = crypto.randomUUID();
+    this.specProposalStep = 1;
+    this.specProposalTrackingError = false;
+    const requestId = this.specProposalRequestId;
+    this.specProposalPollTimer = setInterval(() => this.pollSpecProposalStatus(songId, requestId), 1500);
     this.specProposal = null;
     this.specProposalError = "";
     try {
-      const response = await fetch(apiUrl(`/api/pro/projects/${encodeURIComponent(songId)}/spec/proposal`), { method: "POST" });
+      const response = await fetch(apiUrl(`/api/pro/projects/${encodeURIComponent(songId)}/spec/proposal?request_id=${encodeURIComponent(requestId)}`), { method: "POST" });
       const payload = await this.readApiPayload(response, {});
       if (songId !== this.productionProjectId) return;
       if (!payload.ok) throw new Error(payload.detail || "No se pudo preparar la propuesta.");
@@ -94,8 +99,15 @@ export const productionActions = {
       if (this.specificationRevision?.revision_id && result.spec_proposal.source_revision_id !== this.specificationRevision.revision_id)
         throw new Error("La ficha cambio durante la revision. Prepara una nueva propuesta.");
       this.specProposal = { ...result.spec_proposal, song_id: songId, task_id: payload.data?.task?.task_id };
+      this.specProposalStep = 3;
     } catch (error) { if (songId === this.productionProjectId) { this.specProposalError = error.message; this.addMessage(error.message); } }
-    finally { this.specProposalBusy = false; this.specProposalStartedAt = 0; }
+    finally {
+      clearInterval(this.specProposalPollTimer);
+      this.specProposalPollTimer = null;
+      this.specProposalBusy = false;
+      this.specProposalStartedAt = 0;
+      this.specProposalRequestId = "";
+    }
   },
   async rejectTechnicalProposal() {
     const songId = this.productionProjectId;

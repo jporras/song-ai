@@ -874,13 +874,15 @@
               </section>
               <button v-if="specificationRevision" :disabled="specProposalBusy" @click="prepareTechnicalProposal">{{ specProposalBusy ? 'Esperando revisión técnica…' : 'Preparar propuesta técnica completa' }}</button>
               <div v-if="specProposalBusy && specProposalStartedAt" class="inline-warning" role="status" aria-live="polite">
-                <strong>Preparando propuesta técnica · {{ formatElapsedSince(specProposalStartedAt) }}</strong>
-                <span>{{ specProposalProgressMessage }}</span>
-                <progress aria-label="Revisión técnica en curso, duración desconocida"></progress>
+                <strong>{{ specProposalTrackingError ? 'Etapa no disponible' : `Paso ${specProposalStep} de 3` }} · {{ formatElapsedSince(specProposalStartedAt) }}</strong>
+                <span v-if="!specProposalTrackingError">{{ specProposalProgressMessage }}</span>
+                <span v-if="specProposalTrackingError">No se puede consultar la etapa actual; la solicitud principal sigue en curso. Reinicia Song AI para activar el seguimiento de esta versión.</span>
+                <progress v-if="!specProposalTrackingError" :value="specProposalStep - 1" max="3" :aria-label="`Paso ${specProposalStep} de 3 de la propuesta técnica`"></progress>
               </div>
               <p v-if="specProposalError" role="alert">{{ specProposalError }} Puedes volver a preparar la propuesta; la ficha guardada se conserva.</p>
               <section v-if="specProposal?.song_id === productionProjectId">
                 <h3>Propuesta tecnica para revisar</h3>
+                <p class="status-ok">Paso 3 de 3 completado: propuesta disponible para revisar.</p>
                 <p>{{ specProposal.summary }}</p>
                 <p>Esta propuesta no modifica la ficha guardada ni confirma decisiones por ti.</p>
                 <button :disabled="specProposalBusy || !specProposal.task_id" @click="rejectTechnicalProposal">Rechazar propuesta y conservar mi ficha</button>

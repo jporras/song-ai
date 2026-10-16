@@ -1,5 +1,7 @@
 # Estado de publicación del sprint — 2026-10-15
 
+La propuesta técnica indica el paso real de tres etapas: preparar/registrar solicitud, consultar el modelo y validar/guardar la respuesta. El navegador consulta una ruta de estado ligada a un identificador único de solicitud; no usa tiempo transcurrido como porcentaje ni confunde tareas históricas con la actual. Al finalizar muestra 3 de 3 y la propuesta, o un error explícito. **Reinicia el lanzador** para cargar la nueva ruta backend antes de usar el seguimiento. Verificación: 383 pruebas Python, 378 aprobadas y 5 omitidas; 64 frontend aprobadas y build correcto.
+
 La preparación de la propuesta técnica muestra tiempo transcurrido y confirma que la solicitud sigue esperando respuesta del modelo. El indicador no inventa un porcentaje: esta llamada devuelve el resultado al terminar. El estado se retira al recibir propuesta o error; la ficha guardada permanece intacta.
 
 La barra lateral permite desplazamiento independiente cuando los pasos y estados exceden la altura de la ventana. En pantallas estrechas vuelve al flujo normal de la página, sin un área de desplazamiento anidada.

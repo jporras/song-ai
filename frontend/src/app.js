@@ -290,6 +290,10 @@ createApp({
       specProposal: null,
       specProposalBusy: false,
       specProposalStartedAt: 0,
+      specProposalRequestId: "",
+      specProposalStep: 1,
+      specProposalPollTimer: null,
+      specProposalTrackingError: false,
       specProposalError: "",
       assistantPendingPatch: null,
       fullLyricsProposal: null,
@@ -599,9 +603,11 @@ createApp({
       return this.specProposalStartedAt ? Math.max(0, Math.floor((this.uiClockNow - this.specProposalStartedAt) / 1000)) : 0;
     },
     specProposalProgressMessage() {
-      if (this.specProposalElapsedSeconds >= 60) return "La revisión sigue esperando respuesta del modelo. La ficha guardada permanece disponible.";
-      if (this.specProposalElapsedSeconds >= 15) return "El modelo aún no responde; esta revisión puede tardar. La ficha guardada permanece disponible.";
-      return "Solicitud enviada. Esperando la respuesta de la revisión técnica; aún no hay un porcentaje de avance.";
+      if (this.specProposalStep === 3) return "Respuesta recibida; se comprueba la estructura y se guarda la propuesta sin modificar la ficha.";
+      if (this.specProposalStep === 2) return this.specProposalElapsedSeconds >= 15
+        ? "El modelo técnico sigue preparando la respuesta. Esta etapa puede tardar; la ficha guardada permanece disponible."
+        : "El modelo técnico está preparando la propuesta. La ficha guardada permanece disponible.";
+      return "Se comprueba el proyecto y se registra la solicitud de revisión técnica.";
     },
     inspirationCatalog() {
       return INSPIRATION_CATALOG;
@@ -1052,6 +1058,7 @@ createApp({
     window.removeEventListener("beforeunload", this.beforeUnloadHandler);
     this.stopResourceAutoRefresh();
     this.stopUiClock();
+    if (this.specProposalPollTimer) clearInterval(this.specProposalPollTimer);
   },
   watch: {
     async saveError(message) {
@@ -1068,6 +1075,21 @@ createApp({
     },
   },
   methods: {
+    async pollSpecProposalStatus(songId, requestId) {
+      if (!this.specProposalBusy || this.productionProjectId !== songId || this.specProposalRequestId !== requestId) return;
+      try {
+        const response = await fetch(apiUrl(`/api/pro/projects/${encodeURIComponent(songId)}/spec/proposal/status?request_id=${encodeURIComponent(requestId)}`), {cache:"no-store"});
+        const payload = await this.readApiPayload(response, {});
+        if (payload.ok && this.specProposalRequestId === requestId && this.productionProjectId === songId) {
+          this.specProposalStep = Math.max(this.specProposalStep, Number(payload.data?.step || 1));
+          this.specProposalTrackingError = false;
+        } else if (this.specProposalRequestId === requestId) {
+          this.specProposalTrackingError = true;
+        }
+      } catch (_) {
+        if (this.specProposalRequestId === requestId) this.specProposalTrackingError = true;
+      }
+    },
     navigateSummaryAction(action) {
       if (action.tab === 'production') return this.navigateBuilderStep(builderSteps.find(step => step.id === action.stepId));
       return this.requestNavigation(action.tab);

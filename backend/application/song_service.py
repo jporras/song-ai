@@ -1663,7 +1663,23 @@ class SongService:
     def preview_ace_step_plan(self, song_id: str, payload: dict[str, object]) -> dict[str, object]:
         return PreviewAceStepPlan(self.storage, AceStepSourceAudio(self.storage.data_dir)).execute(song_id, payload.get("lyrics", ""))
 
-    def propose_song_specification(self, song_id: str) -> dict:
+    def song_specification_proposal_status(self, song_id: str, request_id: str) -> dict:
+        if not request_id or len(request_id) > 80:
+            raise ValueError("Identificador de solicitud inválido.")
+        if not self.storage.get_song_project(song_id):
+            raise ValueError("Proyecto no encontrado.")
+        task = next((item for item in self.storage.list_tasks()
+                     if item.get("task_type") == "compile_song_spec"
+                     and item.get("payload", {}).get("project_id") == song_id
+                     and item.get("payload", {}).get("client_request_id") == request_id), None)
+        if not task:
+            return {"request_id": request_id, "step": 1, "total": 3, "status": "preparing"}
+        progress = int(task.get("progress") or 0)
+        step = 3 if progress >= 75 or task.get("status") in {"completed", "failed"} else 2 if progress >= 40 else 1
+        return {"request_id": request_id, "step": step, "total": 3, "status": task.get("status"),
+                "task_id": task.get("task_id")}
+
+    def propose_song_specification(self, song_id: str, request_id: str = "") -> dict:
         project = self.storage.get_song_project(song_id)
         if not project or not project.get("spec"):
             raise ValueError("Prepara la ficha del proyecto antes de pedir la propuesta tecnica.")
@@ -1673,6 +1689,7 @@ class SongService:
         fields = {field['id']: {key: field[key] for key in ('label', 'help', 'control', 'required_for_spec', 'applicable', 'options')}
                   for group in catalog['groups'] for field in group['fields']}
         return self.model_orchestrator.run_handoff({"model_role": "technical", "task_type": "compile_song_spec",
+            "client_request_id": request_id,
             "project_id": song_id, "project_name": project['title'], "phase": "SONG_SPEC_COLLECTION",
             "question": "Compila la ficha completa desde el estado persistido y declara contradicciones concretas.",
             "context": {"current_spec": spec, "fields": fields,

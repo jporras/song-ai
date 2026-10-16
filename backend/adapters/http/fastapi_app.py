@@ -361,8 +361,13 @@ def get_professional_specification(song_id: str) -> dict[str, Any]:
 
 
 @app.post("/api/pro/projects/{song_id}/spec/proposal")
-def propose_song_specification(song_id: str) -> dict[str, Any]:
-    return run_action(lambda: service.propose_song_specification(song_id))
+def propose_song_specification(song_id: str, request_id: str = "") -> dict[str, Any]:
+    return run_action(lambda: service.propose_song_specification(song_id, request_id=request_id))
+
+
+@app.get("/api/pro/projects/{song_id}/spec/proposal/status")
+def song_specification_proposal_status(song_id: str, request_id: str) -> dict[str, Any]:
+    return run_action(lambda: service.song_specification_proposal_status(song_id, request_id))
 
 
 @app.post("/api/pro/projects/{song_id}/ace-plan/preview")

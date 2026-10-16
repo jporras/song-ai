@@ -13,10 +13,13 @@ class AssistantRequestPolicyTest(unittest.TestCase):
 
     def test_current_spec_constraints_and_gates_survive_without_execution_history(self):
         original = {"missing": ["sample"], "sample_evaluation": {"approved": False},
-            "professional_project": {"id": "s1", "spec": {"required_phrase": "hogar", "revision": "r1"},
+            "professional_project": {"id": "s1", "spec": {"revision": "r1", "json_spec": {
+                "required_phrase": "hogar", "_provenance": {"required_phrase": {"origin": "user", "confirmation": "confirmed"}}}},
                                      "events": [{"message": "x" * 100000}], "artifacts": ["duplicate"]}}
         state = conversation_state(original)
-        self.assertEqual(state["professional_project"]["spec"], original["professional_project"]["spec"])
+        self.assertEqual(state["professional_project"]["spec"]["json_spec"], {"required_phrase": "hogar"})
+        self.assertEqual(state["professional_project"]["spec"]["field_authority"],
+                         {"required_phrase": {"origin": "user", "confirmation": "confirmed"}})
         self.assertEqual(state["sample_evaluation"], {"approved": False})
         self.assertEqual(state["missing"], ["sample"])
         self.assertNotIn("events", state["professional_project"])

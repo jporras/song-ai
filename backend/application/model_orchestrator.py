@@ -154,7 +154,8 @@ class ModelOrchestrator:
             },
         )
 
-        result = self.build_provider_result(model_role, task_type, payload) or self.build_mock_result(
+        provider_payload = {**payload, "_task_id": task_id} if task_type == "compile_song_spec" else payload
+        result = self.build_provider_result(model_role, task_type, provider_payload) or self.build_mock_result(
             model_role,
             task_type,
             payload,
@@ -255,6 +256,9 @@ class ModelOrchestrator:
         summary = str(response.get("summary", "")).strip()
         proposal = None
         if task_type == "compile_song_spec":
+            if payload.get("_task_id"):
+                self.storage.update_task(task_id=payload["_task_id"], status="running", progress=75,
+                                         message="Respuesta del modelo recibida; validando la propuesta.")
             from application.song_spec_proposal import specification_proposal
             try:
                 proposal = specification_proposal(summary, payload["context"])
