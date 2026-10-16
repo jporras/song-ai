@@ -771,7 +771,7 @@
           <section class="panel production-flow-panel" id="production-flow" tabindex="-1">
             <div class="section-head">
               <div>
-                <span class="eyebrow">1. Orden lógico</span>
+                <span class="eyebrow">Estado de esta canción</span>
                 <h2>{{ productionGlobalStatus }}</h2>
                 <p>Revisa la configuración, genera la canción y encuentra los archivos disponibles en Studio.</p>
               </div>
@@ -839,14 +839,14 @@
             <div class="section-head">
               <div>
                 <span class="eyebrow">2. Configuración guiada</span>
-                <h2>Ficha completa de la canción</h2>
-                <p>Gemma explica las decisiones y Qwen prepara la especificación. Puedes revisar todas las opciones aunque aún estén por decidir.</p>
+                <h2>Configuración de la canción</h2>
+                <p>Revisa las decisiones guardadas. Los campos sin valor pueden ser opcionales, no aplicables o estar pendientes de revisión.</p>
               </div>
               <div class="spec-coverage">
                 <strong>{{ specificationCoverage.decided }} / {{ specificationCoverage.total }}</strong>
-                <small>parámetros con valor; no equivale a confirmación</small>
-                <span v-if="specificationRevision">Revisión {{ specificationRevision.revision_number }} · {{ specificationRevision.technical_review_mode === 'rule_validation' ? 'validación por reglas' : specificationRevision.technical_review_mode }}</span>
-                <span v-if="specificationRevision">Confirmación: {{ specificationRevision.user_confirmation_status }}</span>
+                <small>campos con valor en el catálogo; el resto no es una lista de tareas</small>
+                <span v-if="specificationRevision">Revisión {{ specificationRevision.revision_number }} · {{ specificationRevision.technical_review_mode === 'rule_validation' ? 'revisión por reglas' : specificationRevision.technical_review_mode === 'codex_consolidation_not_qwen_execution' ? 'consolidación de datos, sin revisión real de Qwen' : specificationRevision.technical_review_mode }}</span>
+                <span v-if="specificationRevision">{{ specificationRevision.user_confirmation_status === 'confirmed' ? 'Configuración confirmada; sigue con el plan' : 'Configuración pendiente de confirmar' }}</span>
                 <button v-if="canConfirmSpecification" class="primary" :disabled="confirmingSpecification || Boolean(aceConfigurationDraft)" @click="confirmProfessionalSpecification">
                   {{ confirmingSpecification ? 'Confirmando...' : 'Confirmar esta configuración' }}
                 </button>

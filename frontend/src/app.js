@@ -398,15 +398,19 @@ createApp({
         : this.activeProject;
       return generationPreflight(project,this.acePlanReview,this.resourceStatus,this.dirty);
     },
-    productionNextAction() {
+    currentFinalAvailable() {
       const finalMetadata = this.exportManifest?.artifacts?.find(item => item.type === "final_song_wav")?.metadata || {};
-      const matchingFinal = Boolean(finalMetadata.ace_plan_id
+      return Boolean(this.exportManifest?.song_id === this.productionProjectId
+        && this.exportManifest?.quality?.export_ready === true
+        && finalMetadata.ace_plan_id
         && finalMetadata.ace_plan_id === this.acePlanReview?.plan_id
         && finalMetadata.spec_revision_id === this.specificationRevision?.revision_id);
+    },
+    productionNextAction() {
       return productionNextAction({projectId:this.productionProjectId,dirty:this.dirty,
         editing:Boolean(this.aceConfigurationDraft),revision:this.specificationRevision,
         plan:this.acePlanReview,running:Boolean(this.productionRunningPhase),
-        exportReady:this.exportManifest?.quality?.export_ready === true && matchingFinal,
+        exportReady:this.currentFinalAvailable,
         resourceBlocked:this.resourceStatus?.readiness?.ready === false});
     },
     builderSummaryStatus() {
@@ -445,10 +449,13 @@ createApp({
       return byId;
     },
     productionGlobalStatus() {
-      if (this.exportManifest?.song_id === this.productionProjectId && this.exportManifest?.quality?.export_ready === true) return "Export listo";
-      if (this.activeProfessionalProject?.current_phase) return `${this.activeProfessionalProject.current_phase} / ${this.activeProfessionalProject.status}`;
-      if (this.activeProjectId) return "Proyecto cargado, Production pendiente";
-      return "Sin proyecto activo";
+      if (!this.productionProjectId) return "Selecciona un proyecto";
+      if (this.productionNextAction.target === "downloads") return "Canción disponible para esta revisión";
+      if (this.productionNextAction.target === "spec") return "Revisar configuración";
+      if (this.productionNextAction.target === "plan") return "Preparar y aprobar el plan";
+      if (this.productionNextAction.target === "preflight") return "Revisar recursos";
+      if (this.productionRunningPhase) return "Generación en curso";
+      return "Listo para generar";
     },
     specificationCoverage() {
       const summary = this.professionalSpecification?.catalog?.summary || {};
