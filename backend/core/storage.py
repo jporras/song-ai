@@ -292,13 +292,13 @@ class StorageManager:
             try:
                 payload = self.read_json(song_path)
                 song_id = str(payload["song_id"])
-                sample_id = str(payload["sample_id"])
+                sample_id = str(payload.get("sample_id", ""))
                 set_id = str(payload["set_id"])
             except (KeyError, OSError, ValueError, json.JSONDecodeError):
                 skipped.append(str(song_path))
                 continue
-            sample = self.legacy_song_repository.get_sample(sample_id)
-            if self.get_indexed_set(set_id) is None or sample is None or str(sample.get("set_id", "")) != set_id:
+            sample = self.legacy_song_repository.get_sample(sample_id) if sample_id else None
+            if self.get_indexed_set(set_id) is None or (sample_id and (sample is None or str(sample.get("set_id", "")) != set_id)):
                 skipped.append(song_id)
                 continue
             normalized = {
@@ -515,9 +515,9 @@ class StorageManager:
     def save_legacy_song(self, payload: dict[str, object], song_path: Path) -> Path:
         set_id = str(payload.get("set_id", ""))
         sample_id = str(payload.get("sample_id", ""))
-        sample = self.legacy_song_repository.get_sample(sample_id)
-        if self.get_indexed_set(set_id) is None or sample is None or str(sample.get("set_id", "")) != set_id:
-            raise ValueError("La cancion requiere un sample y un set validos en SQLite.")
+        sample = self.legacy_song_repository.get_sample(sample_id) if sample_id else None
+        if self.get_indexed_set(set_id) is None or (sample_id and (sample is None or str(sample.get("set_id", "")) != set_id)):
+            raise ValueError("La cancion requiere un set valido; el sample indicado debe pertenecer a ese set.")
         normalized = {**payload, "created_at": str(payload.get("created_at") or datetime.now(timezone.utc).isoformat())}
         self.legacy_song_repository.save_song(normalized, song_path)
         self.write_json(song_path, normalized)
@@ -939,8 +939,8 @@ class StorageManager:
                 status = "GENERATED"
                 event_type = "ARTIFACT_GENERATED"
                 message = "Artefacto verificado correctamente."
-            metadata["file_size"] = path.stat().st_size
-            metadata["checksum"] = checksum
+            metadata["observed_file_size"] = path.stat().st_size
+            metadata["observed_checksum"] = checksum
         metadata["artifact_status"] = status
         self.song_workflow_repository.update_artifact_metadata(str(artifact["artifact_id"]), metadata)
         if status != "GENERATED":

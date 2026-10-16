@@ -18,7 +18,7 @@ def render(ledger):
         f"Baseline revisada: {ledger['baseline_date']}. {len(tasks)} entregables de alcance activo.", '',
         'Cada entregable tiene igual peso dentro de su sprint; cada uno de los ocho sprints tiene igual peso global. Desarrollo 62,5% y verificación 37,5%, conservando la proporción previa 50:30. Aceptación fuera del cálculo: se revisará después de alcanzar 100% en desarrollo y verificación. Estados: 0 pendiente, 0.5 parcial, 1 completo con evidencia. Aceptación acreditada únicamente donde existe decisión explícita o evidencia del criterio correspondiente; no se deduce del número de tests.', '',
         'El cálculo mide avance de entregables, no horas ni calidad de audio. Los estados son evaluaciones explícitas revisables; el script calcula, no audita el código. No contar los mismos avances en subdivisiones DS/S06-A–F. El 100% de avance exige desarrollo y verificación completos de este alcance; la aceptación y el cierre final se evalúan después, por separado.', '',
-        'Reclasificación 2026-10-15: la escucha musical y el piloto con participantes pertenecen a aceptación; la verificación mide ejecución y comportamiento técnico observados. Se ajustó el alcance técnico de S10-02 a S10-06 y S10-08 de forma explícita. S01-03 cierra correspondencia técnica de un sample real y reserva representatividad audible para aceptación. Esto no certifica fidelidad perceptual ni simula un piloto. S00-04, S01-04, S06-05, S06-06 y S10-07 conservan pruebas técnicas pendientes.', '',
+        'Reclasificación 2026-10-15: la escucha musical y el piloto con participantes pertenecen a aceptación; la verificación mide ejecución y comportamiento técnico observados. S01-03 cierra correspondencia técnica de un sample real y S01-04 cierra exportación integrada real; la escucha permanece en aceptación. Esto no certifica fidelidad perceptual ni simula un piloto. S00-04, S06-05, S06-06 y S10-07 conservan pruebas técnicas pendientes.', '',
         '| Sprint | Desarrollo | Verificación | Aceptación registrada (fuera del cálculo) | Avance D/V |',
         '| --- | ---: | ---: | ---: | ---: |']
     totals = []
@@ -38,9 +38,9 @@ def render(ledger):
         '## Niveles de verificación', '',
         '| Nivel | Qué se ejecuta | Estado del lote 2026-10-15 |',
         '| --- | --- | --- |',
-        '| P | Python, frontend, build y contratos sin modelos | 370 Python: 365 aprobadas y 5 omitidas; 63 frontend aprobadas; build y contrato instalado correctos. |',
+        '| P | Python, frontend, build y contratos sin modelos | 379 Python: 374 aprobadas y 5 omitidas tras la exportación integrada; 63 frontend aprobadas en el lote anterior; build y contrato instalado correctos en ese lote. |',
         '| L | Gemma/Qwen reales con SQLite QA | Gemma 18,75 s y Qwen 50,42 s respondieron por registry con steering; evidencia histórica de tasks conservada. |',
-        '| A | ACE-Step real y recorrido final | Seis modos previos reutilizados; LM1.7B no cargado: presupuesto 11609 MB frente a 10540 MB disponibles. |', '',
+        '| A | ACE-Step real y recorrido final | Turbo sin LM generó WAV/MP3/FLAC reales en QA; manifest, ZIP y descargas ASGI comprobados. LM1.7B no cargado: presupuesto 11609 MB frente a 10540 MB disponibles en su preflight. |', '',
         'Detalle, límites y criterios de salida: [lote 2026-10-15](SPRINT_VERIFICATION_BATCH_20261015.md) y [estrategia](VERIFICATION_STRATEGY.md). Ningún nivel sustituye la aceptación del usuario.', '',
         '## Próximo bloque prioritario', '',
         'Desarrollo pendiente: ' + (', '.join(task['id'] for task in tasks if task['developed'] < 1) or 'ninguno')

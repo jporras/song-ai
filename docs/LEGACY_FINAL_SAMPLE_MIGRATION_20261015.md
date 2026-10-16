@@ -1,0 +1,9 @@
+# Ruta local heredada: sample opcional — 2026-10-15
+
+Durante la continuación de S01-04 se detectó que `/api/local-final-song` y el builder heredado todavía exigían sample aprobado. También el indicador `ready_for_final` contaba el sample como requisito. Contradecían la decisión vigente de sample opcional.
+
+Ahora el builder requiere set válido, tres assets y una única ficha vinculada al set con revisión confirmada y válida. El sample puede omitirse; si se indica uno, debe pertenecer al set, pero no se usa como aprobación automática del audio. El registro de canción conserva el proyecto fuente, la revisión y la huella de inputs. La generación local vuelve a validar esos valores antes de llamar al pipeline. Una ficha o un asset modificado exige preparar un request nuevo. El indicador de preparación exige set y ficha confirmada, sin contar sample ni canción ya creada.
+
+La columna `legacy_songs.sample_id` migra de obligatoria a nullable conservando filas antiguas; nuevas canciones sin sample guardan `NULL` en SQLite y cadena vacía en el snapshot. La migración se probó con una tabla anterior y una fila existente. El preset de prueba explícito usa una ficha marcada `explicit_mock_fixture`/`technical_qa_only`; esa marca no representa una decisión creativa de un usuario ni permite anunciar un audio final real. La ruta HTTP ordinaria no activa ese fixture.
+
+Verificación: `tests.test_set_validation`: 14 aprobadas, incluidas migración, sample ausente, sample ajeno, revisión obsoleta y preparación sin sample. `test_audio_export.py`: 42 ejecutadas, 37 aprobadas y 5 omitidas. Suite completa: 375 ejecutadas, 370 aprobadas, 5 omitidas, 0 fallidas, 112,725 s. Este cierre funcional corrige un bloqueo, pero S01-04 permanece V0.5 hasta exportar y descargar un resultado final real de extremo a extremo. La aceptación audible sigue separada.

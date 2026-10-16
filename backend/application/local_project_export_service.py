@@ -38,7 +38,9 @@ class LocalProjectExportService:
         if project is None:
             raise ValueError("Proyecto profesional no encontrado.")
         FinalProductionGate(self.storage).require_for_project(project)
-        artifacts = self._existing_artifacts(project)
+        self._prepare_ace_export(project)
+        project = self.storage.get_song_project(song_id) or project
+        artifacts = self._owned_export_artifacts(song_id, project)
         required = self._required_artifacts(artifacts)
         available_types = {str(artifact["type"]) for artifact in artifacts}
         missing = sorted(required - available_types)
@@ -47,10 +49,11 @@ class LocalProjectExportService:
         quality = self._quality_report(artifacts)
         if not bool(quality["export_ready"]):
             raise ValueError(str(quality["message"]))
+        self._verify_export_artifacts(song_id, artifacts)
 
         project_dir = self.storage.data_dir / "projects" / song_id
         zip_artifact = self._create_project_zip(song_id, project_dir, artifacts)
-        artifacts = self._existing_artifacts(self.storage.get_song_project(song_id) or project)
+        artifacts = self._owned_export_artifacts(song_id, self.storage.get_song_project(song_id) or project)
         quality = self._quality_report(artifacts)
         manifest_path = project_dir / "export_manifest.json"
         title = str(project.get("title", song_id))
@@ -90,6 +93,51 @@ class LocalProjectExportService:
             "progress": {"current": 11, "total": 11, "label": "11. Export", "status": "completed"},
         }
 
+    def _prepare_ace_export(self, project: dict[str, object]) -> None:
+        final_wav = self._latest_final_full_song_artifact(list(project.get("artifacts", [])))
+        metadata = dict(final_wav.get("metadata", {})) if final_wav else {}
+        plan_id = str(metadata.get("ace_plan_id", ""))
+        if not plan_id:
+            return
+        from adapters.ace_step_source_audio import AceStepSourceAudio
+        from adapters.sqlite.ace_step_plan_repository import AceStepPlanRepository
+        from application.ace_step_plan_compiler import PreviewAceStepPlan
+        from application.ace_step_plan_review import ReviewAceStepPlan
+        from application.music_spec_snapshot_export import export_music_spec
+
+        song_id = str(project["id"])
+        review = ReviewAceStepPlan(
+            PreviewAceStepPlan(self.storage, AceStepSourceAudio(self.storage.data_dir)),
+            AceStepPlanRepository(self.storage.db_path),
+        )
+        item = review.latest(song_id)
+        plan = dict(item.get("plan", {})) if item else {}
+        revision_id = str(dict(project["spec"])["revision"]["revision_id"])
+        if (not item or item.get("effective_status") != "approved"
+                or item.get("plan_id") != plan_id
+                or plan.get("plan_sha256") != metadata.get("ace_plan_sha256")
+                or plan.get("spec_revision_id") != revision_id
+                or metadata.get("spec_revision_id") != revision_id):
+            raise ValueError("El audio final no corresponde al plan ACE-Step aprobado y vigente.")
+
+        folder = self.storage.data_dir / "projects" / song_id
+        export_music_spec(self.storage, song_id)
+        lyrics_path = folder / "lyrics.md"
+        if not lyrics_path.is_file() or lyrics_path.read_text(encoding="utf-8") != plan["payload"]["lyrics"]:
+            raise ValueError("La letra exportada no coincide con el plan ACE-Step aprobado.")
+        plan_path = folder / "ace_plan.json"
+        self.storage.write_json(plan_path, item)
+        for kind, path in (("song_spec", folder / "song_spec.json"),
+                           ("ace_plan_json", plan_path),
+                           ("lyrics_markdown", lyrics_path)):
+            self.storage.create_song_artifact(
+                artifact_id=f"{song_id}_{kind}", song_id=song_id, phase=SongPhase.EXPORT.value,
+                artifact_type=kind, file_path=str(path),
+                metadata={"source_of_truth": "sqlite", "spec_revision_id": revision_id,
+                          "ace_plan_id": plan_id, "ace_plan_sha256": plan["plan_sha256"],
+                          "quality_status": "final_candidate_not_accepted"},
+            )
+
     def _create_project_zip(self, song_id: str, project_dir: Path, artifacts: list[dict[str, object]]) -> dict[str, object]:
         project_root = project_dir.resolve()
         zip_path = project_root / "project_export.zip"
@@ -114,6 +162,22 @@ class LocalProjectExportService:
             file_path=str(zip_path),
             metadata={"contains": len(artifacts), "source_of_truth": "sqlite"},
         )
+
+    def _verify_export_artifacts(self, song_id: str, artifacts: list[dict[str, object]]) -> None:
+        project_root = (self.storage.data_dir / "projects" / song_id).resolve()
+        for artifact in artifacts:
+            path = Path(str(artifact["file_path"])).resolve()
+            if project_root not in path.parents or not path.is_file():
+                raise ValueError("El artefacto exportable no existe dentro del proyecto activo.")
+            expected = str(dict(artifact.get("metadata", {})).get("checksum", ""))
+            if not expected or self.storage.file_checksum(path) != expected:
+                raise ValueError("El checksum del artefacto exportable no coincide con SQLite: "
+                                 + str(artifact.get("type", "")))
+
+    def _owned_export_artifacts(self, song_id: str, project: dict[str, object]) -> list[dict[str, object]]:
+        project_root = (self.storage.data_dir / "projects" / song_id).resolve()
+        return [artifact for artifact in self._existing_artifacts(project)
+                if project_root in Path(str(artifact["file_path"])).resolve().parents]
 
     def get(self, song_id: str) -> dict[str, object]:
         project = self.storage.get_song_project(song_id)
@@ -247,7 +311,10 @@ class LocalProjectExportService:
     def _required_artifacts(self, artifacts: list[dict[str, object]]) -> set[str]:
         base = {"song_spec", "lyrics_json", "lyrics_approved_json", "music_plan_json", "midi"}
         final = {"final_song_wav", "final_song_mp3", "final_song_flac"}
-        if self._latest_final_full_song_artifact(artifacts):
+        full_song = self._latest_final_full_song_artifact(artifacts)
+        if full_song and dict(full_song.get("metadata", {})).get("ace_plan_id"):
+            return {"song_spec", "ace_plan_json", "lyrics_markdown"} | final
+        if full_song:
             return base | final
         return base | {"instrumental_wav", "vocals_wav", "mix_wav"} | final
 

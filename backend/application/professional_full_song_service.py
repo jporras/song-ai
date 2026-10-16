@@ -6,7 +6,6 @@ import re
 from pathlib import Path
 import importlib.machinery
 import signal
-import shutil
 import subprocess
 import time
 
@@ -25,6 +24,7 @@ from adapters.ace_step_execution import AceStepExecutionArguments
 from adapters.sqlite.ace_step_plan_repository import AceStepPlanRepository
 from audio.execution_lock import exclusive_audio
 from adapters.ace_step_memory_budget import estimate_ace_step_memory
+from audio.ffmpeg_binary import resolve_ffmpeg
 
 
 class ProfessionalFullSongService(LocalAudioProcessService):
@@ -242,7 +242,7 @@ class ProfessionalFullSongService(LocalAudioProcessService):
             raise ValueError("El provider full-song no genero final_song.wav.")
 
     def _export_mp3(self, final_wav_path: Path, final_mp3_path: Path) -> None:
-        ffmpeg_path = shutil.which("ffmpeg")
+        ffmpeg_path = resolve_ffmpeg(Path(__file__).resolve().parents[2])
         if ffmpeg_path is None:
             raise ValueError("ffmpeg no esta disponible para exportar final_song.mp3.")
         subprocess.run(
@@ -251,7 +251,7 @@ class ProfessionalFullSongService(LocalAudioProcessService):
         )
 
     def _export_flac(self, final_wav_path: Path, final_flac_path: Path) -> None:
-        ffmpeg_path = shutil.which("ffmpeg")
+        ffmpeg_path = resolve_ffmpeg(Path(__file__).resolve().parents[2])
         if ffmpeg_path is None:
             raise ValueError("ffmpeg no esta disponible para exportar final_song.flac.")
         subprocess.run(

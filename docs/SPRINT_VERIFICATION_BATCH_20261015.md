@@ -1,6 +1,6 @@
 # Continuación de verificación por complejidad — 2026-10-15
 
-Estado al inicio del lote: desarrollo 100%; seis entregables con verificación técnica parcial. S01-03 se cerró técnicamente más adelante en este mismo lote; quedan cinco. La aceptación musical y el piloto del usuario se harán al terminar D/V. Orden y criterios: `VERIFICATION_STRATEGY.md`, sección «Lotes por complejidad». Se conserva toda evidencia real anterior que sigue aplicando; no se repiten seis generaciones por rutina.
+Estado al inicio del lote: desarrollo 100%; seis entregables con verificación técnica parcial. S01-03 y S01-04 se cerraron técnicamente más adelante en este mismo lote; quedan cuatro. La aceptación musical y el piloto del usuario se harán al terminar D/V. Orden y criterios: `VERIFICATION_STRATEGY.md`, sección «Lotes por complejidad». Se conserva toda evidencia real anterior que sigue aplicando; no se repiten seis generaciones por rutina.
 
 | Nivel | Resultado de esta ejecución | Alcance acreditado |
 | --- | --- | --- |
@@ -35,3 +35,19 @@ Preflight ACE-Step sin cargar pesos: Turbo + `high_level_lm` + LM1.7B, ruta úni
 ## S01-03: sample real opcional con correspondencia técnica
 
 Se creó un sample pendiente desde el candidato ACE-Step real de la QA alto nivel y se evaluó/reabrió en SQLite: set, plan, revisión, checksum y ejecución/configuración coinciden. `configuration_matches=true`, `execution_configuration_matches=true`, `assessment_current=true`; `representativity_verified=false` y `approval_status=pending`. Evidencia exacta en `REAL_SAMPLE_CORRESPONDENCE_20261015.md`. S01-03 cambia V0.5→1 para esta correspondencia técnica; la escucha y representatividad perceptual quedan en aceptación. No se generó audio adicional ni se volvió obligatorio el sample.
+
+## Continuación P: integridad de exportación
+
+`StorageManager.verify_song_artifact` conserva ahora el checksum original en SQLite cuando detecta corrupción; una segunda verificación sigue fallando. `LocalProjectExportService.export` coteja ubicación y checksum de cada archivo antes de crear el ZIP. Cuatro pruebas focalizadas y la suite completa de 372 pruebas Python pasaron (367 aprobadas, 5 omitidas). Detalle en `EXPORT_INTEGRITY_20261015.md`. S01-04 permanece V0.5: esta prueba sintética no sustituye cierre y descarga integrados de un resultado final real.
+
+## Continuación P: ruta local sin sample obligatorio
+
+El builder y la generación local heredados exigían sample aprobado. Se sustituyó ese bloqueo por set válido, ficha confirmada y revisión/huella vigentes; SQLite migra la columna `sample_id` a nullable conservando registros antiguos. El indicador de preparación tampoco depende ya del sample. `tests.test_set_validation`: 14 aprobadas; `test_audio_export.py`: 42 ejecutadas, 37 aprobadas y 5 omitidas; suite completa: 375 ejecutadas, 370 aprobadas y 5 omitidas. Detalle y límite en `LEGACY_FINAL_SAMPLE_MIGRATION_20261015.md`. S01-04 conserva V0.5 porque falta entrega final real integrada.
+
+## Continuación A: archivos finales reales, exportación pendiente
+
+Turbo sin LM generó WAV/MP3/FLAC de 15 s sobre QA aislada; `ffprobe`, checksums SQLite y descarga individual coinciden. La primera conversión falló por `ffmpeg` fuera del PATH; se añadió resolución del binario administrado y la segunda ejecución completó. El exportador rechazó manifest/ZIP por cinco artefactos auxiliares no registrados y la letra QA sigue `pending_review`. No se simuló su aprobación. Detalle en `REAL_FINAL_EXPORT_QA_20261015.md`. Regresión completa: 377 Python ejecutadas, 372 aprobadas y 5 omitidas. S01-04 permanece V0.5.
+
+## Continuación P/A: cierre integrado de S01-04
+
+El rechazo anterior se resolvió compilando la exportación desde la revisión SQLite y el plan ACE-Step vigente, sin forzar aprobaciones de letra ni MIDI histórico. El mismo WAV/MP3/FLAC real quedó ligado a `song_spec.json`, `ace_plan.json` y `lyrics.md`; manifest y ZIP se registraron y el CRC del ZIP fue válido. Las descargas ASGI de MP3, FLAC y ZIP respondieron HTTP 200 con tamaño y SHA256 idénticos a SQLite. La prueba automatizada está en `scripts/verify_real_final_export.py`; el informe QA en `data/qa_high_level_1791602467245496700/final_export_postflight_20261015.json`. Regresión completa posterior: 379 Python ejecutadas, 374 aprobadas, 5 omitidas, 0 fallidas. S01-04 V0.5→1; D/V 97,9→98,5 %. La aceptación audible y la aprobación creativa del usuario siguen después de D/V 100 %.

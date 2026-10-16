@@ -459,7 +459,7 @@ class SongService:
         if not approved_mock_fixture:
             return {
                 "summary": "Preset preparado. Confirma la ficha y el plan antes de generar; puedes revisar un sample opcional.",
-                "status": "waiting_sample_approval",
+                "status": "waiting_spec_confirmation",
                 "set_id": set_id,
                 "sample_id": sample_path.name,
                 "sample_path": str(sample_path),
@@ -468,7 +468,13 @@ class SongService:
                 "melody": melody_path,
                 "lyrics": lyrics_path,
             }
-        self.storage.approve_sample(set_id, sample_path.name)
+        fixture_project = self.storage.create_song_project(
+            self.DEFAULT_LULLABY_PROJECT["project_name"], f"set:{set_id}")
+        self.storage.upsert_song_spec(str(fixture_project["id"]),
+            {"title": self.DEFAULT_LULLABY_PROJECT["project_name"],
+             "_provenance": {"source": "explicit_mock_fixture", "confirmation": "technical_qa_only"}},
+            False, [], technical_review_mode="explicit_mock_fixture",
+            user_confirmation_status="confirmed", deterministic_valid=True)
         song_path = self.full_song_builder.create_from_latest_sample()
         mix_path = self.audio_mixer.prepare_latest_song_mix()
         exports_path = self.export_builder.generate_latest_song_audio_exports()
@@ -1999,6 +2005,15 @@ class SongService:
         samples = list(project["samples"]) if project else []
         songs = list(project["songs"]) if project else []
         latest_song_dir = Path(str(songs[-1]["path"])) if songs else None
+        active_set_id = str(project["set"]["set_id"]) if project else ""
+        linked_projects = [item for item in self.storage.list_song_projects()
+                           if item.get("user_id") == f"set:{active_set_id}"] if active_set_id else []
+        confirmed_request = False
+        if len(linked_projects) == 1:
+            linked_project = self.storage.get_song_project(str(linked_projects[0]["id"]))
+            revision = dict(dict((linked_project or {}).get("spec") or {}).get("revision") or {})
+            confirmed_request = (revision.get("user_confirmation_status") == "confirmed"
+                                 and revision.get("deterministic_valid") is True)
         phases = [
             self._phase("instrumental", "1. Instrumental", int(draft_counts["instrumental"]) > 0),
             self._phase("melody", "2. Melodia", int(draft_counts["melody"]) > 0),
@@ -2029,7 +2044,7 @@ class SongService:
         return {
             "set_id": str(project["set"]["set_id"]) if project else "",
             "project_name": str(project["project"]["project_name"]) if project else "",
-            "ready_for_final": all(phase["ready"] for phase in phases[:6]),
+            "ready_for_final": all(phase["ready"] for phase in phases[:4]) and confirmed_request,
             "complete": all(phase["ready"] for phase in phases),
             "phases": phases,
         }
@@ -2079,14 +2094,17 @@ class SongService:
         if latest_song is None:
             raise ValueError("No hay cancion completa para el set activo. Confirma la ficha y el plan y genera la cancion; el sample previo es opcional.")
         active_set_id = str(latest_song.get("set_id", ""))
-        sample = self.storage.legacy_song_repository.get_sample(str(latest_song.get("sample_id", "")))
-        current_fingerprint = self.storage.set_generation_fingerprint(active_set_id)
-        if (
-            sample is None
-            or sample.get("approval_status") != "approved"
-            or sample.get("approved_set_fingerprint") != current_fingerprint
-        ):
-            raise ValueError("El sample de la cancion esta ausente o desactualizado. Regeneralo y apruebalo.")
+        from application.final_production_gate import FinalProductionGate
+        project_id = str(latest_song.get("source_project_id", ""))
+        project = self.storage.get_song_project(project_id) if project_id else None
+        if project is None or project.get("user_id") != f"set:{active_set_id}":
+            raise ValueError("La cancion requiere una ficha vinculada al set activo; recrea el request confirmado.")
+        FinalProductionGate(self.storage).require_for_project(project)
+        revision_id = str(project["spec"]["revision"]["revision_id"])
+        if revision_id != str(latest_song.get("request_revision_id", "")):
+            raise ValueError("La ficha cambio desde que se preparo la cancion. Crea un request nuevo y confirmalo.")
+        if self.storage.set_generation_fingerprint(active_set_id) != str(latest_song.get("request_fingerprint", "")):
+            raise ValueError("Los datos del set cambiaron desde el request. Revisa y prepara la cancion de nuevo.")
         song_dir = Path(str(latest_song["path"]))
         context = self.export_builder.load_render_context(latest_song)
         result = self.local_song_pipeline.generate(context, song_dir)

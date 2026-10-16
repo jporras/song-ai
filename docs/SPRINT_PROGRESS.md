@@ -6,12 +6,12 @@ Cada entregable tiene igual peso dentro de su sprint; cada uno de los ocho sprin
 
 El cálculo mide avance de entregables, no horas ni calidad de audio. Los estados son evaluaciones explícitas revisables; el script calcula, no audita el código. No contar los mismos avances en subdivisiones DS/S06-A–F. El 100% de avance exige desarrollo y verificación completos de este alcance; la aceptación y el cierre final se evalúan después, por separado.
 
-Reclasificación 2026-10-15: la escucha musical y el piloto con participantes pertenecen a aceptación; la verificación mide ejecución y comportamiento técnico observados. Se ajustó el alcance técnico de S10-02 a S10-06 y S10-08 de forma explícita. S01-03 cierra correspondencia técnica de un sample real y reserva representatividad audible para aceptación. Esto no certifica fidelidad perceptual ni simula un piloto. S00-04, S01-04, S06-05, S06-06 y S10-07 conservan pruebas técnicas pendientes.
+Reclasificación 2026-10-15: la escucha musical y el piloto con participantes pertenecen a aceptación; la verificación mide ejecución y comportamiento técnico observados. S01-03 cierra correspondencia técnica de un sample real y S01-04 cierra exportación integrada real; la escucha permanece en aceptación. Esto no certifica fidelidad perceptual ni simula un piloto. S00-04, S06-05, S06-06 y S10-07 conservan pruebas técnicas pendientes.
 
 | Sprint | Desarrollo | Verificación | Aceptación registrada (fuera del cálculo) | Avance D/V |
 | --- | ---: | ---: | ---: | ---: |
 | S00 | 100.0% | 87.5% | 0.0% | 95.3% |
-| S01 | 100.0% | 87.5% | 0.0% | 95.3% |
+| S01 | 100.0% | 100.0% | 0.0% | 100.0% |
 | S02 | 100.0% | 100.0% | 0.0% | 100.0% |
 | S03 | 100.0% | 100.0% | 0.0% | 100.0% |
 | S04 | 100.0% | 100.0% | 0.0% | 100.0% |
@@ -19,7 +19,7 @@ Reclasificación 2026-10-15: la escucha musical y el piloto con participantes pe
 | S06 | 100.0% | 85.7% | 0.0% | 94.6% |
 | S10 | 100.0% | 93.8% | 12.5% | 97.7% |
 
-**Global: 97.9%**. Medición vigente solo D/V. El 70,6% anterior incluía aceptación y no es directamente comparable; el cambio de fórmula no añade entregables.
+**Global: 98.5%**. Medición vigente solo D/V. El 70,6% anterior incluía aceptación y no es directamente comparable; el cambio de fórmula no añade entregables.
 
 ## Entregables y pendientes
 
@@ -32,7 +32,7 @@ Reclasificación 2026-10-15: la escucha musical y el piloto con participantes pe
 | S01-01 | Invariantes de set y cierre compartidas | 1 / 1 / 0 | backend/application/final_production_gate.py; tests/test_sample_gate.py; docs/S01_OPTIONAL_SAMPLE_ALIGNMENT_20261009.md; docs/BUILDER_BATCH_QA_20261009.md sample gate UI corregido;59frontend/20backend/build;Playwright siete pasos/21anchuras/recarga/ayuda | Aceptacion del recorrido; sample opcional implementado sin retirar comprobaciones de set, ficha o archivos |
 | S01-02 | Aprobaciones por checksum y revisión vigente | 1 / 1 / 0 | tests/test_sample_audio_evidence.py; tests/test_sample_gate.py | Revisión del recorrido real |
 | S01-03 | Correspondencia técnica de sample real opcional | 1 / 1 / 0 | backend/application/sample_representativity.py; docs/REAL_SAMPLE_CORRESPONDENCE_20261015.md candidato ACE-Step real→sample QA con set/plan/revision/SHA256; SQLite reabierta, configuration_matches=true, execution_configuration_matches=true, assessment_current=true | Aceptación audible del sample como evidencia de calidad y representatividad perceptual del final; representativity_verified=false y sample pending. No requisito para generar completo. |
-| S01-04 | Descargas y cierre real verificado | 1 / 0.5 / 0 | tests/test_audio_export.py; docs/AI_MUSIC_STUDIO_SPRINT_PLAN.md | Verificar descarga/cierre integrado de resultado real; aceptacion del usuario posterior fuera de D/V. |
+| S01-04 | Descargas y cierre real verificado | 1 / 1 / 0 | tests/test_audio_export.py; docs/EXPORT_INTEGRITY_20261015.md checksum persistente y ZIP bloqueado ante corrupcion; docs/LEGACY_FINAL_SAMPLE_MIGRATION_20261015.md sample opcional en ruta local; docs/REAL_FINAL_EXPORT_QA_20261015.md ACE real WAV/MP3/FLAC, plan/revision/lyrics SQLite, manifest/ZIP CRC y descargas ASGI HTTP200/checksum; scripts/verify_real_final_export.py; tests/test_local_project_exports.py | Aceptacion audible posterior: escucha completa y decision del usuario; la aprobacion tecnica QA del plan no es aprobacion creativa. |
 | S02-01 | MusicSpec compartida y concurrencia optimista | 1 / 1 / 0 | backend/application/music_spec_phases.py; tests/test_music_spec_phases.py | Aceptar cobertura completa de rutas |
 | S02-02 | Migración de Isabella y Alma sin perder originales | 1 / 1 / 0 | docs/LEGACY_INTENT_MIGRATION.md; data/rescue_20261007/consolidation_report.json | Revisión creativa del usuario |
 | S02-03 | Historial y restauración de revisión como nueva versión | 1 / 1 / 0 | backend/application/music_spec_restore.py; tests/test_music_spec_restore.py; frontend/src/spec_revision_history.js; frontend/tests/spec_revision_history.test.js; build Vite 2026-10-08; Playwright QA 2026-10-08 restaurar→revalidar sin cambios→confirmar HTTP 200, recarga y aislamiento Alma-Isabella | Aceptación del usuario; recuperación y confirmación locales verificadas sin ejecutar audio ni recuperar aprobación Qwen o plan |
@@ -73,12 +73,12 @@ Actualizar estado y evidencia solo al entregar trabajo que cubra el pendiente id
 
 | Nivel | Qué se ejecuta | Estado del lote 2026-10-15 |
 | --- | --- | --- |
-| P | Python, frontend, build y contratos sin modelos | 370 Python: 365 aprobadas y 5 omitidas; 63 frontend aprobadas; build y contrato instalado correctos. |
+| P | Python, frontend, build y contratos sin modelos | 379 Python: 374 aprobadas y 5 omitidas tras la exportación integrada; 63 frontend aprobadas en el lote anterior; build y contrato instalado correctos en ese lote. |
 | L | Gemma/Qwen reales con SQLite QA | Gemma 18,75 s y Qwen 50,42 s respondieron por registry con steering; evidencia histórica de tasks conservada. |
-| A | ACE-Step real y recorrido final | Seis modos previos reutilizados; LM1.7B no cargado: presupuesto 11609 MB frente a 10540 MB disponibles. |
+| A | ACE-Step real y recorrido final | Turbo sin LM generó WAV/MP3/FLAC reales en QA; manifest, ZIP y descargas ASGI comprobados. LM1.7B no cargado: presupuesto 11609 MB frente a 10540 MB disponibles en su preflight. |
 
 Detalle, límites y criterios de salida: [lote 2026-10-15](SPRINT_VERIFICATION_BATCH_20261015.md) y [estrategia](VERIFICATION_STRATEGY.md). Ningún nivel sustituye la aceptación del usuario.
 
 ## Próximo bloque prioritario
 
-Desarrollo pendiente: ninguno. Verificación parcial: S00-04, S01-04, S06-05, S06-06, S10-07. Completar la verificación técnica pendiente por costo y criticidad según VERIFICATION_STRATEGY.md; conservar escucha y piloto para la aceptación final. No atribuir calidad audible a integridad de archivos.
+Desarrollo pendiente: ninguno. Verificación parcial: S00-04, S06-05, S06-06, S10-07. Completar la verificación técnica pendiente por costo y criticidad según VERIFICATION_STRATEGY.md; conservar escucha y piloto para la aceptación final. No atribuir calidad audible a integridad de archivos.

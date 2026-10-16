@@ -1,6 +1,14 @@
 # Estado de publicación del sprint — 2026-10-15
 
-Desarrollo 100 %; avance de desarrollo/verificación 97,9 %. Cinco verificaciones técnicas siguen parciales (S00-04, S01-04, S06-05, S06-06 y S10-07). La escucha, la aprobación del audio y el piloto amateur se harán después de completar D/V. El [handoff de pendientes](docs/PENDING_SPRINT_HANDOFF_20261015.md) indica evidencia exigida, bloqueo de RAM para LM opcional y orden de continuación; el [avance calculado](docs/SPRINT_PROGRESS.md) conserva los estados por entregable. Pruebas agrupadas en Python/UI, Gemma/Qwen reales y ACE-Step real en el [lote de verificación](docs/SPRINT_VERIFICATION_BATCH_20261015.md).
+Desarrollo 100 %; avance de desarrollo/verificación 98,5 %. Cuatro verificaciones técnicas siguen parciales (S00-04, S06-05, S06-06 y S10-07). La escucha, la aprobación del audio y el piloto amateur se harán después de completar D/V. El [handoff de pendientes](docs/PENDING_SPRINT_HANDOFF_20261015.md) indica evidencia exigida, bloqueo de RAM para LM opcional y orden de continuación; el [avance calculado](docs/SPRINT_PROGRESS.md) conserva los estados por entregable. Pruebas agrupadas en Python/UI, Gemma/Qwen reales y ACE-Step real en el [lote de verificación](docs/SPRINT_VERIFICATION_BATCH_20261015.md).
+
+Continuación S01-04: la ruta ACE-Step exporta desde el plan aprobado de QA y la revisión vigente de MusicSpec, sin exigir MIDI heredado ni marcar la letra pendiente como aprobada. En QA se verificaron manifest, ZIP con CRC, descargas ASGI de MP3/FLAC/ZIP y checksums de SQLite sobre audio real. S01-04 pasa V0,5→1; la escucha y aceptación siguen pendientes. [Evidencia](docs/REAL_FINAL_EXPORT_QA_20261015.md).
+
+Hito previo de exportación: se corrigió la verificación repetida de checksums y se bloquea el ZIP si un artefacto registrado cambia. [Evidencia](docs/EXPORT_INTEGRITY_20261015.md): 372 pruebas Python ejecutadas, 367 aprobadas y 5 omitidas en ese corte.
+
+La ruta local heredada de canción final también quedó alineada con el sample opcional: exige set y ficha confirmada, conserva revisión/huella del request y migra SQLite sin perder canciones antiguas. [Evidencia](docs/LEGACY_FINAL_SAMPLE_MIGRATION_20261015.md): suite completa posterior de 375 pruebas Python, 370 aprobadas, 5 omitidas. La exportación y descarga integradas de un resultado final real siguen pendientes; D/V 97,9 %.
+
+Se generaron WAV/MP3/FLAC reales de 15 s en QA con ACE-Step Turbo y se verificaron checksum, formato y descarga individual. Se corrigió la búsqueda del `ffmpeg` administrado. [Evidencia y continuación](docs/REAL_FINAL_EXPORT_QA_20261015.md): el primer intento de manifest/ZIP falló por requisitos heredados; la continuación lo completó desde el plan ACE-Step vigente. Regresión de ese primer corte: 377 Python, 372 aprobadas, 5 omitidas.
 
 # Intención emocional: controles numéricos y ayudas — 2026-10-09
 
@@ -122,7 +130,7 @@ El preflight real de Turbo `high_level_lm` con LM1.7B calcula 9561 MB de pesos y
 
 El [reporte calculado](docs/SPRINT_PROGRESS.md) registró en este corte desarrollo 100% y avance conjunto desarrollo/verificación 97,3% para los 39 entregables del alcance activo. La escucha musical de Cover, Repaint, Lego, Extract y Complete y el piloto amateur se reservaron para aceptación final, como indicó el usuario; los archivos y la preparación técnica no se presentan como aceptación. S04-04 y S06-04 pasaron a verificación completa por reproducción A/B real y ejecución técnica real de los seis modos, respectivamente. S10-02 a S10-06 se delimitaron a ejecución/integridad técnica y S10-08 a preparación técnica del piloto. Este cambio de clasificación explica el aumento desde 93,8%; no representa nueva generación de audio.
 
-La verificación técnica aún no llega a 100%: S00-04 (LM opcional efectivo), S01-03 (sample real representativo, si se usa), S01-04 (cierre/descarga final integrados), S06-05 (parámetros efectivos del motor), S06-06 (corrección integrada con audio real) y S10-07 (idea a entrega real con corrección). La aceptación del usuario sigue fuera del porcentaje y se evalúa al terminar D/V. La continuación por niveles y sus resultados exactos están en [SPRINT_VERIFICATION_BATCH_20261015.md](docs/SPRINT_VERIFICATION_BATCH_20261015.md).
+La verificación técnica aún no llega a 100%: S00-04 (LM opcional efectivo), S06-05 (parámetros efectivos del motor), S06-06 (corrección integrada con audio real) y S10-07 (idea a entrega real con corrección). S01-03 y S01-04 ya cerraron su parte técnica; la escucha del sample y del final pertenece a aceptación. La aceptación del usuario sigue fuera del porcentaje y se evalúa al terminar D/V. La continuación por niveles y sus resultados exactos están en [SPRINT_VERIFICATION_BATCH_20261015.md](docs/SPRINT_VERIFICATION_BATCH_20261015.md).
 
 ### Verificación P completada y modelos sujetos a recursos — 2026-10-15
 

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from audio.formats import planned_final_mix_exports, planned_stem_exports
 from core.storage import StorageManager
 from utils.ids import generate_id
-from application.sample_gate import SampleGate
+from application.final_production_gate import FinalProductionGate
 
 
 class FullSongBuilder:
@@ -13,15 +13,23 @@ class FullSongBuilder:
         self.storage = storage
 
     def create_from_latest_sample(self) -> Path:
-        latest_sample = self.storage.get_latest_sample()
-        if latest_sample is None:
-            raise ValueError("No hay sample valido. Genera un sample antes de crear la cancion completa.")
-        return self.create_for_set(str(latest_sample.get("set_id", "")), str(latest_sample.get("sample_id", "")))
+        song_set = self.storage.get_latest_song_set()
+        if song_set is None:
+            raise ValueError("No hay set valido. Prepara instrumental, melodia vocal y letra antes de crear la cancion.")
+        return self.create_for_set(str(song_set["set_id"]))
 
     def create_for_set(self, set_id: str, sample_id: str | None = None) -> Path:
-        latest_sample = SampleGate(self.storage).require_for_set(
-            set_id, real_output=False, sample_id=sample_id,
-        )
+        linked = [project for project in self.storage.list_song_projects()
+                  if project.get("user_id") == f"set:{set_id}"]
+        if len(linked) != 1:
+            raise ValueError("Prepara una ficha unica vinculada al set y confirma el request antes de crear la cancion.")
+        project = self.storage.get_song_project(str(linked[0]["id"]))
+        FinalProductionGate(self.storage).require_for_project(project)
+        if sample_id:
+            samples = [sample for sample in self.storage.list_samples_for_set(set_id)
+                       if sample.get("sample_id") == sample_id]
+            if not samples:
+                raise ValueError("El sample indicado no pertenece al set activo.")
 
         song_id = generate_id("song")
         song_dir = self.storage.data_dir / "songs" / song_id
@@ -33,8 +41,12 @@ class FullSongBuilder:
         self.storage.save_legacy_song(
             {
                 "song_id": song_id,
-                "sample_id": latest_sample["sample_id"],
-                "set_id": latest_sample["set_id"],
+                "sample_id": sample_id or "",
+                "sample_evidence_status": "not_required_unverified",
+                "set_id": set_id,
+                "source_project_id": project["id"],
+                "request_revision_id": project["spec"]["revision"]["revision_id"],
+                "request_fingerprint": self.storage.set_generation_fingerprint(set_id),
                 "provider": "mock-local",
                 "status": "mock_complete_song_pipeline",
                 "scope": "complete_lullaby_or_children_emotional_song",
@@ -76,8 +88,8 @@ class FullSongBuilder:
         )
         (exports_dir / "final_mix.mock.txt").write_text(
             "Mock full song placeholder.\n"
-            f"Sample: {latest_sample['sample_id']}\n"
-            f"Set: {latest_sample['set_id']}\n"
+            f"Sample opcional: {sample_id or 'ninguno'} (sin acreditar calidad)\n"
+            f"Set: {set_id}\n"
             "Scope: complete lullaby / emotional children song.\n"
             "Pipeline: lyrics, structure, soundtrack, sung voice, stems, mix, WAV/MP3 export.\n"
             "Video is optional and not required for song completion.\n",

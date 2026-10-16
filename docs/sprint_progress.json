@@ -74,10 +74,10 @@
       "id": "S01-04",
       "title": "Descargas y cierre real verificado",
       "developed": 1,
-      "verified": 0.5,
+      "verified": 1,
       "accepted": 0,
-      "evidence": "tests/test_audio_export.py; docs/AI_MUSIC_STUDIO_SPRINT_PLAN.md",
-      "remaining": "Verificar descarga/cierre integrado de resultado real; aceptacion del usuario posterior fuera de D/V."
+      "evidence": "tests/test_audio_export.py; docs/EXPORT_INTEGRITY_20261015.md checksum persistente y ZIP bloqueado ante corrupcion; docs/LEGACY_FINAL_SAMPLE_MIGRATION_20261015.md sample opcional en ruta local; docs/REAL_FINAL_EXPORT_QA_20261015.md ACE real WAV/MP3/FLAC, plan/revision/lyrics SQLite, manifest/ZIP CRC y descargas ASGI HTTP200/checksum; scripts/verify_real_final_export.py; tests/test_local_project_exports.py",
+      "remaining": "Aceptacion audible posterior: escucha completa y decision del usuario; la aprobacion tecnica QA del plan no es aprobacion creativa."
     },
     {
       "id": "S02-01",

@@ -2,6 +2,8 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+import sqlite3
+from unittest.mock import Mock
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
@@ -9,9 +11,38 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from application.song_service import SongService
 from core.storage import StorageManager
 from models.assets import AssetType
+from adapters.sqlite.legacy_song_repository import LegacySongRepository
 
 
 class SetValidationTest(unittest.TestCase):
+    def test_legacy_song_schema_migrates_to_nullable_sample_without_losing_row(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
+            db = Path(folder) / 'song_ai.sqlite'
+            with sqlite3.connect(db) as connection:
+                connection.execute('''CREATE TABLE legacy_songs (
+                    song_id TEXT PRIMARY KEY, sample_id TEXT NOT NULL, set_id TEXT NOT NULL,
+                    status TEXT NOT NULL, provider TEXT NOT NULL, json_path TEXT NOT NULL,
+                    exports_path TEXT NOT NULL, stems_path TEXT NOT NULL,
+                    payload_json TEXT NOT NULL, created_at TEXT NOT NULL)''')
+                connection.execute('''INSERT INTO legacy_songs VALUES
+                    ('old-song','old-sample','set-a','mock','local','song.json','exports','stems',
+                     '{"song_id":"old-song","sample_id":"old-sample","set_id":"set-a"}','2026-10-15')''')
+            repo = LegacySongRepository(db)
+            self.assertEqual(repo.get_song('old-song')['sample_id'], 'old-sample')
+            with sqlite3.connect(db) as connection:
+                sample_column = next(row for row in connection.execute('PRAGMA table_info(legacy_songs)')
+                                     if row[1] == 'sample_id')
+                self.assertEqual(sample_column[3], 0)
+            repo.save_song({'song_id': 'new-song', 'set_id': 'set-a', 'sample_id': '',
+                            'status': 'mock', 'provider': 'local'}, Path(folder) / 'new.json')
+            self.assertEqual(repo.get_song('new-song')['sample_id'], '')
+
+    def confirm_set_request(self, storage: StorageManager, set_id: str) -> dict:
+        project = storage.create_song_project('Produccion QA', f'set:{set_id}')
+        storage.upsert_song_spec(str(project['id']), {'title': 'Produccion QA'}, False, [],
+                                 user_confirmation_status='confirmed', deterministic_valid=True)
+        return storage.get_song_project(str(project['id']))
+
     def test_sample_fingerprint_tracks_linked_spec_content_without_review_metadata(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             storage = StorageManager(Path(temp_dir))
@@ -171,6 +202,7 @@ class SetValidationTest(unittest.TestCase):
             set_path = self.create_valid_set(service)
             sample_path = service.sample_builder.create_from_latest_set()
             storage.approve_sample(set_path.name, sample_path.name)
+            self.confirm_set_request(storage, set_path.name)
             song_path = service.full_song_builder.create_from_latest_sample()
             sample_id = sample_path.name
             song_id = song_path.name
@@ -195,38 +227,63 @@ class SetValidationTest(unittest.TestCase):
             self.assertFalse(sample_path.exists())
             self.assertFalse(song_path.exists())
 
-    def test_full_song_requires_approved_current_sample_from_active_set(self) -> None:
+    def test_full_song_requires_confirmed_request_but_sample_is_optional(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             storage = StorageManager(Path(temp_dir))
             service = SongService(storage)
             service.bootstrap()
             set_a = self.create_valid_set(service, "Proyecto A")
             set_b = self.create_valid_set(service, "Proyecto B")
-
+            with self.assertRaisesRegex(ValueError, 'ficha'):
+                service.full_song_builder.create_for_set(set_a.name)
+            self.confirm_set_request(storage, set_a.name)
+            self.confirm_set_request(storage, set_b.name)
             sample_a = service.sample_builder.create_for_set(set_a.name)
-            with self.assertRaisesRegex(ValueError, "aprueba el sample"):
-                service.full_song_builder.create_for_set(set_a.name, sample_a.name)
-
-            approved = service.approve_sample(set_a.name, sample_a.name)
-            self.assertEqual(approved["approval_status"], "approved")
+            without_sample = service.full_song_builder.create_for_set(set_a.name)
+            self.assertEqual(storage.get_latest_song()['sample_id'], '')
+            self.assertTrue((without_sample / 'song.json').exists())
+            with_sample = service.full_song_builder.create_for_set(set_a.name, sample_a.name)
+            self.assertEqual(storage.get_latest_song()['sample_id'], sample_a.name)
+            self.assertTrue((with_sample / 'song.json').exists())
             with self.assertRaisesRegex(ValueError, "set activo"):
                 service.approve_sample(set_b.name, sample_a.name)
-            with self.assertRaisesRegex(ValueError, "sample del set activo"):
+            with self.assertRaisesRegex(ValueError, "no pertenece al set activo"):
                 service.full_song_builder.create_for_set(set_b.name, sample_a.name)
 
             lyrics_id = str(storage.get_indexed_set(set_a.name)["lyrics_id"])
             lyrics_path = storage.get_asset_draft_dir(AssetType.LYRICS, lyrics_id) / "lyrics.md"
             lyrics_path.write_text(lyrics_path.read_text(encoding="utf-8") + "\nCambio creativo.\n", encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "desactualizado"):
-                service.full_song_builder.create_for_set(set_a.name, sample_a.name)
-
-            fresh_sample = service.sample_builder.create_for_set(set_a.name)
-            service.approve_sample(set_a.name, fresh_sample.name)
-            song_path = service.full_song_builder.create_for_set(set_a.name, fresh_sample.name)
+            song_path = service.full_song_builder.create_for_set(set_a.name)
             song = storage.get_latest_song()
             self.assertEqual(song["set_id"], set_a.name)
-            self.assertEqual(song["sample_id"], fresh_sample.name)
+            self.assertEqual(song["sample_id"], '')
             self.assertTrue((song_path / "song.json").exists())
+
+    def test_local_final_rejects_changed_request_without_requiring_sample(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
+            storage = StorageManager(Path(folder))
+            service = SongService(storage)
+            service.bootstrap()
+            set_id = self.create_valid_set(service).name
+            project = self.confirm_set_request(storage, set_id)
+            service.full_song_builder.create_for_set(set_id)
+            service.local_song_pipeline = Mock()
+            storage.upsert_song_spec(str(project['id']), {'title': 'Revision nueva'}, False, [],
+                                     user_confirmation_status='confirmed', deterministic_valid=True)
+            with self.assertRaisesRegex(ValueError, 'ficha cambio'):
+                service.generate_local_final_song(set_id)
+            service.local_song_pipeline.generate.assert_not_called()
+
+    def test_phase_readiness_requires_confirmed_spec_but_not_sample(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
+            storage = StorageManager(Path(folder))
+            service = SongService(storage)
+            service.bootstrap()
+            set_id = self.create_valid_set(service).name
+            self.assertFalse(service.project_phase_status(set_id)['ready_for_final'])
+            self.confirm_set_request(storage, set_id)
+            self.assertTrue(service.project_phase_status(set_id)['ready_for_final'])
+            self.assertEqual(storage.list_samples_for_set(set_id), [])
 
     def test_legacy_json_migration_is_idempotent_and_does_not_overwrite_sqlite(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:

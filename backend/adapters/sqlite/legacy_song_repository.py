@@ -6,7 +6,7 @@ import sqlite3
 
 
 class LegacySongRepository:
-    """Persists the legacy set -> sample -> song workflow in SQLite."""
+    """Persists legacy songs with optional sample evidence in SQLite."""
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
@@ -39,7 +39,7 @@ class LegacySongRepository:
                 """
                 CREATE TABLE IF NOT EXISTS legacy_songs (
                     song_id TEXT PRIMARY KEY,
-                    sample_id TEXT NOT NULL,
+                    sample_id TEXT,
                     set_id TEXT NOT NULL,
                     status TEXT NOT NULL,
                     provider TEXT NOT NULL,
@@ -53,6 +53,27 @@ class LegacySongRepository:
                 )
                 """
             )
+            sample_column = next(row for row in connection.execute("PRAGMA table_info(legacy_songs)")
+                                 if row[1] == "sample_id")
+            if sample_column[3]:
+                connection.execute("ALTER TABLE legacy_songs RENAME TO legacy_songs_old")
+                connection.execute("""
+                    CREATE TABLE legacy_songs (
+                        song_id TEXT PRIMARY KEY, sample_id TEXT, set_id TEXT NOT NULL,
+                        status TEXT NOT NULL, provider TEXT NOT NULL, json_path TEXT NOT NULL,
+                        exports_path TEXT NOT NULL, stems_path TEXT NOT NULL,
+                        payload_json TEXT NOT NULL, created_at TEXT NOT NULL,
+                        FOREIGN KEY(sample_id) REFERENCES legacy_samples(sample_id),
+                        FOREIGN KEY(set_id) REFERENCES song_sets(set_id)
+                    )
+                """)
+                connection.execute("""
+                    INSERT INTO legacy_songs
+                    SELECT song_id, sample_id, set_id, status, provider, json_path,
+                           exports_path, stems_path, payload_json, created_at
+                    FROM legacy_songs_old
+                """)
+                connection.execute("DROP TABLE legacy_songs_old")
             connection.execute("CREATE INDEX IF NOT EXISTS idx_legacy_samples_set ON legacy_samples(set_id, created_at)")
             connection.execute("CREATE INDEX IF NOT EXISTS idx_legacy_songs_set ON legacy_songs(set_id, created_at)")
 
@@ -88,7 +109,7 @@ class LegacySongRepository:
                 """,
                 (
                     str(payload["song_id"]),
-                    str(payload["sample_id"]),
+                    str(payload.get("sample_id", "")) or None,
                     str(payload["set_id"]),
                     str(payload.get("status", "")),
                     str(payload.get("provider", "")),
