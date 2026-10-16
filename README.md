@@ -1,6 +1,6 @@
 # Estado de publicación del sprint — 2026-10-15
 
-Desarrollo 100 %; avance de desarrollo/verificación 98,5 %. Cuatro verificaciones técnicas siguen parciales (S00-04, S06-05, S06-06 y S10-07). La escucha, la aprobación del audio y el piloto amateur se harán después de completar D/V. El [handoff de pendientes](docs/PENDING_SPRINT_HANDOFF_20261015.md) indica evidencia exigida, bloqueo de RAM para LM opcional y orden de continuación; el [avance calculado](docs/SPRINT_PROGRESS.md) conserva los estados por entregable. Pruebas agrupadas en Python/UI, Gemma/Qwen reales y ACE-Step real en el [lote de verificación](docs/SPRINT_VERIFICATION_BATCH_20261015.md).
+Desarrollo 100 %; avance de desarrollo/verificación 98,5 %. Cuatro verificaciones técnicas siguen parciales (S00-04, S06-05, S06-06 y S10-07). La escucha, la aprobación del audio y el piloto amateur se harán después de completar D/V. Para abrir la aplicación con doble clic y crear el acceso directo, consulta [Abrir Song AI con doble clic en Windows](#abrir-song-ai-con-doble-clic-en-windows). El [handoff de pendientes](docs/PENDING_SPRINT_HANDOFF_20261015.md) indica evidencia exigida, bloqueo de RAM para LM opcional y orden de continuación; el [avance calculado](docs/SPRINT_PROGRESS.md) conserva los estados por entregable. Pruebas agrupadas en Python/UI, Gemma/Qwen reales y ACE-Step real en el [lote de verificación](docs/SPRINT_VERIFICATION_BATCH_20261015.md).
 
 Continuación S01-04: la ruta ACE-Step exporta desde el plan aprobado de QA y la revisión vigente de MusicSpec, sin exigir MIDI heredado ni marcar la letra pendiente como aprobada. En QA se verificaron manifest, ZIP con CRC, descargas ASGI de MP3/FLAC/ZIP y checksums de SQLite sobre audio real. S01-04 pasa V0,5→1; la escucha y aceptación siguen pendientes. [Evidencia](docs/REAL_FINAL_EXPORT_QA_20261015.md).
 
@@ -814,7 +814,19 @@ Instalar prerequisitos locales, incluyendo ffmpeg con `winget` y dependencias de
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\install-local-prereqs.ps1 -InstallFfmpeg
 ```
 
-Comando principal para ejecutar la aplicacion:
+### Abrir Song AI con doble clic en Windows
+
+Después de la preparación inicial (`scripts\setup-local.ps1`), haz doble clic en `Abrir Song AI.cmd` en la carpeta del proyecto. El lanzador comprueba `.venv` y la interfaz compilada, inicia la aplicación en primer plano y abre el navegador cuando `http://127.0.0.1:8000/` responde. La ventana negra muestra errores de arranque; para detener el servidor, vuelve a ella y pulsa `Ctrl+C`.
+
+Para crear un acceso directo llamado **Song AI** en el escritorio, ejecuta una vez:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\create-desktop-shortcut.ps1
+```
+
+El acceso directo apunta a esta instalación, por lo que mover o borrar la carpeta requiere crearlo de nuevo. No es un instalador autónomo: los modelos, Python, dependencias y archivos de trabajo siguen en la carpeta del proyecto. El acceso directo no descarga modelos ni aprueba resultados musicales por sí solo.
+
+Comando principal para ejecutar la aplicacion desde PowerShell:
 
 ```powershell
 scripts\run-local.ps1 -Port 8000
