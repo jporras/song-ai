@@ -59,7 +59,7 @@
           </div>
         </header>
         <builder-shell v-if="activeTab !== 'library'" :steps="builderSteps" :current="currentBuilderStep" :project-name="activeProjectTitle" :project-id="activeProjectId" :revision="activeProject?.music_spec_revision_id" :dirty="dirty" :busy="Boolean(savingPhase)" @navigate="navigateBuilderStep" @library="requestNavigation('library')" @voice="requestNavigation('voice')"></builder-shell>
-        <builder-project-summary v-if="activeTab !== 'library'" :status="builderSummaryStatus" :busy="Boolean(savingPhase)" @navigate="requestNavigation" @save="savePhaseData(dirtyPhase)"></builder-project-summary>
+        <builder-project-summary v-if="activeTab !== 'library'" :status="builderSummaryStatus" :busy="Boolean(savingPhase)" @navigate="navigateSummaryAction" @save="savePhaseData(dirtyPhase)"></builder-project-summary>
         <p v-if="saveError && !showUnsavedModal && activeTab !== 'library'" id="phase-save-error" tabindex="-1" role="alert" class="inline-warning">{{ saveError }}</p>
         <p v-if="activeProject?.music_spec_revision_id && activeTab !== 'library'">Los formularios y la ficha comparten la configuración de esta canción. Guarda tus cambios y revisa la nueva ficha antes de confirmarla.</p>
 
@@ -768,7 +768,7 @@
             </label>
           </section>
 
-          <section class="panel production-flow-panel" id="production-flow" tabindex="-1">
+          <section v-show="builderStepId === 'generate'" class="panel production-flow-panel" id="production-flow" tabindex="-1">
             <div class="section-head">
               <div>
                 <span class="eyebrow">Estado de esta canción</span>
@@ -835,7 +835,7 @@
             </div>
           </section>
 
-          <section class="panel specification-panel" id="production-spec" tabindex="-1">
+          <section v-show="builderStepId === 'review'" class="panel specification-panel" id="production-spec" tabindex="-1">
             <div class="section-head">
               <div>
                 <span class="eyebrow">2. Configuración guiada</span>
@@ -998,6 +998,31 @@
                 </fieldset>
                 <button type="button" :disabled="savingAceConfiguration" @click="aceConfigurationDraft = null">Descartar cambios</button>
               </form>
+
+                    <details v-if="aceCandidateJob"><summary>Ajustes usados para este candidato</summary>
+                      <p>Los valores enviados por el wrapper y los reportados por el motor son evidencias distintas. No demuestran calidad audible.</p>
+                      <div v-if="runtimeOptionRows(aceCandidateJob.result?.artifact).length" style="overflow-x:auto">
+                        <table><thead><tr><th>Ajuste</th><th>Tu configuración</th><th>Enviado por el wrapper</th><th>Origen</th><th>Reportado por el motor</th></tr></thead>
+                          <tbody><tr v-for="row in runtimeOptionRows(aceCandidateJob.result?.artifact)" :key="row.field"><td>{{ row.label }}</td><td>{{ row.requested }}</td><td>{{ row.wrapper }}</td><td>{{ row.source }}</td><td>{{ row.engine }}</td></tr></tbody>
+                        </table>
+                      </div>
+                      <p v-else>Este candidato no tiene una traza de ajustes registrada. No se deducen valores de la configuración actual.</p>
+                    </details>
+              <details v-for="group in professionalSpecification.catalog.groups" :key="group.id" class="specification-group" :data-ui-panel="'spec-' + group.id" :open="panelOpen('spec-' + group.id)">
+                <summary>
+                  <span><strong>{{ group.label }}</strong><small>{{ group.description }}</small></span>
+                  <span>{{ group.decided }} / {{ group.total }} con valor</span>
+                </summary>
+                <div class="specification-fields">
+                  <decision-card v-for="field in group.fields" :key="field.id" :field="field" :busy="savingAceConfiguration || dirty || Boolean(aceConfigurationDraft)" @delegate="delegateSpecField"></decision-card>
+                </div>
+              </details>
+            </div>
+          </section>
+
+          <section v-show="builderStepId === 'generate'" class="panel generation-preflight-panel" aria-label="Plan y generación">
+            <h2>Plan y generación</h2>
+            <p>Prepara y aprueba el plan de la configuración confirmada antes de generar audio.</p>
               <section v-if="specificationRevision?.user_confirmation_status === 'confirmed' && !aceConfigurationDraft" id="production-plan" tabindex="-1">
                 <h3>Plan de creacion para revisar</h3>
                 <p>Revisa el texto que se cantara y las entradas del motor. Aprobar este plan no genera audio ni aprueba un sample.</p>
@@ -1047,28 +1072,9 @@
 
                 </div>
               </section>
-                    <details v-if="aceCandidateJob"><summary>Ajustes usados para este candidato</summary>
-                      <p>Los valores enviados por el wrapper y los reportados por el motor son evidencias distintas. No demuestran calidad audible.</p>
-                      <div v-if="runtimeOptionRows(aceCandidateJob.result?.artifact).length" style="overflow-x:auto">
-                        <table><thead><tr><th>Ajuste</th><th>Tu configuración</th><th>Enviado por el wrapper</th><th>Origen</th><th>Reportado por el motor</th></tr></thead>
-                          <tbody><tr v-for="row in runtimeOptionRows(aceCandidateJob.result?.artifact)" :key="row.field"><td>{{ row.label }}</td><td>{{ row.requested }}</td><td>{{ row.wrapper }}</td><td>{{ row.source }}</td><td>{{ row.engine }}</td></tr></tbody>
-                        </table>
-                      </div>
-                      <p v-else>Este candidato no tiene una traza de ajustes registrada. No se deducen valores de la configuración actual.</p>
-                    </details>
-              <details v-for="group in professionalSpecification.catalog.groups" :key="group.id" class="specification-group" :data-ui-panel="'spec-' + group.id" :open="panelOpen('spec-' + group.id)">
-                <summary>
-                  <span><strong>{{ group.label }}</strong><small>{{ group.description }}</small></span>
-                  <span>{{ group.decided }} / {{ group.total }} con valor</span>
-                </summary>
-                <div class="specification-fields">
-                  <decision-card v-for="field in group.fields" :key="field.id" :field="field" :busy="savingAceConfiguration || dirty || Boolean(aceConfigurationDraft)" @delegate="delegateSpecField"></decision-card>
-                </div>
-              </details>
-            </div>
           </section>
 
-          <section class="panel studio-panel" aria-labelledby="studio-heading">
+          <section v-show="builderStepId === 'studio'" class="panel studio-panel" aria-labelledby="studio-heading">
             <div class="panel-header">
               <div><h2 id="studio-heading">Studio · escucha y revisión</h2>
                 <p>Escucha las versiones de este proyecto y registra lo que quieres conservar o cambiar.</p></div>
@@ -1156,9 +1162,9 @@
                   </div>
           </section>
 
-          <studio-delivery :state="studioDeliveryState" @navigate="navigateStudioDelivery"></studio-delivery>
+          <studio-delivery v-if="builderStepId === 'studio'" :state="studioDeliveryState" @navigate="navigateStudioDelivery"></studio-delivery>
 
-          <section class="panel sample-checkpoint-panel">
+          <section v-show="builderStepId === 'studio'" class="panel sample-checkpoint-panel">
             <div v-if="sampleAudioUrl">
               <template v-if="activeSampleCheckpoint?.source_song_id === productionProjectId">
                 <button type="button" :disabled="sampleCheckpointRunning" @click="evaluateActiveSample">Comprobar correspondencia del sample con el plan</button>
@@ -1211,7 +1217,7 @@
             </div>
           </section>
 
-          <details class="panel legacy-production-processes" data-ui-panel="legacy-processes" :open="panelOpen('legacy-processes')">
+          <details v-show="builderStepId === 'generate'" class="panel legacy-production-processes" data-ui-panel="legacy-processes" :open="panelOpen('legacy-processes')">
             <summary>Procesos de producción anteriores</summary>
             <div class="section-head">
               <div>
@@ -1245,7 +1251,7 @@
             </div>
           </details>
 
-          <section class="panel final-delivery-panel" id="production-downloads" tabindex="-1" aria-label="Canción completa y descargas">
+          <section v-show="builderStepId === 'studio'" class="panel final-delivery-panel" id="production-downloads" tabindex="-1" aria-label="Canción completa y descargas">
             <div class="section-head">
               <div>
                 <span class="eyebrow">4. Exportables</span>
@@ -1270,7 +1276,7 @@
             <small v-if="downloadStatus" role="status">{{ downloadStatus }}</small>
           </section>
 
-          <section class="production-diagnostics">
+          <section v-show="builderStepId === 'generate'" class="production-diagnostics">
             <details class="panel" data-ui-panel="activity" :open="panelOpen('activity')">
               <summary>Actividad</summary>
               <div class="activity-log compact-activity">

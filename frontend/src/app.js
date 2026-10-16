@@ -40,6 +40,7 @@ const ROUTE_BY_TAB = {
 };
 
 const TAB_BY_ROUTE = Object.fromEntries(Object.entries(ROUTE_BY_TAB).map(([tab, route]) => [route, tab]));
+for (const step of builderSteps) if (step.path) TAB_BY_ROUTE[step.path] = step.tab;
 
 const PHASE_STATUS = {
   EMPTY: { icon: "○", label: "Vacio", color: "gray" },
@@ -1061,12 +1062,17 @@ createApp({
     },
   },
   methods: {
+    navigateSummaryAction(action) {
+      if (action.tab === 'production') return this.navigateBuilderStep(builderSteps.find(step => step.id === action.stepId));
+      return this.requestNavigation(action.tab);
+    },
     goToProductionNextAction() {
       const target = this.productionNextAction.target;
       if (target === "library") {
-        this.activeTab = "library";
-        return;
+        return this.requestNavigation("library");
       }
+      if (target === "spec") return this.navigateBuilderStep(builderSteps.find(step => step.id === "review"));
+      if (target === "downloads") return this.navigateBuilderStep(builderSteps.find(step => step.id === "studio"));
       const element = document.getElementById(`production-${target}`);
       element?.scrollIntoView({behavior:"smooth",block:"start"});
       element?.focus({preventScroll:true});
@@ -1153,6 +1159,7 @@ createApp({
     },
     navigateStudioDelivery(destination) {
       if (destination === 'library') return this.requestNavigation('library');
+      if (destination === 'review') return this.navigateBuilderStep(builderSteps.find(step => step.id === 'review'));
       const selectors={sample:'.sample-checkpoint-panel',candidate:'.studio-panel',review:'.specification-panel',final:'.final-delivery-panel'};
       this.focusBuilderTarget({selector:selectors[destination] || '.specification-panel'});
     },
@@ -1174,6 +1181,9 @@ createApp({
       this.requestNavigation(step.tab);
       if (this.activeTab !== step.tab) return;
       this.builderStepId = step.id;
+      if (step.path && window.location.pathname !== step.path) {
+        window.history.pushState({ songAiIndex: ++this.historyIndex }, "", step.path);
+      }
       this.persistActivePhase();
       await this.$nextTick();
       this.focusBuilderTarget(step);
@@ -1208,7 +1218,9 @@ createApp({
     activateFromPath(path, push = false) {
       const tab = TAB_BY_ROUTE[path] || "library";
       this.activeTab = tab;
-      if (push) window.history.pushState({ songAiIndex: ++this.historyIndex }, "", ROUTE_BY_TAB[tab]);
+      const routeStep = builderSteps.find(step => step.path === path);
+      this.builderStepId = routeStep?.id || (tab === "production" ? "review" : "");
+      if (push) window.history.pushState({ songAiIndex: ++this.historyIndex }, "", path);
       if (tab === "production") {
         this.loadResources({ silent: true });
         const projectId = this.activeProfessionalProject?.id || this.productionProjectId;
@@ -1270,9 +1282,7 @@ createApp({
       } else if (this.pendingTab) {
         this.activateFromPath(ROUTE_BY_TAB[this.pendingTab], true);
         if (builderStep && this.activeTab === builderStep.tab) {
-          this.builderStepId = builderStep.id;
-          this.persistActivePhase();
-          this.$nextTick(() => this.focusBuilderTarget(builderStep));
+          this.navigateBuilderStep(builderStep);
         }
       }
     },
@@ -1546,13 +1556,15 @@ createApp({
       if (productionId) await this.loadProfessionalExport(productionId);
       const targetPhase = this.phaseToOpenAfterLoad(payload.data);
       const savedStep = builderSteps.find(step => step.id === payload.data?.ui_state?.builder_step);
-      this.builderStepId = savedStep && savedStep.tab === targetPhase ? savedStep.id : '';
+      const routeStep = builderSteps.find(step => step.path === window.location.pathname);
+      this.builderStepId = options.preserveRoute && routeStep ? routeStep.id : savedStep && savedStep.tab === targetPhase ? savedStep.id : targetPhase === 'production' ? 'review' : '';
       if (!options.preserveRoute) {
-        this.activateFromPath(ROUTE_BY_TAB[targetPhase] || ROUTE_BY_TAB.intent, true);
+        this.activateFromPath(savedStep?.path || ROUTE_BY_TAB[targetPhase] || ROUTE_BY_TAB.intent, true);
       }
       await this.$nextTick();
-      if (savedStep?.tab === this.activeTab && savedStep.selector) {
-        this.focusBuilderTarget(savedStep);
+      const focusStep = builderSteps.find(step => step.id === this.builderStepId);
+      if (focusStep?.tab === this.activeTab && focusStep.selector) {
+        this.focusBuilderTarget(focusStep);
       }
     },
     phaseToOpenAfterLoad(projectData) {

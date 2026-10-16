@@ -14,5 +14,5 @@ export function builderProjectStatus(project, planReview, dirtyPhase = '') {
   items.push({label:'Plan aprobado',ready:plan,tab:'production',detail:'La disponibilidad del motor se comprueba antes de ejecutar.'});
   const missing = items.find(item => !item.ready);
   return {items,message:dirtyPhase ? 'Hay un borrador sin guardar; este resumen refleja lo guardado.' : missing ? `Pendiente: ${missing.label.toLowerCase()}.` : 'Decisiones y plan preparados. Revisa disponibilidad y condiciones de generación.',
-    action:dirtyPhase ? {label:'Guardar cambios',save:true} : {label:missing ? `Revisar ${missing.label.toLowerCase()}` : 'Revisar generación',tab:missing?.tab || 'production'}};
+    action:dirtyPhase ? {label:'Guardar cambios',save:true} : {label:missing ? `Revisar ${missing.label.toLowerCase()}` : 'Revisar generación',tab:missing?.tab || 'production',stepId:missing?.label === 'Plan aprobado' || !missing ? 'generate' : 'review'}};
 }

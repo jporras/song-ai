@@ -1,5 +1,7 @@
 # Estado de publicación del sprint — 2026-10-15
 
+Los pasos 5, 6 y 7 tienen ahora vistas y rutas separadas: `/review` muestra la ficha y sus decisiones; `/generate` muestra el plan, la generación y el diagnóstico; `/studio` muestra escucha, sample opcional y descargas. Los tres conservan el proyecto activo y los controles de revisión/plan vigentes. `/production` abre la revisión para enlaces antiguos. Se verificaron navegación directa y contenido visible de las tres rutas en navegador; la aceptación amateur sigue pendiente.
+
 Production presenta el estado de la revisión y el siguiente paso en lenguaje común. El contador de campos del catálogo ya explica que los vacíos no son necesariamente pendientes; una ficha confirmada dirige al plan. El título de archivos disponibles exige canción final verificada del plan y revisión activos, evitando que exportaciones históricas se anuncien como listas para la canción actual. Verificación y aceptación del audio siguen separadas.
 
 La navegación lateral y la barra superior comparten ahora los mismos siete pasos y destinos: Idea, Sonido, Composición, Estructura y letra, Revisar, Generar y Studio. «Mis proyectos» abre la biblioteca; MIDI y melodía/voz quedan bajo «Herramientas adicionales». La tarjeta «Preparación de esta canción» muestra requisitos y aprobaciones, no pasos de navegación. Este ajuste de interfaz no modifica el estado de generación ni equivale a aceptación de usuario.

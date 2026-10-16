@@ -8,6 +8,6 @@ export const BuilderProjectSummary = {
       <details v-if="item.detail"><summary>Qué significa</summary><p>{{ item.detail }}</p></details>
     </li></ul>
     <p role="status">{{ status.message }}</p>
-    <button type="button" class="primary" :disabled="busy" @click="status.action.save ? $emit('save') : $emit('navigate', status.action.tab)">{{ busy ? 'Guardando…' : status.action.label }}</button>
+    <button type="button" class="primary" :disabled="busy" @click="status.action.save ? $emit('save') : $emit('navigate', status.action)">{{ busy ? 'Guardando…' : status.action.label }}</button>
   </section>`
 };
