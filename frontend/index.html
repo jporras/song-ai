@@ -883,10 +883,15 @@
               <section v-if="specProposal?.song_id === productionProjectId">
                 <h3>Propuesta tecnica para revisar</h3>
                 <p class="status-ok">Paso 3 de 3 completado: propuesta disponible para revisar.</p>
-                <p>{{ specProposal.summary }}</p>
-                <p>Esta propuesta no modifica la ficha guardada ni confirma decisiones por ti.</p>
+                <p>Se revisaron {{ specProposal.coverage.covered }} de {{ specProposal.coverage.total }} campos. {{ specProposal.missing_fields.length }} datos obligatorios pendientes y {{ specProposal.conflicts.length }} conflictos señalados. La ficha guardada no cambió.</p>
+                <div v-if="specificationRevision?.user_confirmation_status === 'confirmed' && !aceConfigurationDraft" class="inline-warning" role="status">
+                  <strong>Siguiente paso: preparar el plan de la canción</strong>
+                  <span>Tu configuración vigente ya está confirmada. Esta propuesta es opcional: puedes seguir con el plan sin aplicarla. Si quieres cambiar algo, edita la ficha y confirma la nueva revisión.</span>
+                  <button type="button" class="primary" @click="navigateBuilderStep(builderSteps.find(step => step.id === 'generate'))">Ir a Generar y preparar el plan</button>
+                </div>
+                <p v-else>La propuesta no confirma decisiones por ti. Revisa la configuración guardada y confírmala antes de preparar el plan.</p>
+                <details><summary>Resumen técnico de la propuesta</summary><p>{{ specProposal.summary }}</p></details>
                 <button :disabled="specProposalBusy || !specProposal.task_id" @click="rejectTechnicalProposal">Rechazar propuesta y conservar mi ficha</button>
-                <p>Cobertura: {{ specProposal.coverage.covered }} / {{ specProposal.coverage.total }}</p>
                 <p v-for="(conflict, index) in specProposal.conflicts" :key="index">Conflicto: {{ conflict }}</p>
                 <p v-if="specProposal.missing_fields.length">Pendiente: {{ (professionalSpecification.catalog.groups || []).flatMap(group => group.fields).filter(field => specProposal.missing_fields.includes(field.id)).map(field => field.label).join(', ') }}</p>
                 <details v-for="group in professionalSpecification.catalog.groups" :key="`proposal-${group.id}`">

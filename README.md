@@ -1,5 +1,7 @@
 # Estado de publicación del sprint — 2026-10-15
 
+Tras preparar la propuesta técnica, Revisar muestra el siguiente paso según la revisión guardada. Si ya está confirmada, ofrece «Ir a Generar y preparar el plan» y explica que la propuesta es opcional y no cambia la ficha; si no, indica que debe confirmarse. El resumen técnico original queda desplegable para evitar que su texto sugiera una confirmación inexistente.
+
 La propuesta técnica indica el paso real de tres etapas: preparar/registrar solicitud, consultar el modelo y validar/guardar la respuesta. El navegador consulta una ruta de estado ligada a un identificador único de solicitud; no usa tiempo transcurrido como porcentaje ni confunde tareas históricas con la actual. Al finalizar muestra 3 de 3 y la propuesta, o un error explícito. **Reinicia el lanzador** para cargar la nueva ruta backend antes de usar el seguimiento. Verificación: 383 pruebas Python, 378 aprobadas y 5 omitidas; 64 frontend aprobadas y build correcto.
 
 La preparación de la propuesta técnica muestra tiempo transcurrido y confirma que la solicitud sigue esperando respuesta del modelo. El indicador no inventa un porcentaje: esta llamada devuelve el resultado al terminar. El estado se retira al recibir propuesta o error; la ficha guardada permanece intacta.
