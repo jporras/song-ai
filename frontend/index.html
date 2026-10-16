@@ -763,13 +763,18 @@
             </label>
           </section>
 
-          <section class="panel production-flow-panel">
+          <section class="panel production-flow-panel" id="production-flow" tabindex="-1">
             <div class="section-head">
               <div>
                 <span class="eyebrow">1. Orden lógico</span>
                 <h2>{{ productionGlobalStatus }}</h2>
                 <p>Revisa la configuración, genera la canción y encuentra los archivos disponibles en Studio.</p>
               </div>
+            </div>
+            <div class="inline-warning" role="status">
+              <strong>Siguiente paso para {{ activeProjectTitle }}</strong>
+              <span>{{ productionNextAction.message }}</span>
+              <button type="button" @click="goToProductionNextAction">{{ productionNextAction.label }}</button>
             </div>
             <div class="flow-guide">
               <article v-for="step in productionFlowSteps" :key="step.number" class="flow-step">
@@ -825,7 +830,7 @@
             </div>
           </section>
 
-          <section class="panel specification-panel">
+          <section class="panel specification-panel" id="production-spec" tabindex="-1">
             <div class="section-head">
               <div>
                 <span class="eyebrow">2. Configuración guiada</span>
@@ -850,7 +855,7 @@
               <spec-revision-history :revisions="professionalSpecification.revisions" :current="professionalSpecification.spec" :catalog="professionalSpecification.catalog" :busy="specRestoreBusy" :blocked="!!aceConfigurationDraft || dirty" @restore="restoreMusicSpec" @review="openAceConfiguration"></spec-revision-history>
               <button v-if="specificationRevision && !aceConfigurationDraft" @click="openAceConfiguration">Configurar accion sobre el audio</button>
               <p v-if="professionalSpecification?.spec?.json_spec?._preparation?.requires_deterministic_review">Proyecto preparado desde el set. Abre la configuración, completa los campos pendientes y guarda para validar antes de confirmar.</p>
-              <generation-preflight :state="generationPreflightState"></generation-preflight>
+              <generation-preflight id="production-preflight" tabindex="-1" :state="generationPreflightState"></generation-preflight>
               <p v-if="professionalSpecification?.spec?.json_spec?._consolidation">Proyecto consolidado. La información recuperada ya está integrada en esta ficha; revisa las propuestas antes de confirmar. Los audios recuperados conservan su revisión original.</p>
               <button v-if="specificationRevision && !aceConfigurationDraft && !professionalSpecification?.spec?.json_spec?._consolidation" :disabled="legacyMigrationBusy" @click="reviewLegacyMigration">Revisar datos históricos para migrar</button>
               <section v-if="legacyMigrationPreview?.song_id === productionProjectId">
@@ -988,7 +993,7 @@
                 </fieldset>
                 <button type="button" :disabled="savingAceConfiguration" @click="aceConfigurationDraft = null">Descartar cambios</button>
               </form>
-              <section v-if="specificationRevision?.user_confirmation_status === 'confirmed' && !aceConfigurationDraft">
+              <section v-if="specificationRevision?.user_confirmation_status === 'confirmed' && !aceConfigurationDraft" id="production-plan" tabindex="-1">
                 <h3>Plan de creacion para revisar</h3>
                 <p>Revisa el texto que se cantara y las entradas del motor. Aprobar este plan no genera audio ni aprueba un sample.</p>
                 <button v-if="acePlanLyricsDraft === null" :disabled="acePlanBusy" @click="startAcePlanReview">Preparar un nuevo plan</button>
@@ -1235,7 +1240,7 @@
             </div>
           </details>
 
-          <section class="panel final-delivery-panel" aria-label="Canción completa y descargas">
+          <section class="panel final-delivery-panel" id="production-downloads" tabindex="-1" aria-label="Canción completa y descargas">
             <div class="section-head">
               <div>
                 <span class="eyebrow">4. Exportables</span>

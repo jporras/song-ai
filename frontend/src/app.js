@@ -20,6 +20,7 @@ import { BuilderProjectSummary } from "./builder_project_summary.js";
 import { DecisionCard } from "./decision_card.js";
 import { GenerationPreflight, generationPreflight } from "./generation_preflight.js";
 import { GenerationStatus } from "./generation_status.js";
+import { productionNextAction } from "./production_guidance.js";
 import { ListeningDecision, ListeningReviewSummary } from "./listening_decision.js";
 import { PlanRequestReview } from "./plan_request_review.js";
 import { CandidateComparisonView } from "./candidate_comparison_view.js";
@@ -391,7 +392,22 @@ createApp({
         candidateAudio:this.aceCandidateAudioUrl(),candidateRunning:['pending','running','cancelling'].includes(this.aceCandidateJob?.status)});
     },
     generationPreflightState() {
-      return generationPreflight(this.activeProject,this.acePlanReview,this.resourceStatus,this.dirty);
+      const activeSpec = this.professionalSpecification?.spec;
+      const project = this.productionProjectId && activeSpec
+        ? {...this.activeProject,music_spec_revision_id:activeSpec.revision?.revision_id,music_spec:activeSpec}
+        : this.activeProject;
+      return generationPreflight(project,this.acePlanReview,this.resourceStatus,this.dirty);
+    },
+    productionNextAction() {
+      const finalMetadata = this.exportManifest?.artifacts?.find(item => item.type === "final_song_wav")?.metadata || {};
+      const matchingFinal = Boolean(finalMetadata.ace_plan_id
+        && finalMetadata.ace_plan_id === this.acePlanReview?.plan_id
+        && finalMetadata.spec_revision_id === this.specificationRevision?.revision_id);
+      return productionNextAction({projectId:this.productionProjectId,dirty:this.dirty,
+        editing:Boolean(this.aceConfigurationDraft),revision:this.specificationRevision,
+        plan:this.acePlanReview,running:Boolean(this.productionRunningPhase),
+        exportReady:this.exportManifest?.quality?.export_ready === true && matchingFinal,
+        resourceBlocked:this.resourceStatus?.readiness?.ready === false});
     },
     builderSummaryStatus() {
       return builderProjectStatus(this.activeProject, this.acePlanReview, this.dirty ? this.dirtyPhase : '');
@@ -791,14 +807,22 @@ createApp({
         const specConfirmed = this.specificationRevision?.user_confirmation_status === "confirmed";
         const requiresConfirmedSpec = step.phase !== "SONG_SPEC_COLLECTION";
         const blockedBySpec = requiresConfirmedSpec && !specConfirmed;
-        const canRun = Boolean(step.requires) && ["current", "complete", "error"].includes(state) && !this.productionRunningPhase && !isActuallyRunning && !blockedBySpec;
+        const aceFinal = step.phase === "MASTERING" && this.professionalSpecification?.spec?.json_spec?.task_type === "text2music";
+        const canRun = aceFinal
+          ? Boolean(step.requires) && this.generationPreflightState.creativeReady && !this.aceConfigurationDraft
+            && !this.productionRunningPhase && !isActuallyRunning
+            && !["pending", "running", "cancelling"].includes(this.aceCandidateJob?.status)
+          : Boolean(step.requires) && ["current", "complete", "error"].includes(state)
+            && !this.productionRunningPhase && !isActuallyRunning && !blockedBySpec;
         return {
           ...step,
           state,
           canRun,
           stateIcon: copy.icon,
           stateLabel,
-          statusDetail: blockedBySpec
+          statusDetail: aceFinal && !canRun
+            ? "Confirma la ficha y aprueba un plan ACE-Step vigente para generar el final."
+            : blockedBySpec
             ? "Confirma primero la ficha completa de la cancion."
             : latestEvent.message || step.summary,
           statusTime: latestEvent.created_at ? this.formatResourceTime(latestEvent.created_at) : "",
@@ -828,7 +852,7 @@ createApp({
           purpose: "Ejecuta ACE-Step local para crear una canción completa con voz integrada.",
           phases: "Configuración y plan confirmados → Canción completa",
           action: byPhase.MASTERING,
-          actionLabel: byPhase.MASTERING?.action || "Generar",
+          actionLabel: "Generar canción completa",
         },
         {
           number: "3",
@@ -1030,6 +1054,16 @@ createApp({
     },
   },
   methods: {
+    goToProductionNextAction() {
+      const target = this.productionNextAction.target;
+      if (target === "library") {
+        this.activeTab = "library";
+        return;
+      }
+      const element = document.getElementById(`production-${target}`);
+      element?.scrollIntoView({behavior:"smooth",block:"start"});
+      element?.focus({preventScroll:true});
+    },
     lyricProposalContext() {
       return JSON.stringify({baseline:this.projectBaselinePayloads, intent:this.intent, lyrics:this.lyrics, voice:this.voice});
     },
