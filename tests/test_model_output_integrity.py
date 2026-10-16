@@ -1,8 +1,11 @@
 import sys
 import unittest
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+from urllib.error import HTTPError
+from urllib.request import Request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from providers.llamacpp import LlamaCppClient, LlamaCppError
@@ -13,6 +16,16 @@ from application.song_service import SongService
 
 
 class ModelOutputIntegrityTest(unittest.TestCase):
+    def test_llama_http_error_preserves_context_limit_diagnostic(self):
+        settings = SimpleNamespace(llama_cpp_base_url="http://localhost:8081",
+            llama_cpp_timeout_seconds=5)
+        client = LlamaCppClient(settings)
+        error = HTTPError('http://localhost:8081/completion', 400, 'Bad Request', {},
+                          BytesIO(b'{"error":{"message":"request (11906 tokens) exceeds the available context size (8192 tokens)"}}'))
+        with patch('providers.llamacpp.urlopen', side_effect=error):
+            with self.assertRaisesRegex(LlamaCppError, '11906 tokens.*8192 tokens'):
+                client._request_json(Request('http://localhost:8081/completion'))
+
     def test_decoding_uses_actual_catalog_types_including_tempo_time_and_tracks(self):
         import json
         catalog = SongSpecificationService().catalog({'task_type': 'text2music'})

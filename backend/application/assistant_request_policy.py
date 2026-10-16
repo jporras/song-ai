@@ -16,8 +16,18 @@ def conversation_state(readiness: dict) -> dict:
     ) if key in readiness}
     project = readiness.get("professional_project") or {}
     state["professional_project"] = {key: project[key] for key in (
-        "id", "title", "status", "current_phase", "spec"
+        "id", "title", "status", "current_phase"
     ) if key in project}
+    spec = project.get("spec") or {}
+    if spec:
+        current = spec.get("json_spec") or {}
+        provenance = current.get("_provenance") or {}
+        state["professional_project"]["spec"] = {
+            "revision": spec.get("revision"),
+            "json_spec": {key: value for key, value in current.items() if not key.startswith("_")},
+            "field_authority": {key: {name: value.get(name) for name in ("origin", "confirmation")}
+                                for key, value in provenance.items() if isinstance(value, dict)},
+        }
     return state
 
 

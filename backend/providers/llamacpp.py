@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from config.model_settings import LocalModelSettings
@@ -70,6 +70,14 @@ class LlamaCppClient:
         try:
             with urlopen(request, timeout=self.settings.llama_cpp_timeout_seconds) as response:
                 return json.loads(response.read().decode("utf-8"))
+        except HTTPError as error:
+            try:
+                body = json.loads(error.read().decode("utf-8"))
+                detail = body.get("error", body)
+                message = detail.get("message", "") if isinstance(detail, dict) else str(detail)
+            except (OSError, ValueError, UnicodeError):
+                message = ""
+            raise LlamaCppError(f"llama.cpp HTTP {error.code}: {str(message)[:400] or error.reason}") from error
         except (OSError, URLError, json.JSONDecodeError) as error:
             raise LlamaCppError(str(error)) from error
 
