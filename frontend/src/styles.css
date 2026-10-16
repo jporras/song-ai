@@ -123,6 +123,9 @@ button:disabled {
   position: sticky;
   top: 0;
   height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
   display: grid;
   align-content: start;
   gap: 18px;
@@ -1730,6 +1733,8 @@ summary span {
   .sidebar {
     position: static;
     height: auto;
+    overflow-y: visible;
+    scrollbar-gutter: auto;
     grid-row: auto;
   }
 

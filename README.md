@@ -1,5 +1,9 @@
 # Estado de publicación del sprint — 2026-10-15
 
+La barra lateral permite desplazamiento independiente cuando los pasos y estados exceden la altura de la ventana. En pantallas estrechas vuelve al flujo normal de la página, sin un área de desplazamiento anidada.
+
+Generar abre ahora directamente con el estado real de la canción y una acción para ir al plan. Se retiraron de Revisar/Generar/Studio la segunda barra de siete pasos y la tarjeta extensa de preparación, duplicadas con la barra lateral. En Generar el recorrido y las estimaciones quedan disponibles en un detalle desplegable; las advertencias siguen visibles. La ficha, plan y controles de ejecución no cambian.
+
 El refresco automático de 10 s en Generar consulta únicamente actividad y diagnóstico de recursos; ya no vuelve a cargar proyectos, ficha, plan ni exportaciones mientras se navega o edita. La actividad también puede actualizarse con su botón. Al finalizar un candidato, la app conserva la vista actual y deja Studio como paso explícito del usuario. Esto evita saltos de navegación y cambios visuales de la ficha durante el polling.
 
 Los pasos 5, 6 y 7 tienen ahora vistas y rutas separadas: `/review` muestra la ficha y sus decisiones; `/generate` muestra el plan, la generación y el diagnóstico; `/studio` muestra escucha, sample opcional y descargas. Los tres conservan el proyecto activo y los controles de revisión/plan vigentes. `/production` abre la revisión para enlaces antiguos. Se verificaron navegación directa y contenido visible de las tres rutas en navegador; la aceptación amateur sigue pendiente.

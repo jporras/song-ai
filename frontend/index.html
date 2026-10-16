@@ -53,15 +53,15 @@
       <main id="main-workspace" class="workspace" @toggle.capture="rememberPanel" tabindex="-1">
         <header class="topbar">
           <div>
-            <span class="eyebrow">{{ currentTab.path }}</span>
+            <span class="eyebrow">{{ activeTab === 'library' ? currentTab.path : activeProjectTitle }}</span>
             <h1>{{ activeTab === 'library' ? currentTab.label : currentBuilderStep?.label }}</h1>
             <p>{{ activeTab === 'library' ? currentTab.hint : currentBuilderStep?.hint }}</p>
           </div>
         </header>
-        <builder-shell v-if="activeTab !== 'library'" :steps="builderSteps" :current="currentBuilderStep" :project-name="activeProjectTitle" :project-id="activeProjectId" :revision="activeProject?.music_spec_revision_id" :dirty="dirty" :busy="Boolean(savingPhase)" @navigate="navigateBuilderStep" @library="requestNavigation('library')" @voice="requestNavigation('voice')"></builder-shell>
-        <builder-project-summary v-if="activeTab !== 'library'" :status="builderSummaryStatus" :busy="Boolean(savingPhase)" @navigate="navigateSummaryAction" @save="savePhaseData(dirtyPhase)"></builder-project-summary>
+        <builder-shell v-if="activeTab !== 'library' && activeTab !== 'production'" :steps="builderSteps" :current="currentBuilderStep" :project-name="activeProjectTitle" :project-id="activeProjectId" :revision="activeProject?.music_spec_revision_id" :dirty="dirty" :busy="Boolean(savingPhase)" @navigate="navigateBuilderStep" @library="requestNavigation('library')" @voice="requestNavigation('voice')"></builder-shell>
+        <builder-project-summary v-if="activeTab !== 'library' && activeTab !== 'production'" :status="builderSummaryStatus" :busy="Boolean(savingPhase)" @navigate="navigateSummaryAction" @save="savePhaseData(dirtyPhase)"></builder-project-summary>
         <p v-if="saveError && !showUnsavedModal && activeTab !== 'library'" id="phase-save-error" tabindex="-1" role="alert" class="inline-warning">{{ saveError }}</p>
-        <p v-if="activeProject?.music_spec_revision_id && activeTab !== 'library'">Los formularios y la ficha comparten la configuración de esta canción. Guarda tus cambios y revisa la nueva ficha antes de confirmarla.</p>
+        <p v-if="activeProject?.music_spec_revision_id && activeTab !== 'library' && activeTab !== 'production'">Los formularios y la ficha comparten la configuración de esta canción. Guarda tus cambios y revisa la nueva ficha antes de confirmarla.</p>
 
         <section v-if="activeTab === 'library'" class="view library-view">
           <section class="hero-strip">
@@ -781,7 +781,7 @@
               <span>{{ productionNextAction.message }}</span>
               <button type="button" @click="goToProductionNextAction">{{ productionNextAction.label }}</button>
             </div>
-            <div class="flow-guide">
+            <details><summary>Ver recorrido de producción y tiempos estimados</summary><div class="flow-guide">
               <article v-for="step in productionFlowSteps" :key="step.number" class="flow-step">
                 <span class="flow-number">{{ step.number }}</span>
                 <div>
@@ -818,7 +818,7 @@
                 <strong>{{ productionTimingEstimate.maxLabel }}</strong>
                 <small>Limite de cancion</small>
               </article>
-            </div>
+            </div></details>
             <div v-if="productionTimingEstimate.clipped || productionTimingEstimate.exceedsTimeout || productionTimingEstimate.cpuSlow" class="inline-warning">
               <strong v-if="productionTimingEstimate.clipped">La duracion solicitada supera el limite configurado.</strong>
               <strong v-else-if="productionTimingEstimate.exceedsTimeout">El estimado puede superar el timeout configurado.</strong>
