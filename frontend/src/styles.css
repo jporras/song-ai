@@ -1639,6 +1639,7 @@ summary span {
 }
 
 .spec-coverage strong { font-size: 1.2rem; }
+.specification-panel progress { display: block; width: min(100%, 420px); margin-top: 10px; accent-color: var(--accent); }
 .spec-coverage small,
 .spec-coverage span { color: var(--muted); font-size: 0.78rem; }
 

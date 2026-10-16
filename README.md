@@ -1,5 +1,7 @@
 # Estado de publicación del sprint — 2026-10-15
 
+La preparación de la propuesta técnica muestra tiempo transcurrido y confirma que la solicitud sigue esperando respuesta del modelo. El indicador no inventa un porcentaje: esta llamada devuelve el resultado al terminar. El estado se retira al recibir propuesta o error; la ficha guardada permanece intacta.
+
 La barra lateral permite desplazamiento independiente cuando los pasos y estados exceden la altura de la ventana. En pantallas estrechas vuelve al flujo normal de la página, sin un área de desplazamiento anidada.
 
 Generar abre ahora directamente con el estado real de la canción y una acción para ir al plan. Se retiraron de Revisar/Generar/Studio la segunda barra de siete pasos y la tarjeta extensa de preparación, duplicadas con la barra lateral. En Generar el recorrido y las estimaciones quedan disponibles en un detalle desplegable; las advertencias siguen visibles. La ficha, plan y controles de ejecución no cambian.

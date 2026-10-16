@@ -289,6 +289,7 @@ createApp({
       acePlanReview: null,
       specProposal: null,
       specProposalBusy: false,
+      specProposalStartedAt: 0,
       specProposalError: "",
       assistantPendingPatch: null,
       fullLyricsProposal: null,
@@ -593,6 +594,14 @@ createApp({
           return true;
         })
         .slice(0, 40);
+    },
+    specProposalElapsedSeconds() {
+      return this.specProposalStartedAt ? Math.max(0, Math.floor((this.uiClockNow - this.specProposalStartedAt) / 1000)) : 0;
+    },
+    specProposalProgressMessage() {
+      if (this.specProposalElapsedSeconds >= 60) return "La revisión sigue esperando respuesta del modelo. La ficha guardada permanece disponible.";
+      if (this.specProposalElapsedSeconds >= 15) return "El modelo aún no responde; esta revisión puede tardar. La ficha guardada permanece disponible.";
+      return "Solicitud enviada. Esperando la respuesta de la revisión técnica; aún no hay un porcentaje de avance.";
     },
     inspirationCatalog() {
       return INSPIRATION_CATALOG;

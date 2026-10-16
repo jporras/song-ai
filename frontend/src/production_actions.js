@@ -81,6 +81,7 @@ export const productionActions = {
     const songId = this.productionProjectId;
     if (!songId || this.specProposalBusy) return;
     this.specProposalBusy = true;
+    this.specProposalStartedAt = Date.now();
     this.specProposal = null;
     this.specProposalError = "";
     try {
@@ -94,7 +95,7 @@ export const productionActions = {
         throw new Error("La ficha cambio durante la revision. Prepara una nueva propuesta.");
       this.specProposal = { ...result.spec_proposal, song_id: songId, task_id: payload.data?.task?.task_id };
     } catch (error) { if (songId === this.productionProjectId) { this.specProposalError = error.message; this.addMessage(error.message); } }
-    finally { this.specProposalBusy = false; }
+    finally { this.specProposalBusy = false; this.specProposalStartedAt = 0; }
   },
   async rejectTechnicalProposal() {
     const songId = this.productionProjectId;

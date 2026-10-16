@@ -872,7 +872,12 @@
                 <button :disabled="legacyMigrationBusy || !!aceConfigurationDraft || !Object.keys(legacyMigrationPreview.additions).length" @click="applyLegacyMigration">Migrar los datos faltantes a una revisión pendiente</button>
                 <button :disabled="legacyMigrationBusy" @click="legacyMigrationPreview = null">Descartar propuesta</button>
               </section>
-              <button v-if="specificationRevision" :disabled="specProposalBusy" @click="prepareTechnicalProposal">{{ specProposalBusy ? 'Preparando ficha tecnica...' : 'Preparar propuesta tecnica completa' }}</button>
+              <button v-if="specificationRevision" :disabled="specProposalBusy" @click="prepareTechnicalProposal">{{ specProposalBusy ? 'Esperando revisión técnica…' : 'Preparar propuesta técnica completa' }}</button>
+              <div v-if="specProposalBusy && specProposalStartedAt" class="inline-warning" role="status" aria-live="polite">
+                <strong>Preparando propuesta técnica · {{ formatElapsedSince(specProposalStartedAt) }}</strong>
+                <span>{{ specProposalProgressMessage }}</span>
+                <progress aria-label="Revisión técnica en curso, duración desconocida"></progress>
+              </div>
               <p v-if="specProposalError" role="alert">{{ specProposalError }} Puedes volver a preparar la propuesta; la ficha guardada se conserva.</p>
               <section v-if="specProposal?.song_id === productionProjectId">
                 <h3>Propuesta tecnica para revisar</h3>
