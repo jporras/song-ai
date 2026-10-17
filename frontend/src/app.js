@@ -891,6 +891,9 @@ createApp({
         },
       ];
     },
+    fullSongAction() {
+      return this.productionProcessSteps.find((step) => step.phase === "MASTERING") || null;
+    },
     productionSpecMessage() {
       const duration = this.productionTimingEstimate.clampedSeconds || this.musicPlanDuration || 120;
       return [
@@ -1102,6 +1105,7 @@ createApp({
       if (target === "spec") return this.navigateBuilderStep(builderSteps.find(step => step.id === "review"));
       if (target === "downloads") return this.navigateBuilderStep(builderSteps.find(step => step.id === "studio"));
       const element = document.getElementById(`production-${target}`);
+      if (target === "resources" && element && !element.open) element.open = true;
       element?.scrollIntoView({behavior:"smooth",block:"start"});
       element?.focus({preventScroll:true});
     },

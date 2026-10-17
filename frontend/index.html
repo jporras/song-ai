@@ -789,7 +789,8 @@
                   <small>{{ step.phases }}</small>
                   <p>{{ step.purpose }}</p>
                 </div>
-                <button v-if="step.action" :disabled="!step.action.canRun" @click="runProductionStep(step.action)">{{ step.actionLabel }}</button>
+                <button v-if="step.action && step.number !== '2'" :disabled="!step.action.canRun" @click="runProductionStep(step.action)">{{ step.actionLabel }}</button>
+                <small v-else-if="step.number === '2'" class="flow-note">Usa el botón visible en Plan y generación.</small>
                 <small v-else class="flow-note">{{ step.actionLabel }}</small>
               </article>
             </div>
@@ -1036,13 +1037,14 @@
             <h2>Plan y generación</h2>
             <p>Prepara y aprueba el plan de la configuración confirmada antes de generar audio.</p>
               <section v-if="specificationRevision?.user_confirmation_status === 'confirmed' && !aceConfigurationDraft" id="production-plan" tabindex="-1">
-                <h3>Plan de creacion para revisar</h3>
-                <p>Revisa el texto que se cantara y las entradas del motor. Aprobar este plan no genera audio ni aprueba un sample.</p>
-                <button v-if="acePlanLyricsDraft === null" :disabled="acePlanBusy" @click="startAcePlanReview">Preparar un nuevo plan</button>
+                <h3>Plan de creación para revisar</h3>
+                <p>Revisa el texto que se cantará y las entradas del motor. Aprobar este plan no genera audio ni aprueba un sample.</p>
+                <p v-if="!acePlanReview">La configuración ya está confirmada. Ahora prepara el plan, revisa la letra y apruébalo para habilitar la canción completa.</p>
+                <button v-if="acePlanLyricsDraft === null" :disabled="acePlanBusy" @click="startAcePlanReview">{{ acePlanReview ? 'Preparar otro plan' : 'Preparar el plan de esta canción' }}</button>
                 <form v-else @submit.prevent="prepareAcePlan">
                   <label>Letra para este plan<textarea v-model="acePlanLyricsDraft" rows="8" maxlength="4096"></textarea></label>
-                  <p>Revisa la letra del proyecto o escribe la version que quieres aprobar. Separar una pista puede usar letra vacia.</p>
-                  <button type="submit" :disabled="acePlanBusy">Preparar para revisar</button>
+                  <p>Revisa la letra del proyecto o escribe la versión que quieres aprobar. Separar una pista puede usar letra vacía.</p>
+                  <button type="submit" :disabled="acePlanBusy">Crear plan para revisar</button>
                   <button type="button" :disabled="acePlanBusy" @click="acePlanLyricsDraft = null">Descartar</button>
                 </form>
                 <div v-if="acePlanReview">
@@ -1083,6 +1085,16 @@
                   </div>
 
                 </div>
+              </section>
+              <section id="production-final" tabindex="-1" aria-label="Generación de la canción completa">
+                <h3>Generar canción completa</h3>
+                <p v-if="currentFinalAvailable">Ya hay una canción completa disponible para esta revisión. Escúchala y revisa los archivos en Studio.</p>
+                <p v-else-if="productionRunningPhase">La generación está en curso. Sigue el avance en la actividad de esta página.</p>
+                <p v-else-if="acePlanReview?.effective_status !== 'approved' || !acePlanReview?.inputs_current">Primero prepara, revisa y aprueba el plan de esta canción. El sample previo es opcional.</p>
+                <p v-else-if="resourceStatus?.readiness?.ready === false">El plan está aprobado, pero los recursos del equipo están bloqueados. Abre el diagnóstico de recursos antes de generar.</p>
+                <p v-else>El plan está aprobado. Puedes generar la canción completa con ACE-Step; después escúchala en Studio.</p>
+                <button v-if="currentFinalAvailable" type="button" @click="navigateBuilderStep(builderSteps.find(step => step.id === 'studio'))">Ir a Studio</button>
+                <button v-else type="button" class="primary" :disabled="!fullSongAction?.canRun || resourceStatus?.readiness?.ready === false" @click="runProductionStep(fullSongAction)">Generar canción completa</button>
               </section>
           </section>
 
@@ -1297,7 +1309,7 @@
               </div>
             </details>
 
-            <details class="panel resource-panel" data-ui-panel="resources" :open="panelOpen('resources')">
+            <details id="production-resources" class="panel resource-panel" data-ui-panel="resources" :open="panelOpen('resources')" tabindex="-1">
               <summary>Diagnóstico de recursos</summary>
               <div class="section-head">
                 <div>

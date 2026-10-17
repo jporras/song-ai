@@ -8,10 +8,10 @@ export function productionNextAction({projectId, dirty, editing, revision, plan,
       || plan?.plan?.spec_revision_id !== revision?.revision_id) return {
     message:"Prepara el plan ACE-Step, revisa la letra y aprueba el plan vigente.",
     label:"Ir al plan",target:"plan"};
-  if (running) return {message:"La generación está en curso. Consulta el estado antes de iniciar otra.",label:"Ver estado",target:"flow"};
+  if (running) return {message:"La generación está en curso. Consulta el estado antes de iniciar otra.",label:"Ver generación",target:"final"};
   if (exportReady) return {message:"Hay archivos finales disponibles para esta revisión. Revísalos antes de descargar.",label:"Ver descargas",target:"downloads"};
   if (resourceBlocked) return {message:"La configuración está lista, pero el diagnóstico de recursos muestra un bloqueo. Revisa las recomendaciones antes de generar.",
-    label:"Ver recursos",target:"preflight"};
+    label:"Ver recursos",target:"resources"};
   return {message:"La ficha y el plan están listos. Puedes generar la canción completa; el sample previo es opcional.",
-    label:"Ir a generar",target:"flow"};
+    label:"Ir a generar canción completa",target:"final"};
 }

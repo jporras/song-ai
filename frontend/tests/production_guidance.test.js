@@ -9,8 +9,8 @@ test("Production indica la acción siguiente sin confirmar ni generar por el usu
   assert.equal(productionNextAction({projectId:"",revision,plan}).target,"library");
   assert.equal(productionNextAction({projectId:"song",revision:{...revision,user_confirmation_status:"pending"},plan}).target,"spec");
   assert.equal(productionNextAction({projectId:"song",revision,plan:null}).target,"plan");
-  assert.equal(productionNextAction({projectId:"song",revision,plan}).target,"flow");
-  assert.equal(productionNextAction({projectId:"song",revision,plan,resourceBlocked:true}).target,"preflight");
+  assert.equal(productionNextAction({projectId:"song",revision,plan}).target,"final");
+  assert.equal(productionNextAction({projectId:"song",revision,plan,resourceBlocked:true}).target,"resources");
   assert.match(productionNextAction({projectId:"song",revision,plan}).message,/sample previo es opcional/);
   assert.equal(productionNextAction({projectId:"song",revision,plan,exportReady:true}).target,"downloads");
 });
