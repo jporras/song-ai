@@ -789,8 +789,8 @@
                   <small>{{ step.phases }}</small>
                   <p>{{ step.purpose }}</p>
                 </div>
-                <button v-if="step.action && step.number !== '2'" :disabled="!step.action.canRun" @click="runProductionStep(step.action)">{{ step.actionLabel }}</button>
-                <small v-else-if="step.number === '2'" class="flow-note">Usa el botón visible en Plan y generación.</small>
+                <small v-if="step.number === '2'" class="flow-note">Usa el botón visible en Plan y generación.</small>
+                <small v-else-if="step.number === '3'" class="flow-note">Usa el botón visible en Studio.</small>
                 <small v-else class="flow-note">{{ step.actionLabel }}</small>
               </article>
             </div>
@@ -1286,16 +1286,19 @@
               <div>
                 <span class="eyebrow">4. Exportables</span>
                 <h2>Descargas finales</h2>
-                <p>Usa estos archivos cuando la canción ya fue generada por ACE-Step o exportada.</p>
+                <p>Después de generar la canción, prepara los archivos y descarga los que estén disponibles.</p>
               </div>
               <div class="actions">
-                <button @click="generateLocalFinalSong" :disabled="!canGenerateLocalFinalSong">{{ localFinalRunning ? 'Generando...' : 'Generar final local' }}</button>
-                <button @click="loadProfessionalExport(productionProjectId)" :disabled="!productionProjectId">Actualizar export</button>
+                <button v-if="!currentFinalAvailable" @click="generateLocalFinalSong" :disabled="!canGenerateLocalFinalSong">{{ localFinalRunning ? 'Generando...' : 'Generar final local' }}</button>
+                <button v-if="currentFinalAvailable" :class="{primary: !exportables.some(item => item.type === 'project_zip' && item.url)}" :disabled="!fullExportAction?.canRun" @click="runProductionStep(fullExportAction)">{{ exportables.some(item => item.type === 'project_zip' && item.url) ? 'Volver a preparar archivos' : 'Preparar archivos para descargar' }}</button>
+                <button @click="loadProfessionalExport(productionProjectId)" :disabled="!productionProjectId">Actualizar lista de archivos</button>
                 <button class="primary" :disabled="!exportables.some(item => item.type === 'final_song_mp3' && item.url)" @click="saveLatestMp3">Guardar MP3</button>
               </div>
             </div>
+            <p v-if="currentFinalAvailable && !exportables.some(item => item.type === 'project_zip' && item.url)">La canción ya está generada. Prepara los archivos para crear el ZIP del proyecto y actualizar el manifiesto de descargas.</p>
+            <p v-else-if="currentFinalAvailable">Archivos preparados. Puedes descargar la canción y el ZIP del proyecto desde esta lista.</p>
             <div class="export-status-lines">
-              <small v-if="activeProjectId">{{ localFinalStatusMessage }}</small>
+              <small v-if="activeProjectId && !currentFinalAvailable">{{ localFinalStatusMessage }}</small>
               <small v-if="activeProjectId && exportManifest.quality?.message">{{ exportManifest.quality.message }}</small>
             </div>
             <article v-for="item in exportables" :key="item.type" class="export-row">

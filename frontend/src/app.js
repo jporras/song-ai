@@ -864,7 +864,7 @@ createApp({
       });
     },
     productionFlowSteps() {
-      const byPhase = Object.fromEntries(this.productionPipelineSteps.map((step) => [step.phase, step]));
+      const byPhase = Object.fromEntries(this.productionProcessSteps.map((step) => [step.phase, step]));
       return [
         {
           number: "1",
@@ -894,6 +894,9 @@ createApp({
     },
     fullSongAction() {
       return this.productionProcessSteps.find((step) => step.phase === "MASTERING") || null;
+    },
+    fullExportAction() {
+      return this.productionProcessSteps.find((step) => step.phase === "EXPORT") || null;
     },
     productionSpecMessage() {
       const duration = this.productionTimingEstimate.clampedSeconds || this.musicPlanDuration || 120;
