@@ -1,5 +1,7 @@
 # Estado de publicación del sprint — 2026-10-15
 
+Studio permite escuchar en la página el MP3 final disponible y seleccionar FLAC, WAV final o pistas WAV verificadas antes de descargar. La ruta de reproducción reutiliza la misma validación de proyecto, artefacto y gate de exportación que la descarga; entrega el audio en línea. La escucha no registra aprobación y la guía vocal procedural conserva su etiqueta. Verificación 2026-10-17: build y 4 pruebas frontend, HTTP 206/inline en MP3 y FLAC, ZIP rechazado 400, Playwright QA con duración cargada de 15 s en MP3 y FLAC. No se evaluó calidad sonora ni aceptación perceptual.
+
 Generar ya no bloquea la acción final por una lectura de RAM anterior al cierre automático de Gemma/Qwen. Con plan vigente y cierre configurado, «Generar canción completa» activa el handoff existente: cierra solo servidores de modelos gestionados, vuelve a medir memoria y permite ACE-Step únicamente si supera el presupuesto. La vista de recursos enlaza al botón real y aclara que «Revisar recursos» solo mide. Verificación focalizada de guía y build frontend el 2026-10-17; no se ejecutó ACE-Step sobre Alma.
 
 En Generar, cuando la letra del plan ya está abierta para editar, el aviso de siguiente paso indica «Crear plan para revisar» y lleva al formulario; el botón de esa acción queda destacado. Después se revisa y aprueba el plan antes de generar. Prueba de guía y build frontend aprobados el 2026-10-17.

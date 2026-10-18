@@ -313,6 +313,7 @@ createApp({
       unlockedLyricDirectionIds: [],
       lyricSectionProposals: {},
       acePlanLyricsDraft: null,
+      selectedStudioAudioType: "",
       acePlanLyricsConfirmed: false,
       acePlanBusy: false,
       acePlanProjectId: "",
@@ -758,6 +759,19 @@ createApp({
         { name: "WAV", type: "final_song_wav", size: "pendiente", url: "" },
         { name: "ZIP proyecto completo", type: "project_zip", size: "pendiente", url: "" },
       ];
+    },
+    studioAudioChoices() {
+      return this.exportables.filter(item => item.url && ["final_song_mp3", "final_song_wav", "final_song_flac", "instrumental_wav", "vocals_wav", "mix_wav"].includes(item.type));
+    },
+    studioAudioItem() {
+      return this.studioAudioChoices.find(item => item.type === this.selectedStudioAudioType)
+        || this.studioAudioChoices.find(item => item.type === "final_song_mp3")
+        || this.studioAudioChoices.find(item => item.type === "final_song_wav")
+        || null;
+    },
+    studioAudioUrl() {
+      if (!this.productionProjectId || !this.studioAudioItem) return "";
+      return apiUrl(`/api/pro/projects/${encodeURIComponent(this.productionProjectId)}/artifacts/${this.studioAudioItem.type}/play`);
     },
     productionPipelineSteps() {
       const songId = this.activeProfessionalProject?.id || "";

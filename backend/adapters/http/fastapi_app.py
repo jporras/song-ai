@@ -641,6 +641,17 @@ def download_professional_artifact(song_id: str, artifact_type: str) -> FileResp
     return FileResponse(path, media_type=media_type, filename=filename)
 
 
+@app.get("/api/pro/projects/{song_id}/artifacts/{artifact_type}/play")
+def play_professional_artifact(song_id: str, artifact_type: str) -> FileResponse:
+    if artifact_type not in {"final_song_mp3", "final_song_wav", "final_song_flac", "instrumental_wav", "vocals_wav", "mix_wav"}:
+        raise HTTPException(status_code=400, detail="Este archivo no es audio reproducible.")
+    try:
+        path, filename, media_type = service.professional_artifact_download_file(song_id, artifact_type)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return FileResponse(path, media_type=media_type, filename=filename, content_disposition_type="inline")
+
+
 @app.get("/api/projects/{set_id}")
 def get_project(set_id: str) -> dict[str, Any]:
     return run_action(lambda: service.get_project(set_id))

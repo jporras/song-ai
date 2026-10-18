@@ -526,7 +526,20 @@ textarea {
 }
 
 .export-row {
-  grid-template-columns: minmax(0, 1fr) 140px auto;
+  grid-template-columns: minmax(0, 1fr) 140px auto auto;
+}
+
+.studio-audio-preview {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.studio-audio-preview audio { width: 100%; }
+
+@media (max-width: 700px) {
+  .export-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .export-row strong { grid-column: 1 / -1; }
 }
 
 .export-row strong small {
