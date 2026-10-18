@@ -3,7 +3,7 @@
 ## Recorrido visible para una canción con ficha confirmada
 
 1. En **6. Generar**, la pantalla indica **2 de 3: prepara el plan, revisa la letra y apruébalo**. «Ir al plan» lleva al control de preparación.
-2. **Preparar el plan de esta canción** abre la letra actual y pone el foco en el editor. **Crear plan para revisar** guarda una propuesta de plan, sin generar audio.
+2. **Preparar el plan de esta canción** abre la letra actual y pone el foco en el editor. El aviso superior cambia a «Crear plan para revisar» y lleva al formulario. **Crear plan para revisar** guarda una propuesta de plan, sin generar audio.
 3. La pantalla muestra lo que recibirá ACE-Step, incluida la letra exacta. «Ir a aprobar el plan» lleva al control de aprobación. El usuario confirma expresamente la letra y pulsa **Aprobar este plan y letra**.
 4. La pantalla muestra **3 de 3: plan aprobado** y **Generar canción completa** al inicio del panel. El plan aprobado queda consultable en un desplegable. El sample previo sigue siendo opcional.
 5. Tras solicitar la generación, la actividad y Studio sirven para seguir el proceso, escuchar el resultado y revisar los archivos. Un archivo generado no constituye aprobación del audio.

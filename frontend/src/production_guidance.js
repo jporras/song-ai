@@ -1,9 +1,12 @@
-export function productionNextAction({projectId, dirty, editing, revision, plan, running, exportReady, resourceBlocked}) {
+export function productionNextAction({projectId, dirty, editing, planDraftOpen, revision, plan, running, exportReady, resourceBlocked}) {
   if (!projectId) return {message:"Elige tu proyecto en Biblioteca para preparar la canción.",label:"Ir a Biblioteca",target:"library"};
   if (dirty || editing) return {message:"Hay cambios sin guardar. Guárdalos o descártalos antes de continuar.",label:"Revisar cambios",target:"spec"};
   if (revision?.user_confirmation_status !== "confirmed") return {
     message:"Revisa la ficha de la canción y pulsa «Confirmar esta configuración». La propuesta técnica no confirma por ti.",
     label:"Ir a la ficha",target:"spec"};
+  if (planDraftOpen) return {
+    message:"Ya estás revisando la letra. Pulsa «Crear plan para revisar» debajo del cuadro de texto.",
+    label:"Ir a «Crear plan para revisar»",target:"plan-editor"};
   if (plan?.effective_status === "candidate" && plan?.inputs_current === true
       && plan?.plan?.spec_revision_id === revision?.revision_id) return {
     message:"El plan está preparado. Revisa la letra exacta y apruébalo para habilitar la generación.",

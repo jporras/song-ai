@@ -416,7 +416,7 @@ createApp({
     },
     productionNextAction() {
       return productionNextAction({projectId:this.productionProjectId,dirty:this.dirty,
-        editing:Boolean(this.aceConfigurationDraft),revision:this.specificationRevision,
+        editing:Boolean(this.aceConfigurationDraft),planDraftOpen:this.acePlanLyricsDraft !== null,revision:this.specificationRevision,
         plan:this.acePlanReview,running:Boolean(this.productionRunningPhase),
         exportReady:this.currentFinalAvailable,
         resourceBlocked:this.resourceStatus?.readiness?.ready === false});
@@ -461,6 +461,7 @@ createApp({
       if (this.productionNextAction.target === "downloads") return "Canción disponible para esta revisión";
       if (this.productionNextAction.target === "spec") return "Revisar configuración";
       if (this.productionNextAction.target === "plan") return "Preparar y aprobar el plan";
+      if (this.productionNextAction.target === "plan-editor") return "Crear plan para revisar";
       if (this.productionNextAction.target === "plan-approval") return "Revisar y aprobar el plan";
       if (this.productionNextAction.target === "preflight") return "Revisar recursos";
       if (this.productionRunningPhase) return "Generación en curso";

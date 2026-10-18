@@ -9,6 +9,9 @@ test("Production indica la acción siguiente sin confirmar ni generar por el usu
   assert.equal(productionNextAction({projectId:"",revision,plan}).target,"library");
   assert.equal(productionNextAction({projectId:"song",revision:{...revision,user_confirmation_status:"pending"},plan}).target,"spec");
   assert.equal(productionNextAction({projectId:"song",revision,plan:null}).target,"plan");
+  const editingPlan = productionNextAction({projectId:"song",revision,plan:null,planDraftOpen:true});
+  assert.equal(editingPlan.target,"plan-editor");
+  assert.match(editingPlan.message,/Crear plan para revisar/);
   assert.equal(productionNextAction({projectId:"song",revision,plan:{...plan,effective_status:"candidate"}}).target,"plan-approval");
   assert.equal(productionNextAction({projectId:"song",revision,plan}).target,"final");
   assert.equal(productionNextAction({projectId:"song",revision,plan,resourceBlocked:true}).target,"resources");

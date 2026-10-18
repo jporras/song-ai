@@ -1036,6 +1036,7 @@
           <section v-show="builderStepId === 'generate'" class="panel generation-preflight-panel" aria-label="Plan y generación">
             <h2>Plan y generación</h2>
             <p v-if="specificationRevision?.user_confirmation_status !== 'confirmed'">1 de 3 · Confirma la configuración en Revisar para continuar.</p>
+            <p v-else-if="acePlanLyricsDraft !== null">2 de 3 · Revisa la letra y pulsa «Crear plan para revisar» debajo del cuadro.</p>
             <p v-else-if="acePlanReview?.effective_status === 'approved' && acePlanReview?.inputs_current">3 de 3 · Plan aprobado. Ya puedes generar la canción completa.</p>
             <p v-else>2 de 3 · Prepara el plan, revisa la letra y apruébalo.</p>
             <section v-if="acePlanReview?.effective_status === 'approved' && acePlanReview?.inputs_current" id="production-final" tabindex="-1" aria-label="Generación de la canción completa">
@@ -1052,12 +1053,12 @@
               <section id="production-plan" tabindex="-1">
                 <h3>Plan de creación para revisar</h3>
                 <p>Revisa el texto que se cantará y las entradas del motor. Aprobar este plan no genera audio ni aprueba un sample.</p>
-                <p v-if="!acePlanReview">La configuración ya está confirmada. Ahora prepara el plan, revisa la letra y apruébalo para habilitar la canción completa.</p>
+                <p v-if="!acePlanReview && acePlanLyricsDraft === null">La configuración ya está confirmada. Ahora prepara el plan, revisa la letra y apruébalo para habilitar la canción completa.</p>
                 <button v-if="acePlanLyricsDraft === null" :disabled="acePlanBusy" @click="startAcePlanReview">{{ acePlanReview ? 'Preparar otro plan' : 'Preparar el plan de esta canción' }}</button>
-                <form v-else @submit.prevent="prepareAcePlan">
+                <form v-else id="production-plan-editor" tabindex="-1" @submit.prevent="prepareAcePlan">
                   <label>Letra para este plan<textarea v-model="acePlanLyricsDraft" rows="8" maxlength="4096"></textarea></label>
                   <p>Revisa la letra del proyecto o escribe la versión que quieres aprobar. Separar una pista puede usar letra vacía.</p>
-                  <button type="submit" :disabled="acePlanBusy">Crear plan para revisar</button>
+                  <button type="submit" class="primary" :disabled="acePlanBusy">Crear plan para revisar</button>
                   <button type="button" :disabled="acePlanBusy" @click="acePlanLyricsDraft = null">Descartar</button>
                 </form>
                 <div v-if="acePlanReview">
