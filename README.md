@@ -130,6 +130,8 @@ Por decisión del usuario, el avance global considera únicamente desarrollo y v
 
 # Song AI
 
+Revisión visual del recorrido Generar (2026-10-17): [pasos y evidencia Playwright](docs/GENERATE_VISUAL_JOURNEY_20261017.md). El plan se prepara y aprueba con acciones consecutivas; al aprobarlo, el botón de canción completa aparece al inicio del panel. La carga del proyecto conserva una navegación posterior del usuario. Playwright comprobó creación/aprobación del plan en SQLite QA y el envío del botón final con `/master` interceptado; ACE-Step y la escucha no se ejecutaron en este ensayo.
+
 Actualización de interfaz (2026-10-17): en el paso «Generar», la revisión de la ficha y la aprobación del plan ACE-Step se muestran como decisiones distintas. El plan inicial se prepara desde «Preparar el plan de esta canción»; tras revisar la letra y aprobar el plan vigente, «Generar canción completa» aparece en el mismo panel y se habilita si la configuración y los recursos cumplen las verificaciones. El botón de siguiente paso lleva a esa acción visible; el diagnóstico de recursos abre su panel. El borrador exploratorio y el sample siguen siendo opcionales. Verificación P: 64/64 pruebas Node, build Vite de 41 módulos y `git diff --check` correctos. No se ejecutó ACE-Step ni se evaluó la canción de Alma en esta corrección; la escucha y la aceptación del usuario siguen separadas.
 
 Song AI es un estudio musical local asistido por IA para crear canciones completas desde una idea creativa hasta exportables finales. La aplicacion corre localmente sin Docker, guarda el trabajo en SQLite dentro de `data/` y mantiene separados los artefactos de letra, plan musical, MIDI, audio y exportacion.

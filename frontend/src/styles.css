@@ -909,6 +909,21 @@ summary span {
   gap: 18px;
 }
 
+.plan-request-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: .75rem;
+  margin: .75rem 0;
+}
+
+.plan-request-field {
+  min-width: 0;
+}
+
+.plan-request-field dd {
+  margin: .2rem 0 0;
+}
+
 .production-view .timing-grid {
   display: none;
 }

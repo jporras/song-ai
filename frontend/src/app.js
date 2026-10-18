@@ -461,6 +461,7 @@ createApp({
       if (this.productionNextAction.target === "downloads") return "Canción disponible para esta revisión";
       if (this.productionNextAction.target === "spec") return "Revisar configuración";
       if (this.productionNextAction.target === "plan") return "Preparar y aprobar el plan";
+      if (this.productionNextAction.target === "plan-approval") return "Revisar y aprobar el plan";
       if (this.productionNextAction.target === "preflight") return "Revisar recursos";
       if (this.productionRunningPhase) return "Generación en curso";
       return "Listo para generar";
@@ -1536,6 +1537,7 @@ createApp({
       return readApiPayload(response, fallbackData);
     },
     async loadProject(setId, options = {}) {
+      const pathAtLoadStart = window.location.pathname;
       this.assistantPendingPatch = null;
       this.assistantAppliedPatches = [];
       this.specProposal = null;
@@ -1601,8 +1603,9 @@ createApp({
       const targetPhase = this.phaseToOpenAfterLoad(payload.data);
       const savedStep = builderSteps.find(step => step.id === payload.data?.ui_state?.builder_step);
       const routeStep = builderSteps.find(step => step.path === window.location.pathname);
-      this.builderStepId = options.preserveRoute && routeStep ? routeStep.id : savedStep && savedStep.tab === targetPhase ? savedStep.id : targetPhase === 'production' ? 'review' : '';
-      if (!options.preserveRoute) {
+      const preserveCurrentRoute = options.preserveRoute || window.location.pathname !== pathAtLoadStart;
+      this.builderStepId = preserveCurrentRoute && routeStep ? routeStep.id : savedStep && savedStep.tab === targetPhase ? savedStep.id : targetPhase === 'production' ? 'review' : '';
+      if (!preserveCurrentRoute) {
         this.activateFromPath(savedStep?.path || ROUTE_BY_TAB[targetPhase] || ROUTE_BY_TAB.intent, true);
       }
       await this.$nextTick();

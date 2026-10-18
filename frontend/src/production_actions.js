@@ -404,6 +404,7 @@ export const productionActions = {
   startAcePlanReview() {
     this.acePlanLyricsDraft = this.lyricsEditor?.content || "";
     this.acePlanLyricsConfirmed = false;
+    this.$nextTick(() => document.querySelector('#production-plan textarea')?.focus({preventScroll:true}));
   },
 
   async prepareAcePlan() {
@@ -420,6 +421,7 @@ export const productionActions = {
       if (this.productionProjectId !== songId) return;
       this.acePlanLyricsDraft = null;
       await this.loadAcePlan(songId);
+      this.$nextTick(() => document.getElementById('production-plan-summary')?.scrollIntoView({behavior:'smooth',block:'start'}));
     } catch (error) {
       this.addMessage(`No se pudo preparar el plan: ${error?.message || "error de red"}`);
     } finally { this.acePlanBusy = false; }
@@ -439,6 +441,7 @@ export const productionActions = {
       if (!payload.ok) this.addMessage(payload.detail || "No se pudo aprobar el plan.");
       else this.addMessage("Plan y letra aprobados. Puedes iniciar la generación; el sample previo es opcional. El audio generado requiere su propia revisión.");
       await this.loadAcePlan(songId);
+      if (payload.ok) this.$nextTick(() => document.getElementById('production-final')?.scrollIntoView({behavior:'smooth',block:'start'}));
     } catch (error) {
       this.addMessage(`No se pudo aprobar: ${error?.message || "error de red"}`);
     } finally { this.acePlanBusy = false; }

@@ -4,6 +4,10 @@ export function productionNextAction({projectId, dirty, editing, revision, plan,
   if (revision?.user_confirmation_status !== "confirmed") return {
     message:"Revisa la ficha de la canción y pulsa «Confirmar esta configuración». La propuesta técnica no confirma por ti.",
     label:"Ir a la ficha",target:"spec"};
+  if (plan?.effective_status === "candidate" && plan?.inputs_current === true
+      && plan?.plan?.spec_revision_id === revision?.revision_id) return {
+    message:"El plan está preparado. Revisa la letra exacta y apruébalo para habilitar la generación.",
+    label:"Ir a aprobar el plan",target:"plan-approval"};
   if (plan?.effective_status !== "approved" || plan?.inputs_current !== true
       || plan?.plan?.spec_revision_id !== revision?.revision_id) return {
     message:"Prepara el plan ACE-Step, revisa la letra y aprueba el plan vigente.",

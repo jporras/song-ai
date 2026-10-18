@@ -1035,8 +1035,21 @@
 
           <section v-show="builderStepId === 'generate'" class="panel generation-preflight-panel" aria-label="Plan y generación">
             <h2>Plan y generación</h2>
-            <p>Prepara y aprueba el plan de la configuración confirmada antes de generar audio.</p>
-              <section v-if="specificationRevision?.user_confirmation_status === 'confirmed' && !aceConfigurationDraft" id="production-plan" tabindex="-1">
+            <p v-if="specificationRevision?.user_confirmation_status !== 'confirmed'">1 de 3 · Confirma la configuración en Revisar para continuar.</p>
+            <p v-else-if="acePlanReview?.effective_status === 'approved' && acePlanReview?.inputs_current">3 de 3 · Plan aprobado. Ya puedes generar la canción completa.</p>
+            <p v-else>2 de 3 · Prepara el plan, revisa la letra y apruébalo.</p>
+            <section v-if="acePlanReview?.effective_status === 'approved' && acePlanReview?.inputs_current" id="production-final" tabindex="-1" aria-label="Generación de la canción completa">
+              <h3>Generar canción completa</h3>
+              <p v-if="currentFinalAvailable">Ya hay una canción completa disponible para esta revisión. Escúchala y revisa los archivos en Studio.</p>
+              <p v-else-if="productionRunningPhase">La generación está en curso. Sigue el avance en la actividad de esta página.</p>
+              <p v-else-if="resourceStatus?.readiness?.ready === false">El plan está aprobado, pero los recursos del equipo están bloqueados. Abre el diagnóstico de recursos antes de generar.</p>
+              <p v-else>El plan está aprobado. Puedes generar la canción completa con ACE-Step; después escúchala en Studio. El sample previo es opcional.</p>
+              <button v-if="currentFinalAvailable" type="button" @click="navigateBuilderStep(builderSteps.find(step => step.id === 'studio'))">Ir a Studio</button>
+              <button v-else type="button" class="primary" :disabled="!fullSongAction?.canRun || resourceStatus?.readiness?.ready === false" @click="runProductionStep(fullSongAction)">Generar canción completa</button>
+            </section>
+              <details v-if="specificationRevision?.user_confirmation_status === 'confirmed' && !aceConfigurationDraft" :open="acePlanReview?.effective_status !== 'approved' || acePlanLyricsDraft !== null" class="plan-disclosure">
+                <summary>{{ acePlanReview?.effective_status === 'approved' ? 'Ver el plan aprobado o preparar otro' : 'Preparar y revisar el plan' }}</summary>
+              <section id="production-plan" tabindex="-1">
                 <h3>Plan de creación para revisar</h3>
                 <p>Revisa el texto que se cantará y las entradas del motor. Aprobar este plan no genera audio ni aprueba un sample.</p>
                 <p v-if="!acePlanReview">La configuración ya está confirmada. Ahora prepara el plan, revisa la letra y apruébalo para habilitar la canción completa.</p>
@@ -1055,9 +1068,15 @@
                     <p v-else>Plan aprobado. Puedes iniciar una generación con este plan.</p>
                   </template>
                   <p v-else>Plan pendiente de tu revision.</p>
-                  <plan-request-review :plan="acePlanReview.plan"></plan-request-review>
-                  <section class="panel" aria-label="Dirección por sección conservada en el plan">
-                    <h3>Dirección por sección</h3>
+                  <div id="production-plan-summary" tabindex="-1"><plan-request-review :plan="acePlanReview.plan"></plan-request-review></div>
+                  <div v-if="acePlanReview.effective_status === 'candidate' && acePlanReview.inputs_current" id="production-plan-approval" tabindex="-1">
+                    <h4>Último paso del plan: aprobarlo</h4>
+                    <p>Confirma solo después de revisar la letra exacta y las entradas que recibirá ACE-Step.</p>
+                    <label><input v-model="acePlanLyricsConfirmed" type="checkbox"> Revisé el plan y confirmo esta letra para la operación elegida.</label>
+                    <button :disabled="!acePlanLyricsConfirmed || acePlanBusy" @click="approveAcePlan">Aprobar este plan y letra</button>
+                  </div>
+                  <details class="panel" aria-label="Dirección por sección conservada en el plan">
+                    <summary>Dirección por sección conservada en el plan</summary>
                     <p>Estas notas pertenecen a la revisión de este plan. No son palabras a cantar ni controles exactos de interpretación.</p>
                     <p v-if="!Array.isArray(acePlanReview.plan.section_direction_trace)">Este plan anterior no tiene traza de dirección por sección. Prepara un nuevo plan para revisar la intención vigente.</p>
                     <p v-else-if="!acePlanReview.plan.section_direction_trace.length">Este plan no contiene notas de dirección por bloque de letra.</p>
@@ -1072,12 +1091,8 @@
                       <p v-else>Ruta de ejecución sin interpretación validada en esta interfaz. Consulta el detalle técnico antes de aprobar.</p>
                       <details><summary>Trazabilidad de esta dirección</summary><pre>{{ JSON.stringify(trace, null, 2) }}</pre></details>
                     </article>
-                  </section>
+                  </details>
                   <details><summary>Entradas tecnicas y requisitos conservados</summary><pre>{{ JSON.stringify(acePlanReview.plan, null, 2) }}</pre></details>
-                  <template v-if="acePlanReview.effective_status === 'candidate' && acePlanReview.inputs_current">
-                    <label><input v-model="acePlanLyricsConfirmed" type="checkbox"> Revise el plan y confirmo esta letra para la operacion elegida.</label>
-                    <button :disabled="!acePlanLyricsConfirmed || acePlanBusy" @click="approveAcePlan">Aprobar este plan y letra</button>
-                  </template>
                   <div v-if="acePlanReview.effective_status === 'approved' && acePlanReview.inputs_current">
                     <p>Este borrador ejecuta ACE-Step local y puede tardar. No reemplaza el original ni aprueba el sample o la cancion final. La calidad de este modo aun necesita escucha y evaluacion.</p>
                     <label><input v-model="aceCandidateAuthorized" type="checkbox"> Autorizo generar un borrador exploratorio con este plan.</label>
@@ -1086,16 +1101,7 @@
 
                 </div>
               </section>
-              <section id="production-final" tabindex="-1" aria-label="Generación de la canción completa">
-                <h3>Generar canción completa</h3>
-                <p v-if="currentFinalAvailable">Ya hay una canción completa disponible para esta revisión. Escúchala y revisa los archivos en Studio.</p>
-                <p v-else-if="productionRunningPhase">La generación está en curso. Sigue el avance en la actividad de esta página.</p>
-                <p v-else-if="acePlanReview?.effective_status !== 'approved' || !acePlanReview?.inputs_current">Primero prepara, revisa y aprueba el plan de esta canción. El sample previo es opcional.</p>
-                <p v-else-if="resourceStatus?.readiness?.ready === false">El plan está aprobado, pero los recursos del equipo están bloqueados. Abre el diagnóstico de recursos antes de generar.</p>
-                <p v-else>El plan está aprobado. Puedes generar la canción completa con ACE-Step; después escúchala en Studio.</p>
-                <button v-if="currentFinalAvailable" type="button" @click="navigateBuilderStep(builderSteps.find(step => step.id === 'studio'))">Ir a Studio</button>
-                <button v-else type="button" class="primary" :disabled="!fullSongAction?.canRun || resourceStatus?.readiness?.ready === false" @click="runProductionStep(fullSongAction)">Generar canción completa</button>
-              </section>
+              </details>
           </section>
 
           <section v-show="builderStepId === 'studio'" class="panel studio-panel" aria-labelledby="studio-heading">
