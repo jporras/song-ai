@@ -1287,7 +1287,8 @@
             <section v-if="studioAudioItem" class="studio-audio-preview" aria-label="Escuchar audio en la página">
               <h2>Escuchar antes de descargar</h2>
               <p>Reproduciendo: <strong>{{ studioAudioItem.name }}</strong><span v-if="studioAudioItem.note"> · {{ studioAudioItem.note }}</span></p>
-              <audio :key="productionProjectId + ':' + studioAudioItem.type" :src="studioAudioUrl" :aria-label="'Escuchar ' + studioAudioItem.name" controls preload="metadata"></audio>
+              <audio :key="productionProjectId + ':' + studioAudioItem.type + ':' + studioAudioPlaybackFallback" :src="studioAudioUrl" :aria-label="'Escuchar ' + studioAudioItem.name" @error="handleStudioAudioError" @loadedmetadata="studioAudioError = ''" controls preload="metadata"></audio>
+              <small v-if="studioAudioError" role="alert">{{ studioAudioError }}</small>
               <small>Escuchar aquí no aprueba la canción. Si tu navegador no reproduce FLAC, selecciona MP3 o WAV.</small>
             </section>
             <div class="section-head">
@@ -1312,7 +1313,7 @@
             <article v-for="item in exportables" :key="item.type" class="export-row">
               <strong>{{ item.name }}<small v-if="item.note">{{ item.note }}</small></strong>
               <span>{{ item.size }}</span>
-              <button v-if="studioAudioChoices.some(audio => audio.type === item.type)" type="button" @click="selectedStudioAudioType = item.type">Escuchar</button>
+              <button v-if="studioAudioChoices.some(audio => audio.type === item.type)" type="button" @click="selectStudioAudio(item.type)">Escuchar</button>
               <button :disabled="!item.url" @click="downloadArtifact(item)">Descargar</button>
             </article>
             <small v-if="downloadStatus" role="status">{{ downloadStatus }}</small>

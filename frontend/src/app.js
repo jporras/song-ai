@@ -314,6 +314,8 @@ createApp({
       lyricSectionProposals: {},
       acePlanLyricsDraft: null,
       selectedStudioAudioType: "",
+      studioAudioPlaybackFallback: false,
+      studioAudioError: "",
       acePlanLyricsConfirmed: false,
       acePlanBusy: false,
       acePlanProjectId: "",
@@ -771,6 +773,7 @@ createApp({
     },
     studioAudioUrl() {
       if (!this.productionProjectId || !this.studioAudioItem) return "";
+      if (this.studioAudioPlaybackFallback) return apiUrl(this.studioAudioItem.url);
       return apiUrl(`/api/pro/projects/${encodeURIComponent(this.productionProjectId)}/artifacts/${this.studioAudioItem.type}/play`);
     },
     productionPipelineSteps() {
@@ -1102,6 +1105,18 @@ createApp({
     },
   },
   methods: {
+    selectStudioAudio(type) {
+      this.selectedStudioAudioType = type;
+      this.studioAudioPlaybackFallback = false;
+      this.studioAudioError = "";
+    },
+    handleStudioAudioError() {
+      if (!this.studioAudioPlaybackFallback && this.studioAudioItem?.url) {
+        this.studioAudioPlaybackFallback = true;
+        return;
+      }
+      this.studioAudioError = "No se pudo reproducir este archivo. Prueba otro formato o actualiza la lista de archivos.";
+    },
     async pollSpecProposalStatus(songId, requestId) {
       if (!this.specProposalBusy || this.productionProjectId !== songId || this.specProposalRequestId !== requestId) return;
       try {
