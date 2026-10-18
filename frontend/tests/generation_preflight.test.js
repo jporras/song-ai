@@ -13,3 +13,11 @@ test('dirty and stale inputs cannot enable generation, blocked resources are exp
   assert.equal(generationPreflight(p,{...plan,plan:{spec_revision_id:'old'}},{},false).creativeReady,false);
   assert.match(generationPreflight(p,plan,{readiness:{ready:false}},false).technical,/bloqueo/);
 });
+test('pre-release memory reading points to automatic model handoff',()=>{
+  const state=generationPreflight(p,plan,{
+    readiness:{ready:false,decision:'blocked_ram'},
+    settings:{release_llm_before_audio:true,stop_llm_command_configured:true}
+  },false);
+  assert.equal(state.creativeReady,true);
+  assert.match(state.technical,/se liberarán los modelos/);
+});

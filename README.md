@@ -1,5 +1,7 @@
 # Estado de publicación del sprint — 2026-10-15
 
+Generar ya no bloquea la acción final por una lectura de RAM anterior al cierre automático de Gemma/Qwen. Con plan vigente y cierre configurado, «Generar canción completa» activa el handoff existente: cierra solo servidores de modelos gestionados, vuelve a medir memoria y permite ACE-Step únicamente si supera el presupuesto. La vista de recursos enlaza al botón real y aclara que «Revisar recursos» solo mide. Verificación focalizada de guía y build frontend el 2026-10-17; no se ejecutó ACE-Step sobre Alma.
+
 En Generar, cuando la letra del plan ya está abierta para editar, el aviso de siguiente paso indica «Crear plan para revisar» y lleva al formulario; el botón de esa acción queda destacado. Después se revisa y aprueba el plan antes de generar. Prueba de guía y build frontend aprobados el 2026-10-17.
 
 Tras preparar la propuesta técnica, Revisar muestra el siguiente paso según la revisión guardada. Si ya está confirmada, ofrece «Ir a Generar y preparar el plan» y explica que la propuesta es opcional y no cambia la ficha; si no, indica que debe confirmarse. El resumen técnico original queda desplegable para evitar que su texto sugiera una confirmación inexistente.

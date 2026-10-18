@@ -1043,10 +1043,11 @@
               <h3>Generar canción completa</h3>
               <p v-if="currentFinalAvailable">Ya hay una canción completa disponible para esta revisión. Escúchala y revisa los archivos en Studio.</p>
               <p v-else-if="productionRunningPhase">La generación está en curso. Sigue el avance en la actividad de esta página.</p>
-              <p v-else-if="resourceStatus?.readiness?.ready === false">El plan está aprobado, pero los recursos del equipo están bloqueados. Abre el diagnóstico de recursos antes de generar.</p>
+              <p v-else-if="resourceStatus?.readiness?.ready === false && automaticModelReleaseAvailable">La lectura actual muestra poca memoria. Al pulsar «Generar canción completa», la aplicación cerrará Gemma/Qwen, comprobará la memoria de nuevo y solo iniciará ACE-Step si alcanza.</p>
+              <p v-else-if="resourceStatus?.readiness?.ready === false">La memoria es insuficiente y el cierre automático de Gemma/Qwen no está configurado. Revisa el diagnóstico de recursos.</p>
               <p v-else>El plan está aprobado. Puedes generar la canción completa con ACE-Step; después escúchala en Studio. El sample previo es opcional.</p>
               <button v-if="currentFinalAvailable" type="button" @click="navigateBuilderStep(builderSteps.find(step => step.id === 'studio'))">Ir a Studio</button>
-              <button v-else type="button" class="primary" :disabled="!fullSongAction?.canRun || resourceStatus?.readiness?.ready === false" @click="runProductionStep(fullSongAction)">Generar canción completa</button>
+              <button v-else type="button" class="primary" :disabled="!fullSongAction?.canRun || (resourceStatus?.readiness?.ready === false && !automaticModelReleaseAvailable)" @click="runProductionStep(fullSongAction)">Generar canción completa</button>
             </section>
               <details v-if="specificationRevision?.user_confirmation_status === 'confirmed' && !aceConfigurationDraft" :open="acePlanReview?.effective_status !== 'approved' || acePlanLyricsDraft !== null" class="plan-disclosure">
                 <summary>{{ acePlanReview?.effective_status === 'approved' ? 'Ver el plan aprobado o preparar otro' : 'Preparar y revisar el plan' }}</summary>
@@ -1325,6 +1326,8 @@
                 <div>
                   <h2>Preparacion para voz cantada</h2>
                   <p>{{ resourceStatus.readiness?.message || 'Sin lectura de recursos.' }}</p>
+                  <p v-if="resourceStatus.readiness?.ready === false && automaticModelReleaseAvailable">Esta lectura es previa al cierre automático de Gemma/Qwen. Para continuar, vuelve arriba y pulsa «Generar canción completa». «Revisar recursos» solo mide de nuevo.</p>
+                  <button v-if="resourceStatus.readiness?.ready === false && automaticModelReleaseAvailable && fullSongAction?.canRun" type="button" class="primary" @click="goToProductionNextAction">Ir a «Generar canción completa»</button>
                   <small v-if="resourceLastUpdated">Ultima lectura: {{ resourceLastUpdated }}</small>
                 </div>
                 <div class="actions resource-actions">

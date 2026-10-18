@@ -9,7 +9,9 @@ export function generationPreflight(project, review, resources, dirty) {
       : current ? 'Ficha y plan aprobados para la revisión guardada.' : 'Confirma la ficha y aprueba un plan vigente.',
     creativeReady:current && !dirty,
     technical:resources?.readiness?.ready===false
-      ? 'El diagnóstico de recursos indica un bloqueo. Revisa las recomendaciones antes de continuar.'
+      ? resources?.settings?.release_llm_before_audio && resources?.settings?.stop_llm_command_configured
+        ? 'La lectura actual es previa al cierre de Gemma/Qwen. Al generar, se liberarán los modelos y se comprobará la memoria otra vez.'
+        : 'El diagnóstico de recursos indica un bloqueo. Revisa las recomendaciones antes de continuar.'
       : 'La carga del modelo y su ejecución aún deben comprobarse. Un plan aprobado no acredita disponibilidad del motor.',
     recommendations:resources?.readiness?.recommendations || [],
     limits:'Al iniciar, el backend vuelve a validar revisión, archivos, fuentes y recursos. Un candidato creado requiere escucha y evaluación; no es audio aceptado.'

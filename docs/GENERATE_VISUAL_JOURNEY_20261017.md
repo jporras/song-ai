@@ -8,7 +8,7 @@
 4. La pantalla muestra **3 de 3: plan aprobado** y **Generar canción completa** al inicio del panel. El plan aprobado queda consultable en un desplegable. El sample previo sigue siendo opcional.
 5. Tras solicitar la generación, la actividad y Studio sirven para seguir el proceso, escuchar el resultado y revisar los archivos. Un archivo generado no constituye aprobación del audio.
 
-Si faltan la ficha confirmada, un plan vigente o los recursos necesarios, la acción final permanece bloqueada con un siguiente paso visible.
+Si faltan la ficha confirmada o un plan vigente, la acción final permanece bloqueada con un siguiente paso visible. Si la lectura de RAM previa está baja y el cierre de Gemma/Qwen está configurado, «Generar canción completa» inicia el cierre automático y una nueva medición; ACE-Step solo comienza si la memoria posterior alcanza. Si no hay cierre configurado, la acción permanece bloqueada y se dirige al diagnóstico. «Revisar recursos» únicamente repite la medición.
 
 ## Verificación Playwright en datos aislados
 

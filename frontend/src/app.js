@@ -419,7 +419,8 @@ createApp({
         editing:Boolean(this.aceConfigurationDraft),planDraftOpen:this.acePlanLyricsDraft !== null,revision:this.specificationRevision,
         plan:this.acePlanReview,running:Boolean(this.productionRunningPhase),
         exportReady:this.currentFinalAvailable,
-        resourceBlocked:this.resourceStatus?.readiness?.ready === false});
+        resourceBlocked:this.resourceStatus?.readiness?.ready === false,
+        automaticModelReleaseAvailable:this.automaticModelReleaseAvailable});
     },
     builderSummaryStatus() {
       return builderProjectStatus(this.activeProject, this.acePlanReview, this.dirty ? this.dirtyPhase : '');
@@ -895,6 +896,10 @@ createApp({
     },
     fullSongAction() {
       return this.productionProcessSteps.find((step) => step.phase === "MASTERING") || null;
+    },
+    automaticModelReleaseAvailable() {
+      return this.resourceStatus?.settings?.release_llm_before_audio === true
+        && this.resourceStatus?.settings?.stop_llm_command_configured === true;
     },
     fullExportAction() {
       return this.productionProcessSteps.find((step) => step.phase === "EXPORT") || null;

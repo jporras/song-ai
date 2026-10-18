@@ -15,6 +15,9 @@ test("Production indica la acción siguiente sin confirmar ni generar por el usu
   assert.equal(productionNextAction({projectId:"song",revision,plan:{...plan,effective_status:"candidate"}}).target,"plan-approval");
   assert.equal(productionNextAction({projectId:"song",revision,plan}).target,"final");
   assert.equal(productionNextAction({projectId:"song",revision,plan,resourceBlocked:true}).target,"resources");
+  const automaticRelease = productionNextAction({projectId:"song",revision,plan,resourceBlocked:true,automaticModelReleaseAvailable:true});
+  assert.equal(automaticRelease.target,"final");
+  assert.match(automaticRelease.message,/cerrará Gemma\/Qwen/);
   assert.match(productionNextAction({projectId:"song",revision,plan}).message,/sample previo es opcional/);
   assert.equal(productionNextAction({projectId:"song",revision,plan,exportReady:true}).target,"downloads");
 });
